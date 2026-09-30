@@ -36,6 +36,9 @@ export default defineConfig({
       command: "pnpm --filter @bakery/api start",
       url: "http://127.0.0.1:4000/api/health",
       reuseExistingServer: !process.env.CI,
+      // La suite inicia sesión muchas veces por minuto desde la misma IP; el límite de
+      // producción (10/min) se mantiene y se prueba en los tests de integración de auth.
+      env: { LOGIN_RATE_LIMIT_PER_MINUTE: "200" },
       timeout: 60_000,
     },
     {
