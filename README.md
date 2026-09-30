@@ -43,9 +43,9 @@ Credenciales **solo de desarrollo** (configurables en `.env` con `SEED_ADMIN_EMA
 | ------------------------ | -------------------------------------------------------------------- |
 | `pnpm install`           | Instala dependencias del monorepo                                    |
 | `pnpm dev`               | Setup completo + API y web en modo desarrollo                        |
-| `pnpm setup`             | Solo setup: `.env`, base, migraciones y seed                         |
+| `pnpm bootstrap`         | Solo preparación: `.env`, base, migraciones y seed                   |
 | `pnpm test`              | Tests unitarios e integración (crea y migra `bakery_erp_test`)       |
-| `pnpm test:e2e`          | Build + smoke E2E con Playwright (requiere `pnpm setup` previo)      |
+| `pnpm test:e2e`          | Build + smoke E2E con Playwright (requiere `pnpm bootstrap` previo)  |
 | `pnpm lint`              | ESLint + Prettier (check)                                            |
 | `pnpm typecheck`         | TypeScript estricto en todos los paquetes                            |
 | `pnpm build`             | Build de producción de API y web                                     |

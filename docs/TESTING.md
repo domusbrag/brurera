@@ -23,7 +23,7 @@ Principios:
 ```bash
 pnpm db:up          # PostgreSQL debe estar arriba
 pnpm test           # unit + integración de todos los paquetes
-pnpm test:e2e       # build + Playwright (requiere `pnpm setup` previo: migraciones + seed)
+pnpm test:e2e       # build + Playwright (requiere `pnpm bootstrap` previo: migraciones + seed)
 ```
 
 Por paquete: `pnpm --filter @bakery/api test:unit`, `pnpm --filter @bakery/api test:integration`.

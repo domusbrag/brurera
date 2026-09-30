@@ -9,8 +9,8 @@
   },
   "type": "module",
   "scripts": {
-    "setup": "node scripts/ensure-env.mjs && pnpm db:up && pnpm db:migrate && pnpm db:seed",
-    "dev": "pnpm setup && pnpm --parallel --filter @bakery/api --filter @bakery/web dev",
+    "bootstrap": "node scripts/ensure-env.mjs && pnpm db:up && pnpm db:migrate && pnpm db:seed",
+    "dev": "pnpm bootstrap && pnpm --parallel --filter @bakery/api --filter @bakery/web dev",
     "db:up": "docker compose -f infra/docker-compose.yml up -d --wait",
     "db:down": "docker compose -f infra/docker-compose.yml down",
     "db:reset": "docker compose -f infra/docker-compose.yml down -v && pnpm db:up && pnpm db:migrate && pnpm db:seed",

@@ -8,7 +8,7 @@ const WEB_URL = "http://localhost:3000";
 
 /**
  * Smoke E2E contra la aplicación construida (`pnpm build`), usando la base de
- * desarrollo ya migrada y con seed (`pnpm setup`). `pnpm test:e2e` hace el build.
+ * desarrollo ya migrada y con seed (`pnpm bootstrap`). `pnpm test:e2e` hace el build.
  */
 export default defineConfig({
   testDir: "./e2e",
