@@ -4,7 +4,8 @@ import type { CurrentUser } from "@bakery/shared";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { NAVIGATION } from "@/lib/navigation";
+import { visibleNavigation } from "@/lib/navigation";
+import { UserProvider } from "./user-context";
 
 export function AppShell({ user, children }: { user: CurrentUser; children: ReactNode }) {
   const pathname = usePathname();
@@ -39,7 +40,7 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
           <Link className={`nav__link ${isActive("/") ? "nav__link--active" : ""}`} href="/">
             Inicio
           </Link>
-          {NAVIGATION.map((group) => (
+          {visibleNavigation(user.permissions).map((group) => (
             <div className="nav__group" key={group.label}>
               <div className="nav__group-label">{group.label}</div>
               {group.items.map((item) => {
@@ -86,7 +87,9 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
             {logoutError}
           </p>
         )}
-        <main className="content">{children}</main>
+        <main className="content">
+          <UserProvider user={user}>{children}</UserProvider>
+        </main>
       </div>
     </div>
   );

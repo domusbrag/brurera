@@ -1,27 +1,22 @@
 import type { Metadata } from "next";
-import { PERMISSIONS } from "@bakery/shared";
+import { AUDIT_ACTION_LABELS, PERMISSIONS } from "@bakery/shared";
 import { redirect } from "next/navigation";
 import { getCurrentUser, getRecentAudit } from "@/lib/api.server";
 
 export const metadata: Metadata = { title: "Inicio" };
 
-const ACTION_LABELS: Record<string, string> = {
-  AUTH_LOGIN_SUCCEEDED: "Ingreso al sistema",
-  AUTH_LOGIN_FAILED: "Intento de ingreso fallido",
-  AUTH_LOGOUT: "Salida del sistema",
-};
-
-const dateFormat = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "short",
-  timeStyle: "short",
-  timeZone: "America/Argentina/Buenos_Aires",
-});
+const ACTION_LABELS: Record<string, string> = AUDIT_ACTION_LABELS;
 
 export default async function HomePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const canReadAudit = user.permissions.includes(PERMISSIONS.AUDIT_READ);
   const activity = canReadAudit ? await getRecentAudit(8) : [];
+  const dateFormat = new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: user.company.timezone,
+  });
 
   return (
     <div className="page">

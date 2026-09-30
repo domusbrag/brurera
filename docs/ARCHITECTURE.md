@@ -12,7 +12,8 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
                          ▼                                          ▼
                     apps/api (Fastify :4000) ──▶ packages/database (Drizzle) ──▶ PostgreSQL 16
                          │
-                         └──▶ packages/shared (permisos, roles, esquemas zod)
+                         ├──▶ packages/shared (permisos, roles, esquemas zod, DTOs)
+                         └──▶ packages/domain (reglas puras: unidades, códigos; decimal.js)
 ```
 
 ## Componentes
@@ -22,10 +23,21 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
 - **Fastify 5** + TypeScript estricto. `src/app.ts` arma la aplicación a partir de dependencias
   explícitas (`config`, `db`), lo que permite tests de integración con `app.inject()` sin red.
 - **Módulos** en `src/modules/<módulo>/`: rutas (`*.routes.ts`), servicios de aplicación
-  (`*.service.ts`) y plugins. En Fase 0: `health`, `auth`, `audit`. Los módulos futuros siguen la
-  lista de la especificación (§30): `users`, `employees`, `customers`, `suppliers`, `catalog`,
-  `products`, `raw-materials`, `units`, `recipes`, `inventory`, `purchases`, `production`, `sales`,
-  `billing`, `customer-accounts`, `supplier-accounts`, `cash`, `expenses`, `reports`, `settings`.
+  (`*.service.ts`) y plugins. Fase 0: `health`, `auth`, `audit`. Fase 1: `company-settings`,
+  `employees`, `users`, `roles`, `customers`, `suppliers`, `units`, `categories`, `raw-materials`,
+  `products`, `warehouses`. Los módulos futuros siguen la lista de la especificación (§30).
+- **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
+  `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
+  `POST /api/x/:id/deactivate` y `/activate`. No hay `DELETE`. Un id de otra empresa responde 404
+  como si no existiera; una referencia a otra empresa en un alta, 422 `INVALID_REFERENCE`.
+- **Empresa de la operación:** `operationContext(request)` (`src/lib/context.ts`) la toma de la
+  sesión (membresía autorizada). Ningún endpoint acepta `companyId` del cliente; si llega, zod lo
+  descarta.
+- **Códigos de error estables** de Fase 1: `VALIDATION_ERROR`, `NOT_FOUND`, `CODE_TAKEN`,
+  `EMAIL_TAKEN`, `DOCUMENT_TAKEN`, `INVALID_REFERENCE`, `INVALID_UNIT_DEFINITION`,
+  `INCOMPATIBLE_UNITS`, `EMPLOYEE_ALREADY_LINKED`, `EMPLOYEE_INACTIVE`, `CANNOT_MODIFY_SELF`.
+  Las violaciones de unicidad de la base se traducen por nombre de constraint
+  (`mapUniqueViolations`).
 - **Regla de dependencias:** rutas → servicios → base de datos. Un módulo solo usa otro a través
   de su servicio exportado; nunca importa sus rutas. `audit` es un módulo hoja que cualquiera
   puede usar. Sin dependencias circulares.
@@ -55,12 +67,26 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   Esto es solo UX: **la autorización real siempre se valida en la API**.
 - La web no contiene lógica de negocio ni secretos; solo presenta datos de la API.
 - Las secciones futuras del menú muestran "Disponible en próxima etapa" (sin funcionalidad falsa).
+- **Maestros (Fase 1):** componentes cliente genéricos en `src/components/masters/`: `MasterList`
+  (búsqueda con demora, filtro de estado y filtros extra sincronizados con la URL, paginación del
+  servidor), `EntityForm` (campos declarativos, errores por campo que devuelve la API) y piezas de
+  detalle (`Details`, `ActiveToggle` con diálogo de confirmación, `AuditHistory`). Cada maestro
+  define sus columnas, campos y detalle en su archivo; las rutas de `src/app/(app)/` solo los montan.
+- La validación real la hace la API con los esquemas zod de `@bakery/shared`; la web muestra los
+  errores por campo que recibe. Los permisos del usuario (`useCan`) solo ocultan acciones.
+- La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared
 
 Contratos entre API y web sin dependencias de servidor: catálogo de permisos, roles de sistema,
-esquema de login, tipos de usuario actual y paginación. Es la fuente de verdad de los códigos de
-permiso.
+esquemas zod de alta/edición de cada maestro, DTOs de respuesta, etiquetas de auditoría y la matriz
+de permisos que genera `docs/PERMISSIONS.md`. Es la fuente de verdad de los códigos de permiso.
+
+### packages/domain
+
+Reglas de negocio puras, sin base ni HTTP: conversión de unidades (`convertQuantity`,
+`validateDerivedUnit`, unidades estándar) y formato de códigos internos. Usa `decimal.js` para
+toda aritmética (ADR-017).
 
 ### packages/database
 

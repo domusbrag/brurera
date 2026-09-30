@@ -41,7 +41,7 @@ test("admin ingresa, ve el shell, navega y sale", async ({ page }) => {
   await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { level: 1, name: "Inicio" })).toBeVisible();
-  await expect(page.getByTestId("current-user")).toContainText("Admin Sistema");
+  await expect(page.getByTestId("current-user")).toContainText("Administrador Demo");
   await expect(page.getByTestId("current-user")).toContainText("Administrador del sistema");
   await expect(page.getByRole("heading", { name: "Actividad reciente" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "Ingreso al sistema" }).first()).toBeVisible();

@@ -124,3 +124,66 @@ y CI.
 `/login` si no hay sesión. Sin middleware/proxy de Next: la protección real está en la API.
 **Consecuencias.** Una llamada interna extra por navegación; simple y sin duplicar lógica de auth
 en el frontend.
+
+## ADR-015 — Membresía usuario ↔ empresa (Fase 1, corrige ADR-008 para usuarios)
+
+**Contexto.** En Fase 0 `users.company_id` ataba cada usuario a una sola empresa y `user_roles`
+se acotaba a la empresa solo de forma implícita. La Fase 1 exige que un mismo usuario pueda tener
+roles distintos en empresas distintas.
+**Decisión.** `users` pasa a ser identidad global. La pertenencia vive en `company_memberships`
+(empresa, usuario, empleado opcional, estado) y los roles en `membership_roles`, con `company_id`
+redundante y FKs compuestas `(company_id, id)` hacia roles, empleados y membresías. Cada sesión
+guarda la empresa en la que trabaja (`sessions.company_id`). Migración 0002 traslada los datos;
+0003 borra las columnas viejas. 0000 y 0001 no se tocan.
+**Consecuencias.** La autorización sigue siendo por permiso (ADR-007 intacto). "Desactivar
+usuario" desactiva la membresía en esa empresa y revoca sus sesiones; el bloqueo global de la
+identidad queda disponible (`users.status`). En el MVP la sesión toma la primera membresía activa
+y no hay selector de empresa; un email ya registrado no puede sumarse a otra empresa desde la UI
+(se hará cuando exista el selector). La migración cierra las sesiones abiertas una vez.
+
+## ADR-016 — Tenancy reforzada por la base con FKs compuestas
+
+**Decisión.** Toda tabla de negocio tiene `UNIQUE (company_id, id)` y las referencias entre
+maestros usan `FOREIGN KEY (company_id, x_id) REFERENCES x (company_id, id)`. La empresa de cada
+operación sale de la sesión (`operationContext`), nunca del request.
+**Consecuencias.** Aunque un bug de aplicación dejara pasar un id ajeno, la base rechaza la fila.
+La API igual valida antes para responder 422 `INVALID_REFERENCE` sin revelar si el id existe en
+otra empresa. Costo: un índice único extra por tabla.
+
+## ADR-017 — decimal.js para aritmética de dominio (adelantado de Fase 2)
+
+**Decisión.** `packages/domain` nace en Fase 1 con la conversión de unidades, que ya necesita
+multiplicar y dividir cantidades. Se elige `decimal.js` (precisión arbitraria, API madura, sin
+dependencias). Dinero y cantidades viajan como strings decimales entre base, API y web; nunca como
+`number`.
+**Consecuencias.** Recetas y costos (Fase 2) usarán la misma librería.
+
+## ADR-018 — Unidades por empresa con conversión inmutable
+
+**Decisión.** Las unidades son datos por empresa (las estándar se crean al aprovisionar). Una
+unidad raíz no tiene base; una derivada declara `1 u = factor × base` con base raíz de la misma
+dimensión (un solo nivel). Solo se convierte entre unidades con la misma raíz, así masa ↔ volumen
+es imposible sin densidad (que el MVP no modela). Dimensión, base y factor no se editan tras
+crearse; nombre, símbolo, decimales y estado sí. La unidad base de una materia prima debe ser raíz.
+**Consecuencias.** Cambiar la definición de una unidad exige crear otra: se evita reinterpretar
+cantidades ya cargadas. "Bolsa de 25 kg" se modela como unidad derivada de masa, no como envase
+genérico.
+
+## ADR-019 — Códigos internos por empresa con tabla de secuencias
+
+**Decisión.** `code_sequences (company_id, entity, next_value)` entrega el próximo número con un
+`INSERT … ON CONFLICT DO UPDATE` dentro de la transacción del alta (la fila queda bloqueada hasta
+el commit). Formato `PREFIJO-0001` (`CLI`, `PROV`, `MP`, `PROD`, `EMP`, `DEP`). Si el usuario carga
+un código manual, se respeta; si el automático ya está tomado, se salta al siguiente. Unicidad final
+por `UNIQUE (company_id, código)`.
+**Consecuencias.** Sin carreras entre altas concurrentes; puede haber huecos si una transacción se
+revierte (aceptable: el código no es numeración fiscal).
+
+## ADR-020 — Categorías en una sola tabla; lista de precios diferida
+
+**Decisión.** Una tabla `categories` con `type` (`RAW_MATERIAL`/`PRODUCT`) en lugar de dos tablas
+iguales; la API valida que una materia prima use una categoría de su tipo. `customers.price_list_id`
+no se crea en Fase 1: llega en Fase 5 junto con `price_lists`, con su FK real, en vez de dejar una
+columna huérfana.
+**Consecuencias.** Menos código duplicado; la restricción de tipo vive en la aplicación (probada
+por tests).

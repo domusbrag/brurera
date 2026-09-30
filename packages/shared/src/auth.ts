@@ -14,7 +14,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   displayName: string;
-  company: { id: string; tradeName: string };
+  company: { id: string; tradeName: string; timezone: string; currencyCode: string };
   roles: { code: string; name: string }[];
   permissions: string[];
 }

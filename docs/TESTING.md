@@ -24,17 +24,35 @@ Principios:
 pnpm db:up          # PostgreSQL debe estar arriba
 pnpm test           # unit + integración de todos los paquetes
 pnpm test:e2e       # build + Playwright (requiere `pnpm bootstrap` previo: migraciones + seed)
+pnpm docs:permissions  # regenera la matriz de docs/PERMISSIONS.md si cambian roles o permisos
 ```
 
 Por paquete: `pnpm --filter @bakery/api test:unit`, `pnpm --filter @bakery/api test:integration`.
 
 La base de test se crea y migra automáticamente (`apps/api/test/integration/global-setup.ts`).
-Cada archivo de integración trunca las tablas y carga una fixture mínima (empresa, permisos, roles
-de sistema, un ADMIN y un usuario de VENTAS). Los archivos corren en serie. Protección: los tests se
+Cada archivo de integración trunca las tablas y carga una fixture propia: Empresa A ("Panadería
+Test", aprovisionada con roles, unidades y depósito) con un ADMIN y un usuario de VENTAS, y
+Empresa B ("Panadería Otra") con su ADMIN para las pruebas de aislamiento. Los archivos corren en serie. Protección: los tests se
 niegan a correr si `DATABASE_URL_TEST` no apunta a una base terminada en `_test`.
 
 Playwright usa el Chromium del sistema si `PLAYWRIGHT_CHROMIUM_EXECUTABLE` está definido; si no,
 el de `playwright install chromium`. Corre en dos viewports: desktop y tablet (820×1180).
+
+## Cobertura de Fase 1
+
+| Suite             | Archivo(s)                                     | Qué cubre                                                                                                                                                                                                                                                                                                          |
+| ----------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| domain (unit)     | `packages/domain/test/{units,codes}.test.ts`   | Conversión exacta con decimal.js, masa↔volumen rechazado, definición de unidades derivadas, formato y normalización de códigos                                                                                                                                                                                     |
+| shared (unit)     | `packages/shared/test/masters.test.ts`         | Validaciones zod (decimales, códigos, fechas, zona horaria, contraseña, edición sin cambios), permisos efectivos                                                                                                                                                                                                   |
+| shared (doc)      | `packages/shared/test/permissions-doc.test.ts` | `docs/PERMISSIONS.md` coincide con `SYSTEM_ROLES`                                                                                                                                                                                                                                                                  |
+| database (unit)   | `packages/database/test/schema.test.ts`        | Tablas esperadas, sin float, sin columna de stock, `company_id` en toda tabla de negocio, `timestamptz`                                                                                                                                                                                                            |
+| api (unit)        | `apps/api/test/unit/audit-diff.test.ts`        | Diff de auditoría sin secretos, "hoy" en la zona de la empresa, escape de LIKE                                                                                                                                                                                                                                     |
+| api (integración) | `masters.test.ts`                              | Clientes, proveedores, depósitos, categorías, materias primas y productos: códigos automáticos/manuales, duplicados, búsqueda, paginación, edición, desactivación sin borrado, referencias inválidas, auditoría                                                                                                    |
+| api (integración) | `people.test.ts`                               | Empresa; empleados (legajo, documento único, baja con fecha); usuarios (alta con empleado, roles, permisos efectivos, login rechazado tras desactivar, baja de empleado desactiva su acceso, no auto-modificación); roles                                                                                          |
+| api (integración) | `units.test.ts`                                | Unidades estándar, conversiones válidas e incompatibles, unidades derivadas, inmutabilidad de la conversión                                                                                                                                                                                                        |
+| api (integración) | `tenancy.test.ts`                              | Empresa A/B: leer, modificar, desactivar, inferir por búsqueda y referenciar datos ajenos (9 entidades), `companyId` enviado se ignora, auditoría separada, FK compuesta en la base                                                                                                                                |
+| api (integración) | `authorization.test.ts`                        | Matriz rol × endpoint contra la API real (7 roles × 51 endpoints) y ausencia de chequeos por código de rol                                                                                                                                                                                                         |
+| E2E               | `e2e/fase1-maestros.spec.ts`                   | Flujo de 19 pasos (login → empresa → empleado → acceso → rol → cliente → proveedor → unidad → categorías → materia prima → producto → depósito → buscar → editar → desactivar → auditoría → logout), login del usuario creado con menú según sus roles, sin errores de consola; ningún UUID visible en la interfaz |
 
 ## Cobertura de Fase 0
 

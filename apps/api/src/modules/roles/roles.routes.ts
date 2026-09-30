@@ -1,5 +1,5 @@
 import { permissions, rolePermissions, roles, type Database } from "@bakery/database";
-import { PERMISSIONS, type RoleDto } from "@bakery/shared";
+import { PERMISSIONS, SYSTEM_ROLE_CODES, type RoleDto } from "@bakery/shared";
 import { asc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { operationContext } from "../../lib/context.js";
@@ -32,7 +32,14 @@ export async function roleRoutes(app: FastifyInstance, { db }: { db: Database })
         if (permission) dto.permissions.push(permission);
         byId.set(role.id, dto);
       }
-      return [...byId.values()];
+      // Roles de sistema en su orden canónico (Administrador, Dueño, …); después los propios.
+      const rank = (code: string) => {
+        const i = (SYSTEM_ROLE_CODES as readonly string[]).indexOf(code);
+        return i === -1 ? SYSTEM_ROLE_CODES.length : i;
+      };
+      return [...byId.values()].sort(
+        (a, b) => rank(a.code) - rank(b.code) || a.name.localeCompare(b.name),
+      );
     },
   );
 }

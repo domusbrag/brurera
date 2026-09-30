@@ -206,6 +206,7 @@ export class AuthService {
         companyId: companies.id,
         tradeName: companies.tradeName,
         timezone: companies.timezone,
+        currencyCode: companies.currencyCode,
       })
       .from(companyMemberships)
       .innerJoin(users, eq(users.id, companyMemberships.userId))
@@ -244,7 +245,12 @@ export class AuthService {
         id: base.id,
         email: base.email,
         displayName: base.displayName,
-        company: { id: base.companyId, tradeName: base.tradeName },
+        company: {
+          id: base.companyId,
+          tradeName: base.tradeName,
+          timezone: base.timezone,
+          currencyCode: base.currencyCode,
+        },
         roles: [...roleMap]
           .map(([code, name]) => ({ code, name }))
           .sort((a, b) => a.code.localeCompare(b.code)),
