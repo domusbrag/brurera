@@ -24,7 +24,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "docs:permissions": "UPDATE_PERMISSIONS_DOC=1 pnpm --filter @bakery/shared exec vitest run test/permissions-doc.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

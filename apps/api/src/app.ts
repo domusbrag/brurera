@@ -10,7 +10,18 @@ import { auditRoutes } from "./modules/audit/audit.routes.js";
 import { authPlugin } from "./modules/auth/auth.plugin.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import { categoryRoutes } from "./modules/categories/categories.routes.js";
+import { companyRoutes } from "./modules/company-settings/company.routes.js";
+import { customerRoutes } from "./modules/customers/customers.routes.js";
+import { employeeRoutes } from "./modules/employees/employees.routes.js";
 import { healthRoutes } from "./modules/health/health.routes.js";
+import { productRoutes } from "./modules/products/products.routes.js";
+import { rawMaterialRoutes } from "./modules/raw-materials/raw-materials.routes.js";
+import { roleRoutes } from "./modules/roles/roles.routes.js";
+import { supplierRoutes } from "./modules/suppliers/suppliers.routes.js";
+import { unitRoutes } from "./modules/units/units.routes.js";
+import { userRoutes } from "./modules/users/users.routes.js";
+import { warehouseRoutes } from "./modules/warehouses/warehouses.routes.js";
 
 export interface AppDeps {
   config: AppConfig;
@@ -87,6 +98,21 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
         loginRateLimitPerMinute: config.LOGIN_RATE_LIMIT_PER_MINUTE,
       });
       await api.register(auditRoutes, { db });
+      for (const routes of [
+        companyRoutes,
+        employeeRoutes,
+        userRoutes,
+        roleRoutes,
+        customerRoutes,
+        supplierRoutes,
+        unitRoutes,
+        categoryRoutes,
+        rawMaterialRoutes,
+        productRoutes,
+        warehouseRoutes,
+      ]) {
+        await api.register(routes, { db });
+      }
     },
     { prefix: "/api" },
   );

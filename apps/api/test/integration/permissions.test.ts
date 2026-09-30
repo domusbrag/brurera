@@ -1,3 +1,4 @@
+import { SYSTEM_ROLES } from "@bakery/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ADMIN, SELLER, createTestContext, loginAs, type TestContext } from "./helpers.js";
 
@@ -27,7 +28,8 @@ describe("permisos básicos (autorización en servidor)", () => {
   it("VENTAS recibe solo sus permisos efectivos", async () => {
     const cookie = await loginAs(ctx.app, SELLER);
     const res = await ctx.app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie } });
-    expect(res.json().user.permissions).toEqual(["dashboard.view"]);
+    const sales = SYSTEM_ROLES.find((r) => r.code === "SALES")!;
+    expect([...res.json().user.permissions].sort()).toEqual([...sales.permissions].sort());
   });
 
   it("ADMIN puede leer auditoría paginada y ve su propio login con actor", async () => {

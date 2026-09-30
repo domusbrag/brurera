@@ -3,3 +3,4 @@ packages/database/migrations/meta
 .next
 dist
 packages/database/migrations
+docs/PERMISSIONS.md

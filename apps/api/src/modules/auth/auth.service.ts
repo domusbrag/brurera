@@ -1,16 +1,17 @@
 import {
   companies,
+  companyMemberships,
+  membershipRoles,
   permissions,
   rolePermissions,
   roles,
   sessions,
-  userRoles,
   users,
   type Database,
 } from "@bakery/database";
 import type { CurrentUser } from "@bakery/shared";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { AUDIT_ACTIONS, recordAudit } from "../audit/audit.service.js";
+import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
+import { recordAudit } from "../audit/audit.service.js";
 import { getDummyHash, verifyPassword } from "./password.js";
 import { generateSessionToken, hashSessionToken } from "./session-token.js";
 
@@ -22,6 +23,8 @@ export interface RequestMeta {
 
 export interface AuthContext {
   sessionId: string;
+  membershipId: string;
+  companyTimezone: string;
   user: CurrentUser;
   permissions: Set<string>;
 }
@@ -29,6 +32,14 @@ export interface AuthContext {
 /** Intervalo mínimo entre actualizaciones de last_seen_at, para no escribir en cada request. */
 const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
 
+type LoginFailureReason =
+  "UNKNOWN_USER" | "BAD_PASSWORD" | "USER_DISABLED" | "NO_ACTIVE_MEMBERSHIP";
+
+/**
+ * Autenticación y resolución de autoridad:
+ *   usuario (identidad global) → membresía activa en la empresa de la sesión
+ *   → roles de esa membresía → permisos.
+ */
 export class AuthService {
   constructor(
     private readonly db: Database,
@@ -36,9 +47,9 @@ export class AuthService {
   ) {}
 
   /**
-   * Verifica credenciales y crea una sesión. Devuelve null ante cualquier fallo
-   * (usuario inexistente, deshabilitado o contraseña incorrecta) sin distinguir
-   * el motivo hacia afuera, para no permitir enumeración de usuarios.
+   * Verifica credenciales y crea una sesión en la empresa de la primera membresía
+   * activa del usuario (el MVP no ofrece selector de empresa). Devuelve null ante
+   * cualquier fallo sin distinguir el motivo hacia afuera.
    */
   async login(
     email: string,
@@ -55,17 +66,36 @@ export class AuthService {
       ? await verifyPassword(user.passwordHash, password)
       : await verifyPassword(await getDummyHash(), password).then(() => false);
 
-    if (!user || !passwordOk || user.status !== "ACTIVE") {
+    const [membership] = user
+      ? await this.db
+          .select({ id: companyMemberships.id, companyId: companyMemberships.companyId })
+          .from(companyMemberships)
+          .innerJoin(companies, eq(companies.id, companyMemberships.companyId))
+          .where(
+            and(
+              eq(companyMemberships.userId, user.id),
+              eq(companyMemberships.status, "ACTIVE"),
+              eq(companies.active, true),
+            ),
+          )
+          .orderBy(asc(companyMemberships.createdAt))
+          .limit(1)
+      : [];
+
+    let failure: LoginFailureReason | null = null;
+    if (!user) failure = "UNKNOWN_USER";
+    else if (!passwordOk) failure = "BAD_PASSWORD";
+    else if (user.status !== "ACTIVE") failure = "USER_DISABLED";
+    else if (!membership) failure = "NO_ACTIVE_MEMBERSHIP";
+
+    if (failure || !user || !membership) {
       await recordAudit(this.db, {
-        companyId: user?.companyId ?? null,
+        companyId: membership?.companyId ?? null,
         actorUserId: null,
-        action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+        action: "AUTH_LOGIN_FAILED",
         entityType: "user",
         entityId: user?.id ?? null,
-        metadata: {
-          email,
-          reason: !user ? "UNKNOWN_USER" : !passwordOk ? "BAD_PASSWORD" : "USER_DISABLED",
-        },
+        metadata: { email, reason: failure },
         requestId: meta.requestId,
         ipAddress: meta.ipAddress,
       });
@@ -81,6 +111,7 @@ export class AuthService {
         .insert(sessions)
         .values({
           userId: user.id,
+          companyId: membership.companyId,
           tokenHash: hashSessionToken(token),
           expiresAt,
           ipAddress: meta.ipAddress,
@@ -89,9 +120,9 @@ export class AuthService {
         .returning({ id: sessions.id });
       await tx.update(users).set({ lastLoginAt: now }).where(eq(users.id, user.id));
       await recordAudit(tx, {
-        companyId: user.companyId,
+        companyId: membership.companyId,
         actorUserId: user.id,
-        action: AUDIT_ACTIONS.AUTH_LOGIN_SUCCEEDED,
+        action: "AUTH_LOGIN_SUCCEEDED",
         entityType: "session",
         entityId: session?.id ?? null,
         requestId: meta.requestId,
@@ -99,16 +130,25 @@ export class AuthService {
       });
     });
 
-    const context = await this.loadUserContext(user.id);
-    if (!context) throw new Error(`Usuario ${user.id} sin empresa válida`);
+    const context = await this.loadContext(user.id, membership.companyId);
+    if (!context) throw new Error(`Membresía ${membership.id} desapareció durante el login`);
     return { token, expiresAt, user: context.user };
   }
 
-  /** Resuelve la sesión a partir del token de la cookie. Null si no es válida. */
+  /**
+   * Resuelve la sesión a partir del token de la cookie. Es válida solo si no
+   * expiró ni fue revocada, el usuario está activo y su membresía en la empresa
+   * de la sesión sigue activa. Null si no.
+   */
   async authenticate(token: string): Promise<AuthContext | null> {
     const now = new Date();
     const [row] = await this.db
-      .select({ sessionId: sessions.id, userId: sessions.userId, lastSeenAt: sessions.lastSeenAt })
+      .select({
+        sessionId: sessions.id,
+        userId: sessions.userId,
+        companyId: sessions.companyId,
+        lastSeenAt: sessions.lastSeenAt,
+      })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
       .where(
@@ -122,12 +162,12 @@ export class AuthService {
       .limit(1);
     if (!row) return null;
 
+    const context = await this.loadContext(row.userId, row.companyId);
+    if (!context) return null;
+
     if (now.getTime() - row.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS) {
       await this.db.update(sessions).set({ lastSeenAt: now }).where(eq(sessions.id, row.sessionId));
     }
-
-    const context = await this.loadUserContext(row.userId);
-    if (!context) return null;
     return { sessionId: row.sessionId, ...context };
   }
 
@@ -140,7 +180,7 @@ export class AuthService {
       await recordAudit(tx, {
         companyId: auth.user.company.id,
         actorUserId: auth.user.id,
-        action: AUDIT_ACTIONS.AUTH_LOGOUT,
+        action: "AUTH_LOGOUT",
         entityType: "session",
         entityId: auth.sessionId,
         requestId: meta.requestId,
@@ -149,31 +189,45 @@ export class AuthService {
     });
   }
 
-  /** Carga usuario, empresa, roles y permisos efectivos en dos consultas. */
-  private async loadUserContext(
+  /**
+   * Autoridad del usuario en una empresa: membresía activa (en empresa activa),
+   * sus roles y la unión de sus permisos. Dos consultas, sin N+1.
+   */
+  private async loadContext(
     userId: string,
-  ): Promise<{ user: CurrentUser; permissions: Set<string> } | null> {
+    companyId: string,
+  ): Promise<Omit<AuthContext, "sessionId"> | null> {
     const [base] = await this.db
       .select({
+        membershipId: companyMemberships.id,
         id: users.id,
         email: users.email,
         displayName: users.displayName,
         companyId: companies.id,
         tradeName: companies.tradeName,
+        timezone: companies.timezone,
       })
-      .from(users)
-      .innerJoin(companies, eq(companies.id, users.companyId))
-      .where(eq(users.id, userId))
+      .from(companyMemberships)
+      .innerJoin(users, eq(users.id, companyMemberships.userId))
+      .innerJoin(companies, eq(companies.id, companyMemberships.companyId))
+      .where(
+        and(
+          eq(companyMemberships.userId, userId),
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.status, "ACTIVE"),
+          eq(companies.active, true),
+        ),
+      )
       .limit(1);
     if (!base) return null;
 
     const grants = await this.db
       .select({ roleCode: roles.code, roleName: roles.name, permissionCode: permissions.code })
-      .from(userRoles)
-      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .from(membershipRoles)
+      .innerJoin(roles, eq(roles.id, membershipRoles.roleId))
       .leftJoin(rolePermissions, eq(rolePermissions.roleId, roles.id))
       .leftJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
-      .where(eq(userRoles.userId, userId));
+      .where(eq(membershipRoles.membershipId, base.membershipId));
 
     const roleMap = new Map<string, string>();
     const permissionSet = new Set<string>();
@@ -183,6 +237,8 @@ export class AuthService {
     }
 
     return {
+      membershipId: base.membershipId,
+      companyTimezone: base.timezone,
       permissions: permissionSet,
       user: {
         id: base.id,

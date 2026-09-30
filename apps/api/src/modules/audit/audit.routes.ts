@@ -1,29 +1,36 @@
 import { auditLogs, users, type Database } from "@bakery/database";
-import { PERMISSIONS, paginationQuerySchema, toOffset, type Page } from "@bakery/shared";
-import { count, desc, eq } from "drizzle-orm";
+import {
+  PERMISSIONS,
+  paginationQuerySchema,
+  type AuditLogItemDto,
+  type Page,
+} from "@bakery/shared";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { operationContext } from "../../lib/context.js";
 import { parseInput } from "../../lib/errors.js";
-import { getAuth, requirePermission } from "../auth/auth.plugin.js";
+import { pageWindow, toPage } from "../../lib/listing.js";
+import { requirePermission } from "../auth/auth.plugin.js";
 
-export interface AuditLogItem {
-  id: number;
-  action: string;
-  entityType: string;
-  entityId: string | null;
-  actor: { id: string; displayName: string } | null;
-  metadata: Record<string, unknown>;
-  requestId: string | null;
-  createdAt: string;
-}
+const auditQuerySchema = paginationQuerySchema.extend({
+  entityType: z.string().trim().max(64).optional(),
+  entityId: z.string().trim().max(100).optional(),
+});
 
-/** Consulta paginada (server-side) del registro de auditoría de la empresa. */
+/** Consulta paginada (server-side) del registro de auditoría de la empresa de la sesión. */
 export async function auditRoutes(app: FastifyInstance, opts: { db: Database }) {
   app.get(
     "/audit-logs",
     { preHandler: requirePermission(PERMISSIONS.AUDIT_READ) },
-    async (request) => {
-      const query = parseInput(paginationQuerySchema, request.query);
-      const companyId = getAuth(request).user.company.id;
+    async (request): Promise<Page<AuditLogItemDto>> => {
+      const query = parseInput(auditQuerySchema, request.query);
+      const { companyId } = operationContext(request);
+      const where = and(
+        eq(auditLogs.companyId, companyId),
+        query.entityType ? eq(auditLogs.entityType, query.entityType) : undefined,
+        query.entityId ? eq(auditLogs.entityId, query.entityId) : undefined,
+      );
 
       const [rows, totals] = await Promise.all([
         opts.db
@@ -40,21 +47,15 @@ export async function auditRoutes(app: FastifyInstance, opts: { db: Database }) 
           })
           .from(auditLogs)
           .leftJoin(users, eq(users.id, auditLogs.actorUserId))
-          .where(eq(auditLogs.companyId, companyId))
+          .where(where)
           .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
-          .limit(query.pageSize)
-          .offset(toOffset(query)),
-        opts.db
-          .select({ total: count() })
-          .from(auditLogs)
-          .where(eq(auditLogs.companyId, companyId)),
+          .limit(pageWindow(query).limit)
+          .offset(pageWindow(query).offset),
+        opts.db.select({ total: count() }).from(auditLogs).where(where),
       ]);
 
-      const page: Page<AuditLogItem> = {
-        page: query.page,
-        pageSize: query.pageSize,
-        total: totals[0]?.total ?? 0,
-        items: rows.map((r) => ({
+      return toPage(
+        rows.map((r) => ({
           id: r.id,
           action: r.action,
           entityType: r.entityType,
@@ -64,8 +65,9 @@ export async function auditRoutes(app: FastifyInstance, opts: { db: Database }) 
           requestId: r.requestId,
           createdAt: r.createdAt.toISOString(),
         })),
-      };
-      return page;
+        totals[0]?.total ?? 0,
+        query,
+      );
     },
   );
 }
