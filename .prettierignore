@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+packages/database/migrations/meta
+.next
+dist
+packages/database/migrations
