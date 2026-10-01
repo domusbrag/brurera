@@ -303,12 +303,11 @@ promedio sin existencia); si no, `(valor anterior + cantidad × costo) ÷ cantid
 el promedio no cambia y sale `cantidad × promedio`; si la existencia queda en 0, el valor queda en 0
 (la salida absorbe el residuo de redondeo). Escalas: cantidades 10 decimales, costo unitario y
 valor del movimiento 6, promedio 6 (HALF_UP). El valor de inventario se guarda como valor anterior
-
-- valor del movimiento, sin recalcularlo desde el promedio redondeado.
-  **Consecuencias.** Mover stock entre depósitos no cambiaría el costo (cuando existan
-  transferencias). El valor no acumula errores del promedio; `valor ÷ cantidad` puede diferir del
-  promedio guardado en el sexto decimal. Cada cambio de promedio queda en `inventory_cost_history` y
-  en la auditoría (`MOVING_AVERAGE_COST_CHANGED`).
+más valor del movimiento, sin recalcularlo desde el promedio redondeado.
+**Consecuencias.** Mover stock entre depósitos no cambiaría el costo (cuando existan
+transferencias). El valor no acumula errores del promedio; `valor ÷ cantidad` puede diferir del
+promedio guardado en el sexto decimal. Cada cambio de promedio queda en `inventory_cost_history` y
+en la auditoría (`MOVING_AVERAGE_COST_CHANGED`).
 
 ## ADR-030 — Presentaciones de compra por materia prima (resuelve ADR-025)
 
