@@ -37,6 +37,13 @@ Ingresar en http://localhost:3000 con:
 Credenciales **solo de desarrollo** (configurables en `.env` con `SEED_ADMIN_EMAIL` /
 `SEED_ADMIN_PASSWORD`). El seed se niega a correr con `NODE_ENV=production`.
 
+### Windows
+
+Funciona en PowerShell o Git Bash con Docker Desktop abierto. `pnpm install` es obligatorio antes
+de `pnpm bootstrap` o `pnpm dev`. El repo fuerza finales de línea LF (`.gitattributes`); si el
+clon es anterior a ese cambio y `pnpm lint` marca todos los archivos, renormalizar con
+`git rm --cached -r . && git reset --hard` (descarta cambios locales sin commitear).
+
 ## Comandos
 
 | Comando                  | Qué hace                                                             |
