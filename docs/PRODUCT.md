@@ -39,33 +39,37 @@ costos, precios, reportes, auditoría y configuración empresarial.
 7. **Maestros separados de transacciones.** Los documentos confirmados no se eliminan
    silenciosamente; se corrigen con operaciones explícitas (cancelación, reversión).
 
+## Estado
+
+Fases 0 (fundación) y 1 (maestros) implementadas. Ver [ROADMAP](ROADMAP.md).
+
 ## Alcance del MVP (resumen)
 
-| Módulo                  | Contenido                                                                                                                                 |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Empresa y configuración | Razón social, nombre comercial, CUIT, contacto, logo, moneda, zona horaria. Una empresa operativa, sin bloquear multiempresa.             |
-| Usuarios y empleados    | Empleado (persona) separado de Usuario (identidad de acceso). Sin liquidación de sueldos.                                                 |
-| Roles y permisos        | ADMIN, DUEÑO, ADMINISTRACIÓN, VENTAS, COMPRAS, PRODUCCIÓN, DEPÓSITO. Permisos explícitos; roles como datos.                               |
-| Clientes                | Datos comerciales, tipo, lista de precios, límite de crédito, historial y cuenta corriente.                                               |
-| Proveedores             | Datos, condición de pago, compras, pagos, deuda, evolución de precios.                                                                    |
-| Unidades de medida      | kg, g, litro, ml, unidad, docena, bolsa, caja. Conversiones explícitas y testeables.                                                      |
-| Materias primas         | Código, categoría, unidad base, costo actual, stock derivado del ledger, stock mínimo.                                                    |
-| Productos terminados    | Unidad de venta, precio, costo calculado, margen, control de stock opcional, receta opcional.                                             |
-| Recetas                 | Recipe → RecipeVersion → RecipeIngredient. Versiones inmutables una vez usadas. Costo teórico.                                            |
-| Inventario              | `StockMovement` con tipo, origen, referencia, usuario. Depósitos (`Warehouse`) modelados desde el inicio.                                 |
-| Compras                 | Borrador → Recibida → Pendiente/Parcial/Pagada. Recepción genera stock y actualiza costo (promedio ponderado móvil).                      |
-| Producción              | `ProductionOrder` (DRAFT/PLANNED/IN_PROGRESS/COMPLETED/CANCELLED). Completar = consumo + salida + snapshot de costos, en una transacción. |
-| Mermas                  | Materia prima o producto, motivo, cantidad, responsable. Genera movimientos.                                                              |
-| Ventas                  | DRAFT/CONFIRMED/PARTIALLY_PAID/PAID/CANCELLED. Confirmar descuenta stock una sola vez. Corrección por cancelación controlada.             |
-| Listas de precios       | Modelo preparado para varias listas; MVP con una principal.                                                                               |
-| Cuentas corrientes      | Ledger de clientes (`CustomerAccountMovement`) y de proveedores (`SupplierAccountMovement`).                                              |
-| Caja                    | `CashAccount`, `CashMovement`, medios de pago, resumen diario.                                                                            |
-| Gastos                  | Categorías, registro y reporte.                                                                                                           |
-| Facturación             | `Invoice` + interfaz `TaxInvoiceProvider`; primera implementación `InternalInvoiceProvider`. Sin integración fiscal real en el MVP.       |
-| Auditoría               | `AuditLog` para operaciones críticas, sin secretos.                                                                                       |
-| Dashboard del dueño     | Indicadores de hoy, stock bajo mínimo, deudores, producción. Solo métricas respaldadas por datos reales.                                  |
-| Reportes                | Ventas, compras, stock, producción, mermas, saldos, caja, costos. Filtros por fecha, cliente, proveedor, producto, categoría.             |
-| Catálogo                | Catálogo interno administrable. El catálogo público es una evolución posterior.                                                           |
+| Módulo                  | Contenido                                                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empresa y configuración | Razón social, nombre comercial, CUIT, contacto, logo, moneda, zona horaria. Una empresa operativa, sin bloquear multiempresa.                                                     |
+| Usuarios y empleados    | Empleado (persona) separado de Usuario (identidad de acceso). Un usuario pertenece a una o más empresas por membresía, con roles propios en cada una. Sin liquidación de sueldos. |
+| Roles y permisos        | ADMIN, DUEÑO, ADMINISTRACIÓN, VENTAS, COMPRAS, PRODUCCIÓN, DEPÓSITO. Permisos explícitos; roles como datos.                                                                       |
+| Clientes                | Datos comerciales, tipo, lista de precios, límite de crédito, historial y cuenta corriente.                                                                                       |
+| Proveedores             | Datos, condición de pago, compras, pagos, deuda, evolución de precios.                                                                                                            |
+| Unidades de medida      | kg, g, litro, ml, unidad, docena, bolsa, caja. Conversiones explícitas y testeables.                                                                                              |
+| Materias primas         | Código, categoría, unidad base, costo actual, stock derivado del ledger, stock mínimo.                                                                                            |
+| Productos terminados    | Unidad de venta, precio, costo calculado, margen, control de stock opcional, receta opcional.                                                                                     |
+| Recetas                 | Recipe → RecipeVersion → RecipeIngredient. Versiones inmutables una vez usadas. Costo teórico.                                                                                    |
+| Inventario              | `StockMovement` con tipo, origen, referencia, usuario. Depósitos (`Warehouse`) modelados desde el inicio.                                                                         |
+| Compras                 | Borrador → Recibida → Pendiente/Parcial/Pagada. Recepción genera stock y actualiza costo (promedio ponderado móvil).                                                              |
+| Producción              | `ProductionOrder` (DRAFT/PLANNED/IN_PROGRESS/COMPLETED/CANCELLED). Completar = consumo + salida + snapshot de costos, en una transacción.                                         |
+| Mermas                  | Materia prima o producto, motivo, cantidad, responsable. Genera movimientos.                                                                                                      |
+| Ventas                  | DRAFT/CONFIRMED/PARTIALLY_PAID/PAID/CANCELLED. Confirmar descuenta stock una sola vez. Corrección por cancelación controlada.                                                     |
+| Listas de precios       | Modelo preparado para varias listas; MVP con una principal.                                                                                                                       |
+| Cuentas corrientes      | Ledger de clientes (`CustomerAccountMovement`) y de proveedores (`SupplierAccountMovement`).                                                                                      |
+| Caja                    | `CashAccount`, `CashMovement`, medios de pago, resumen diario.                                                                                                                    |
+| Gastos                  | Categorías, registro y reporte.                                                                                                                                                   |
+| Facturación             | `Invoice` + interfaz `TaxInvoiceProvider`; primera implementación `InternalInvoiceProvider`. Sin integración fiscal real en el MVP.                                               |
+| Auditoría               | `AuditLog` para operaciones críticas, sin secretos.                                                                                                                               |
+| Dashboard del dueño     | Indicadores de hoy, stock bajo mínimo, deudores, producción. Solo métricas respaldadas por datos reales.                                                                          |
+| Reportes                | Ventas, compras, stock, producción, mermas, saldos, caja, costos. Filtros por fecha, cliente, proveedor, producto, categoría.                                                     |
+| Catálogo                | Catálogo interno administrable. El catálogo público es una evolución posterior.                                                                                                   |
 
 ## Fuera del MVP
 
@@ -93,8 +97,11 @@ Desktop-first para administración y usable desde tablet. Menú:
 - **Inventario:** Stock, Materias primas, Productos, Recetas
 - **Comercial:** Clientes, Proveedores
 - **Finanzas:** Caja, Cuentas a cobrar, Cuentas a pagar, Gastos, Facturación
-- **Equipo:** Empleados
+- **Equipo:** Empleados, Usuarios
 - **Análisis:** Reportes
-- **Configuración**
+- **Sistema:** Configuración (Empresa, Unidades, Categorías, Depósitos, Roles y permisos), Auditoría
+
+Los módulos ya implementados se muestran solo a quien tiene permiso para usarlos; los de fases
+futuras se muestran siempre, marcados "Disponible en próxima etapa".
 
 Lenguaje del negocio, sin conceptos técnicos en la interfaz.

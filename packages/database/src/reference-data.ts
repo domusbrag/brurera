@@ -1,7 +1,8 @@
+import { STANDARD_UNITS } from "@bakery/domain";
 import { PERMISSION_CATALOG, SYSTEM_ROLES } from "@bakery/shared";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import type { Database, Transaction } from "./client.js";
-import { permissions, rolePermissions, roles } from "./schema/index.js";
+import { permissions, rolePermissions, roles, unitsOfMeasure } from "./schema/index.js";
 
 /**
  * Sincroniza datos de referencia necesarios en CUALQUIER entorno (no son datos
@@ -83,4 +84,44 @@ export async function findRoleIdsByCode(
     .from(roles)
     .where(and(eq(roles.companyId, companyId), inArray(roles.code, [...codes])));
   return new Map(rows.map((r) => [r.code, r.id]));
+}
+
+/**
+ * Crea las unidades estándar de la empresa que falten (kg, g, l, ml, unidad,
+ * docena, bolsa, caja). No modifica unidades existentes. Idempotente.
+ */
+export async function syncStandardUnits(
+  db: Database | Transaction,
+  companyId: string,
+): Promise<void> {
+  const existing = await db
+    .select({ id: unitsOfMeasure.id, code: unitsOfMeasure.code })
+    .from(unitsOfMeasure)
+    .where(eq(unitsOfMeasure.companyId, companyId));
+  const idByCode = new Map(existing.map((u) => [u.code.toLowerCase(), u.id]));
+
+  // Primero las raíces, después las derivadas (que referencian a su raíz).
+  const ordered = [...STANDARD_UNITS].sort((a, b) => Number(!!a.base) - Number(!!b.base));
+  for (const unit of ordered) {
+    if (idByCode.has(unit.code)) continue;
+    const baseUnitId = unit.base ? idByCode.get(unit.base.code) : undefined;
+    if (unit.base && !baseUnitId) {
+      throw new Error(`Unidad base ${unit.base.code} inexistente para ${unit.code}`);
+    }
+    const [created] = await db
+      .insert(unitsOfMeasure)
+      .values({
+        companyId,
+        code: unit.code,
+        name: unit.name,
+        symbol: unit.symbol,
+        dimension: unit.dimension,
+        decimals: unit.decimals,
+        baseUnitId: baseUnitId ?? null,
+        conversionFactor: unit.base?.factor ?? null,
+        isSystem: true,
+      })
+      .returning({ id: unitsOfMeasure.id });
+    if (created) idByCode.set(unit.code, created.id);
+  }
 }

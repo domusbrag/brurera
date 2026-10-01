@@ -9,6 +9,49 @@
 export const PERMISSIONS = {
   DASHBOARD_VIEW: "dashboard.view",
   AUDIT_READ: "audit.read",
+
+  COMPANY_READ: "company.read",
+  COMPANY_UPDATE: "company.update",
+
+  EMPLOYEES_READ: "employees.read",
+  EMPLOYEES_CREATE: "employees.create",
+  EMPLOYEES_UPDATE: "employees.update",
+  EMPLOYEES_DEACTIVATE: "employees.deactivate",
+
+  USERS_READ: "users.read",
+  USERS_CREATE: "users.create",
+  USERS_UPDATE: "users.update",
+  USERS_DEACTIVATE: "users.deactivate",
+  USERS_ASSIGN_ROLES: "users.assign_roles",
+  ROLES_READ: "roles.read",
+
+  CUSTOMERS_READ: "customers.read",
+  CUSTOMERS_CREATE: "customers.create",
+  CUSTOMERS_UPDATE: "customers.update",
+  CUSTOMERS_DEACTIVATE: "customers.deactivate",
+
+  SUPPLIERS_READ: "suppliers.read",
+  SUPPLIERS_CREATE: "suppliers.create",
+  SUPPLIERS_UPDATE: "suppliers.update",
+  SUPPLIERS_DEACTIVATE: "suppliers.deactivate",
+
+  UNITS_READ: "units.read",
+  UNITS_MANAGE: "units.manage",
+  CATEGORIES_READ: "categories.read",
+  CATEGORIES_MANAGE: "categories.manage",
+
+  RAW_MATERIALS_READ: "raw_materials.read",
+  RAW_MATERIALS_CREATE: "raw_materials.create",
+  RAW_MATERIALS_UPDATE: "raw_materials.update",
+  RAW_MATERIALS_DEACTIVATE: "raw_materials.deactivate",
+
+  PRODUCTS_READ: "products.read",
+  PRODUCTS_CREATE: "products.create",
+  PRODUCTS_UPDATE: "products.update",
+  PRODUCTS_DEACTIVATE: "products.deactivate",
+
+  WAREHOUSES_READ: "warehouses.read",
+  WAREHOUSES_MANAGE: "warehouses.manage",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -19,12 +62,85 @@ export interface PermissionDefinition {
   description: string;
 }
 
+const P = PERMISSIONS;
+
 export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
-  { code: PERMISSIONS.DASHBOARD_VIEW, module: "dashboard", description: "Ver el panel de inicio" },
+  { code: P.DASHBOARD_VIEW, module: "dashboard", description: "Ver el panel de inicio" },
+  { code: P.AUDIT_READ, module: "audit", description: "Consultar el registro de auditoría" },
+
+  { code: P.COMPANY_READ, module: "company", description: "Ver los datos de la empresa" },
+  { code: P.COMPANY_UPDATE, module: "company", description: "Modificar los datos de la empresa" },
+
+  { code: P.EMPLOYEES_READ, module: "employees", description: "Ver empleados" },
+  { code: P.EMPLOYEES_CREATE, module: "employees", description: "Dar de alta empleados" },
+  { code: P.EMPLOYEES_UPDATE, module: "employees", description: "Modificar empleados" },
   {
-    code: PERMISSIONS.AUDIT_READ,
-    module: "audit",
-    description: "Consultar el registro de auditoría",
+    code: P.EMPLOYEES_DEACTIVATE,
+    module: "employees",
+    description: "Dar de baja y reactivar empleados",
+  },
+
+  { code: P.USERS_READ, module: "users", description: "Ver usuarios y sus permisos" },
+  { code: P.USERS_CREATE, module: "users", description: "Crear accesos al sistema" },
+  { code: P.USERS_UPDATE, module: "users", description: "Modificar usuarios" },
+  { code: P.USERS_DEACTIVATE, module: "users", description: "Desactivar y reactivar accesos" },
+  { code: P.USERS_ASSIGN_ROLES, module: "users", description: "Asignar roles a usuarios" },
+  { code: P.ROLES_READ, module: "roles", description: "Ver roles y su matriz de permisos" },
+
+  { code: P.CUSTOMERS_READ, module: "customers", description: "Ver clientes" },
+  { code: P.CUSTOMERS_CREATE, module: "customers", description: "Dar de alta clientes" },
+  { code: P.CUSTOMERS_UPDATE, module: "customers", description: "Modificar clientes" },
+  {
+    code: P.CUSTOMERS_DEACTIVATE,
+    module: "customers",
+    description: "Desactivar y reactivar clientes",
+  },
+
+  { code: P.SUPPLIERS_READ, module: "suppliers", description: "Ver proveedores" },
+  { code: P.SUPPLIERS_CREATE, module: "suppliers", description: "Dar de alta proveedores" },
+  { code: P.SUPPLIERS_UPDATE, module: "suppliers", description: "Modificar proveedores" },
+  {
+    code: P.SUPPLIERS_DEACTIVATE,
+    module: "suppliers",
+    description: "Desactivar y reactivar proveedores",
+  },
+
+  { code: P.UNITS_READ, module: "units", description: "Ver unidades de medida" },
+  { code: P.UNITS_MANAGE, module: "units", description: "Crear y modificar unidades de medida" },
+  { code: P.CATEGORIES_READ, module: "categories", description: "Ver categorías" },
+  { code: P.CATEGORIES_MANAGE, module: "categories", description: "Crear y modificar categorías" },
+
+  { code: P.RAW_MATERIALS_READ, module: "raw_materials", description: "Ver materias primas" },
+  {
+    code: P.RAW_MATERIALS_CREATE,
+    module: "raw_materials",
+    description: "Dar de alta materias primas",
+  },
+  {
+    code: P.RAW_MATERIALS_UPDATE,
+    module: "raw_materials",
+    description: "Modificar materias primas",
+  },
+  {
+    code: P.RAW_MATERIALS_DEACTIVATE,
+    module: "raw_materials",
+    description: "Desactivar y reactivar materias primas",
+  },
+
+  { code: P.PRODUCTS_READ, module: "products", description: "Ver productos" },
+  { code: P.PRODUCTS_CREATE, module: "products", description: "Dar de alta productos" },
+  { code: P.PRODUCTS_UPDATE, module: "products", description: "Modificar productos y precios" },
+  {
+    code: P.PRODUCTS_DEACTIVATE,
+    module: "products",
+    description: "Desactivar y reactivar productos",
+  },
+
+  { code: P.WAREHOUSES_READ, module: "warehouses", description: "Ver depósitos" },
+  {
+    code: P.WAREHOUSES_MANAGE,
+    module: "warehouses",
+    description: "Crear, modificar y desactivar depósitos",
   },
 ];
 
@@ -43,4 +159,13 @@ export function hasPermissions(
 ): boolean {
   const set = granted instanceof Set ? (granted as Set<string>) : new Set(granted);
   return required.every((code) => set.has(code));
+}
+
+/** Permisos efectivos de una membresía: unión de los permisos de sus roles. */
+export function effectivePermissions(
+  roles: readonly { permissions: readonly string[] }[],
+): Set<string> {
+  const set = new Set<string>();
+  for (const role of roles) for (const code of role.permissions) set.add(code);
+  return set;
 }

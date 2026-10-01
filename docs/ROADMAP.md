@@ -9,8 +9,8 @@ RESULTADOS, RIESGOS, DEUDA, SIGUIENTE PASO) → detenerse.
 
 | Fase | Nombre                        | Estado                        |
 | ---- | ----------------------------- | ----------------------------- |
-| 0    | Discovery + Foundation        | **Completa — esperando gate** |
-| 1    | Maestros                      | Pendiente de aprobación       |
+| 0    | Discovery + Foundation        | Completa — aceptada           |
+| 1    | Maestros                      | **Completa — esperando gate** |
 | 2    | Recetas + costo teórico       | Pendiente                     |
 | 3    | Compras + inventario          | Pendiente                     |
 | 4    | Producción                    | Pendiente                     |
@@ -40,6 +40,13 @@ CRUD profesional con validaciones, búsqueda, paginación server-side, activo/in
 módulo, auditoría de cambios sensibles (p. ej. `USER_ROLE_CHANGED`, `PRICE_CHANGED`) y tests.
 
 **Gate:** existen todos los maestros necesarios para operar.
+
+**Implementado:** membresía usuario ↔ empresa (un usuario puede tener roles distintos en varias
+empresas), empresa, empleados, usuarios, roles (lectura), clientes, proveedores, unidades con
+conversión, categorías, materias primas, productos y depósitos, con tenancy verificada en la base,
+auditoría y tests (ver [reports/FASE_1_REPORTE.md](reports/FASE_1_REPORTE.md)). Quedaron fuera por
+decisión explícita: cambio/recuperación de contraseña, edición de roles propios de la empresa,
+lista de precios del cliente (Fase 5) y selector de empresa.
 
 ## Fase 2 — Recetas + costo teórico
 

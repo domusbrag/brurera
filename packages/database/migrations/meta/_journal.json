@@ -15,6 +15,27 @@
       "when": 1790783588479,
       "tag": "0001_audit_logs_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790806872094,
+      "tag": "0002_company_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790806893876,
+      "tag": "0003_drop_single_company_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790806965928,
+      "tag": "0004_masters",
+      "breakpoints": true
     }
   ]
 }

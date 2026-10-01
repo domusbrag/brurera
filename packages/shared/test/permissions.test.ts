@@ -14,7 +14,7 @@ describe("catálogo de permisos", () => {
   });
 
   it("usa el formato modulo.accion", () => {
-    for (const code of ALL_PERMISSION_CODES) expect(code).toMatch(/^[a-z-]+\.[a-z-]+$/);
+    for (const code of ALL_PERMISSION_CODES) expect(code).toMatch(/^[a-z_-]+\.[a-z_-]+$/);
   });
 
   it("reconoce códigos válidos e inválidos", () => {

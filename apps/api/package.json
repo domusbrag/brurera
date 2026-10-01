@@ -11,10 +11,12 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "db:seed": "tsx src/scripts/seed-dev.ts"
+    "db:seed": "tsx src/scripts/seed-dev.ts",
+    "company:create": "tsx src/scripts/create-company.ts"
   },
   "dependencies": {
     "@bakery/database": "workspace:*",
+    "@bakery/domain": "workspace:*",
     "@bakery/shared": "workspace:*",
     "@fastify/cookie": "^11.1.2",
     "@fastify/helmet": "^13.1.1",

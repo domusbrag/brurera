@@ -3,28 +3,37 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestContext, type TestContext } from "./helpers.js";
 
-describe("base de datos (migraciones fundacionales)", () => {
+describe("base de datos (migraciones)", () => {
   let ctx: TestContext;
   beforeAll(async () => {
     ctx = await createTestContext();
   });
   afterAll(() => ctx.close());
 
-  it("crea exactamente las tablas fundacionales de Fase 0", async () => {
+  it("crea exactamente las tablas de Fase 0 + Fase 1", async () => {
     const result = await ctx.database.db.execute<{ table_name: string }>(sql`
       select table_name from information_schema.tables
       where table_schema = 'public' and table_type = 'BASE TABLE' order by table_name
     `);
     expect(result.rows.map((r) => r.table_name)).toEqual([
       "audit_logs",
+      "categories",
+      "code_sequences",
       "companies",
+      "company_memberships",
+      "customers",
       "employees",
+      "membership_roles",
       "permissions",
+      "products",
+      "raw_materials",
       "role_permissions",
       "roles",
       "sessions",
-      "user_roles",
+      "suppliers",
+      "units_of_measure",
       "users",
+      "warehouses",
     ]);
   });
 
@@ -36,10 +45,8 @@ describe("base de datos (migraciones fundacionales)", () => {
   });
 
   it("impide dos usuarios con el mismo email sin importar mayúsculas", async () => {
-    const [company] = await ctx.database.db.select().from(companies).limit(1);
     await expect(
       ctx.database.db.insert(users).values({
-        companyId: company!.id,
         email: "ADMIN@test.local",
         displayName: "Duplicado",
         passwordHash: "x",
@@ -51,7 +58,12 @@ describe("base de datos (migraciones fundacionales)", () => {
     const [company] = await ctx.database.db.select().from(companies).limit(1);
     const [employee] = await ctx.database.db
       .insert(employees)
-      .values({ companyId: company!.id, firstName: "Ana", lastName: "Panadera" })
+      .values({
+        companyId: company!.id,
+        employeeCode: "EMP-9001",
+        firstName: "Ana",
+        lastName: "Panadera",
+      })
       .returning();
     expect(employee?.status).toBe("ACTIVE");
   });
