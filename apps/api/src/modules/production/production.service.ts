@@ -25,6 +25,7 @@ import {
 import {
   PRODUCTION_OPERATIONAL_FIELDS,
   listItemWithoutCosts,
+  type CompleteProductionInput,
   type CreateProductionOrderInput,
   type ExtraMaterialInput,
   type Page,
@@ -44,6 +45,7 @@ import { invalidReference, mapUniqueViolations } from "../../lib/db-errors.js";
 import { AppError } from "../../lib/errors.js";
 import { likePattern, pageWindow, toPage } from "../../lib/listing.js";
 import { recordAudit } from "../audit/audit.service.js";
+import { createProductionLot } from "../lots/lots.service.js";
 import { selectMovements } from "../inventory/inventory.service.js";
 import {
   fixedMoney,
@@ -1175,6 +1177,7 @@ export async function completeOrder(
   db: Database,
   ctx: OperationContext,
   id: string,
+  input: CompleteProductionInput,
   canSeeCosts: boolean,
 ) {
   return db.transaction(async (tx) => {
@@ -1304,6 +1307,20 @@ export async function completeOrder(
     const total = fixedMoney(totalCost);
     const perUnit = fixedMoney(unitCost);
     const saleUnit = unitOrThrow(units, order.saleUnitId);
+    // Fase 4.5: la orden origina un lote identificable (código = lote de la orden).
+    const batchCode = order.batchCode ?? (await nextBatchCode(tx, ctx, order.scheduledFor));
+    const lot = await createProductionLot(tx, ctx, {
+      order,
+      productId: product.id,
+      warehouseId: order.outputWarehouseId,
+      saleUnitId: order.saleUnitId,
+      lotCode: batchCode,
+      quantity: order.actualOutputNormalized,
+      unitCost: perUnit,
+      totalValue: total,
+      requestedState: input.conservationState ?? null,
+      producedAt: now,
+    });
     const output = await postProductMovement(tx, ctx, {
       productId: product.id,
       productCode: product.internalCode,
@@ -1321,7 +1338,8 @@ export async function completeOrder(
       sourceLineId: order.id,
       productionOrderId: order.id,
       productionOrderCode: order.internalCode,
-      notes: order.batchCode ? `Lote ${order.batchCode}` : null,
+      productLotId: lot.id,
+      notes: `Lote ${batchCode}`,
       currency: order.currencyCode!,
     });
 
@@ -1347,6 +1365,7 @@ export async function completeOrder(
       .update(productionOrders)
       .set({
         status: "COMPLETED",
+        batchCode,
         completedAt: now,
         completedByUserId: ctx.userId,
         actualMaterialCost: total,
@@ -1362,7 +1381,9 @@ export async function completeOrder(
       metadata: {
         ...orderMeta(order),
         product: product.name,
-        batchCode: order.batchCode,
+        batchCode,
+        productLotId: lot.id,
+        conservationState: lot.conservationState,
         currency: order.currencyCode,
         plannedOutput: order.plannedOutputNormalized,
         actualOutput: order.actualOutputNormalized,

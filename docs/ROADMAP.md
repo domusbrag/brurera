@@ -7,19 +7,21 @@ Disciplina por fase: inspeccionar estado → plan breve → implementar → prue
 gates → revisión manual de UX → actualizar docs → resumen (CAMBIOS, ARCHIVOS, MIGRACIONES, TESTS,
 RESULTADOS, RIESGOS, DEUDA, SIGUIENTE PASO) → detenerse.
 
-| Fase | Nombre                        | Estado                        |
-| ---- | ----------------------------- | ----------------------------- |
-| 0    | Discovery + Foundation        | Completa — aceptada           |
-| 1    | Maestros                      | Completa — aceptada           |
-| 2    | Recetas + costo teórico       | Completa — aceptada           |
-| 3    | Compras + inventario          | Completa — aceptada           |
-| 4    | Producción                    | **Completa — esperando gate** |
-| 5    | Ventas + clientes             | Pendiente                     |
-| UX   | UX/DESIGN OPTIMIZATION        | Pendiente (después de Fase 5) |
-| 6    | Proveedores + finanzas + caja | Pendiente                     |
-| 7    | Facturación interna           | Pendiente                     |
-| 8    | Dashboard y reportes          | Pendiente                     |
-| 9    | Piloto                        | Pendiente                     |
+| Fase | Nombre                                       | Estado                           |
+| ---- | -------------------------------------------- | -------------------------------- |
+| 0    | Discovery + Foundation                       | Completa — aceptada              |
+| 1    | Maestros                                     | Completa — aceptada              |
+| 2    | Recetas + costo teórico                      | Completa — aceptada              |
+| 3    | Compras + inventario                         | Completa — aceptada              |
+| 4    | Producción                                   | Completa — aceptada              |
+| 4.5  | Lotes + conservación + vida útil             | **Completa — esperando gate**    |
+| 5A   | Pedidos + demanda comprometida + necesidades | Pendiente (requiere aceptar 4.5) |
+| 5B   | Ventas + cobros + cuenta corriente + margen  | Pendiente                        |
+| UX   | UX/DESIGN OPTIMIZATION                       | Pendiente (después de Fase 5B)   |
+| 6    | Proveedores + finanzas + caja                | Pendiente                        |
+| 7    | Facturación interna                          | Pendiente                        |
+| 8    | Dashboard y reportes                         | Pendiente                        |
+| 9    | Piloto                                       | Pendiente                        |
 
 ## Fase 0 — Discovery + Foundation
 
@@ -87,7 +89,7 @@ producto terminado (Fase 4/5) y transferencias entre depósitos.
 
 ## Fase 4 — Producción
 
-**Completa — esperando gate humano.** Órdenes de producción `OP-0001` que son también el lote
+**Completa — aceptada.** Órdenes de producción `OP-0001` que son también el lote
 (`LOT-AAAAMMDD-NNN`), con estados `DRAFT → PLANNED → IN_PROGRESS → COMPLETED` (cancelables antes
 de completar). La versión de receta se fija al planificar; el plan escala la receta y congela el
 costo esperado; iniciar exige stock; en curso se cargan consumo real (unidades compatibles), consumos
@@ -96,15 +98,38 @@ costo promedio y `PRODUCTION_OUTPUT` al costo material real, con promedio móvil
 terminado e historial. Stock y ficha de productos terminados. Ver
 [reports/FASE_4_REPORTE.md](reports/FASE_4_REPORTE.md). Quedan fuera (deuda o fases futuras):
 reservas de stock (`INVENTORY_RESERVATIONS`), reversión de producciones (`PRODUCTION_REVERSAL`),
-stock por lote, vencimientos y FIFO, mano de obra, energía e indirectos en el costo, MRP y
+stock por lote, vencimientos y FIFO (resueltos en Fase 4.5), mano de obra, energía e indirectos en el costo, MRP y
 planificación automática.
 
-## Fase 5 — Ventas + clientes
+## Fase 4.5 — Lotes + conservación + vida útil
 
-Ventas, precios, cliente, salida de stock, pagos, cuenta corriente.
+**Completa — esperando gate humano.** Cada producción completada crea un lote de producto
+terminado (`ProductLot`, código = lote de la orden) con su estado de conservación (fresco,
+refrigerado, congelado, descongelado), vida útil y "utilizable hasta" derivados del perfil de
+conservación del producto (configurable por producto y estado, nada fijo en el código). Saldo por
+lote (`product_lot_balances`) derivado de movimientos con `product_lot_id`. Congelar y descongelar
+son transformaciones explícitas y parciales que crean un lote hijo (`LOT_TRANSFORMATION_OUT/IN`,
+neto cero, sin cambiar el promedio); lo descongelado no se recongela. Merma por lote al costo del
+lote. Bloqueo de calidad separado de la conservación. Disponibilidad a una fecha con FEFO
+(`calculateProductAvailabilityAt`), vista "Próximos a vencer" y migración 0008 que reconstruye un
+lote por orden completada (BLOCKER si algo no reconcilia). Ver
+[reports/FASE_4_5_REPORTE.md](reports/FASE_4_5_REPORTE.md). Quedan fuera: reservas
+(`INVENTORY_RESERVATIONS`, Fase 5A), consumo de lotes por ventas, transferencias de lotes entre
+depósitos, refrigerar desde fresco y vencimientos con job de fondo (el estado es derivado).
+
+## Fase 5A — Pedidos + demanda comprometida + necesidades
+
+Pedido para una fecha y hora → cantidad pedida → stock físico → stock utilizable en esa fecha
+(`calculateProductAvailabilityAt`, Fase 4.5) → stock ya comprometido → disponible real → cantidad a
+producir → recetas → materias primas necesarias → stock de materias primas → faltantes a comprar.
+Agrega reservas (stock comprometido). No comienza sin aceptación humana de Fase 4.5.
+
+## Fase 5B — Ventas + cobros + cuenta corriente + margen
+
+Ventas, precios, cliente, salida de stock por lote (FEFO), pagos, cuenta corriente y margen.
 **Prueba:** stock 100 → venta 20 → stock 80 → pago 50 % → saldo correcto → segundo pago → saldo 0.
 
-## UX/DESIGN OPTIMIZATION (después de Fase 5)
+## UX/DESIGN OPTIMIZATION (después de Fase 5B)
 
 Sprint de diseño transversal, **no** se ejecuta durante las fases funcionales: durante cada fase se
 corrigen los problemas evidentes y se registran en [UX_BACKLOG.md](UX_BACKLOG.md) los hallazgos que

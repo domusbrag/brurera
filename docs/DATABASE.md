@@ -61,6 +61,10 @@ PostgreSQL 16. ORM **Drizzle** con migraciones SQL versionadas generadas por `dr
 | `production_orders`              | Orden de producción = lote (Fase 4)                  | único (`company_id`, `internal_code`) y (`company_id`, `batch_code`) si no es null; FKs compuestas a producto, (producto, receta), (receta, versión), depósitos, unidades, responsable y movimiento de salida; índices por estado+fecha, fecha, producto, versión, responsable y `completed_at`; checks de estado/fechas/cantidades; trigger `production_orders_guard` |
 | `production_material_lines`      | Plan y consumo real por materia prima (Fase 4)       | FK compuesta a la orden, materia prima, unidades y movimiento de consumo; único (`production_order_id`, `raw_material_id`) para líneas `RECIPE`; índice por materia prima; check `EXTRA` con nota; trigger `production_material_lines_guard`                                                                                                                           |
 | `product_inventory_costs`        | Costo material por producto a nivel empresa (Fase 4) | PK (`company_id`, `product_id`); checks cantidad/valor/promedio ≥ 0 y valor 0 sin existencia; trigger `product_inventory_costs_guard`                                                                                                                                                                                                                                  |
+| `product_conservation_settings`  | Conservación por producto (Fase 4.5)                 | PK (`company_id`, `product_id`); estado inicial por defecto; umbral de "próximo a vencer" en minutos (check 1 a 527.040)                                                                                                                                                                                                                                               |
+| `product_conservation_profiles`  | Vida útil por producto y estado (Fase 4.5)           | único (`company_id`, `product_id`, `state`); vida útil en minutos (check ≤ 10 años); check "inicial requiere habilitado"                                                                                                                                                                                                                                               |
+| `product_lots`                   | Lote de producto terminado (Fase 4.5)                | único (`company_id`, `lot_code`), (`company_id`, `operation_id`) si no es null y un lote raíz por orden; FKs compuestas a producto, orden, depósito, unidad y lote padre (mismo producto); checks de importes, fechas, vida útil coherente y motivo de bloqueo; trigger `product_lots_guard`                                                                           |
+| `product_lot_balances`           | Saldo por lote y depósito (Fase 4.5)                 | único (`company_id`, `warehouse_id`, `product_lot_id`); FK (`company_id`, `product_id`, `product_lot_id`) al lote; checks ≥ 0 y valor 0 sin existencia; trigger `product_lot_balances_guard`                                                                                                                                                                           |
 | `product_inventory_cost_history` | Historial de costo de producto por lote (Fase 4)     | `bigserial`; único `movement_id`; FK a la orden de producción; índice (`company_id`, `product_id`, `id`); trigger append-only                                                                                                                                                                                                                                          |
 
 Tipos numéricos: dinero `numeric(14,2)`, costo por unidad base `numeric(18,6)`, cantidades
@@ -73,7 +77,10 @@ normalizadas y factor de escala `numeric(28,10)`, costos `numeric(20,6)`, variac
 `numeric(20,4)`, merma teórica `numeric(7,4)`.
 `stock_movements` y `stock_balances` ya eran genéricos desde 0006 (`item_type` + exactamente uno de
 `raw_material_id` / `product_id`): Fase 4 los usa para productos sin migrar datos; sólo agrega
-índices por producto y por tipo de ítem.
+índices por producto y por tipo de ítem. Fase 4.5 agrega `stock_movements.product_lot_id`
+(obligatorio en todo movimiento de producto: check `stock_movements_product_lot`, FK compuesta
+`(company_id, product_id, product_lot_id)`) y los tipos `LOT_TRANSFORMATION_OUT` /
+`LOT_TRANSFORMATION_IN`; la merma de producto (`WASTE`) referencia el lote.
 
 `sessions` no estaba en la lista mínima de la especificación: es la tabla de sesiones que requiere
 la solución de auth elegida (sesiones de servidor revocables). Ver DECISIONS (ADR-005).
@@ -90,6 +97,7 @@ la solución de auth elegida (sesiones de servidor revocables). Ver DECISIONS (A
 | `0005_recipes.sql`                  | Fase 2: renombra `raw_materials.current_cost` → `reference_cost` (+ origen y fecha), agrega `UNIQUE (company_id, id)` a productos y materias primas, crea las 5 tablas de recetas y los triggers de inmutabilidad y append-only                                                    |
 | `0006_purchases_inventory.sql`      | Fase 3: enums `purchase_status`, `purchase_receipt_status`, `stock_item_type`, `stock_movement_type`; las 9 tablas de compras e inventario con FKs compuestas, checks e índices; triggers del ledger, de las proyecciones y de compras/recepciones                                 |
 | `0007_production.sql`               | Fase 4: enum `production_order_status` y `production_line_type`; `PRODUCTION_CONSUMPTION` y `PRODUCTION_OUTPUT` en `stock_movement_type`; las 4 tablas de producción y costo de producto; checks del ledger para tipos productivos; triggers de producción y del costo de producto |
+| `0008_product_lots.sql`             | Fase 4.5: enums `conservation_state` y `lot_quality_status`; `LOT_TRANSFORMATION_OUT/IN`; las 4 tablas de conservación y lotes; `stock_movements.product_lot_id`; triggers de lotes y saldos de lote; reconstrucción de un lote por orden completada con chequeos BLOCKER          |
 
 0000–0004 no se modificaron en Fase 2: todo cambio va en 0005. 0000–0005 no se modificaron en
 Fase 3: todo cambio va en 0006, generada por drizzle-kit desde el esquema
@@ -102,6 +110,17 @@ con `ADD VALUE` en la misma transacción; por eso los checks nuevos comparan
 `movement_type::text`. Probado sobre base vacía (`pnpm db:reset`) y sobre una base en 0006 con
 datos de Fase 3 (`migration-fase3.test.ts`: movimientos, saldos, costos e historial idénticos y
 Σ movimientos = saldo después de migrar).
+
+0000–0007 no se modificaron en Fase 4.5: todo va en 0008. La migración reconstruye los lotes desde
+los datos de Fase 4 sin inventar procedencia: antes de tocar nada verifica que todo movimiento de
+producto sea un `PRODUCTION_OUTPUT` de una orden `COMPLETED` (si no, `RAISE EXCEPTION
+'FASE_4_5_MIGRATION_BLOCKER: …'` y no se aplica nada); crea un lote raíz `FRESH` sin vencimiento
+por orden completada (código = `batch_code` o `LOT-<código de la orden>`, nota "migrado"), completa
+`product_lot_id` en esos movimientos (única escritura sobre el ledger: el trigger append-only se
+suspende sólo para esa sentencia dentro de la transacción), carga los saldos de lote con el
+trigger activo y vuelve a verificar Σ lotes = saldo agregado = costo de inventario (cantidad y
+valor). Probado sobre base vacía, sobre datos reales de Fase 4 (antes/después idénticos) y en
+`migration-fase4.test.ts` (100 kg + 50 kg → 2 lotes; caso BLOCKER).
 
 **Triggers de Fase 2** (la base no depende sólo del servicio):
 
@@ -139,6 +158,14 @@ datos de Fase 3 (`migration-fase3.test.ts`: movimientos, saldos, costos e histor
   consumos reales y se agregan o quitan líneas `EXTRA`; con la orden cerrada, nada.
 - `product_inventory_costs_guard` y `product_inventory_cost_history_append_only`: mismo contrato
   que el costo de materias primas (proyección exacta de un movimiento nuevo; historial append-only).
+
+**Triggers de Fase 4.5** (SQLSTATE 23001):
+
+- `product_lots_guard`: un lote no se borra; sólo cambian `quality_status`, `quality_reason`,
+  `notes` y `updated_at` (cantidad inicial, costo, estado de conservación y vencimiento son
+  históricos: una transformación crea otro lote).
+- `product_lot_balances_guard`: mismo contrato que `stock_balances` (nace en cero, cambia
+  exactamente lo que dice un movimiento nuevo de ese lote y depósito, cantidad y valor).
 
 `TRUNCATE` no dispara estos triggers: queda para los tests.
 

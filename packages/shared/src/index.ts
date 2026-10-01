@@ -11,3 +11,4 @@ export * from "./recipes";
 export * from "./purchases";
 export * from "./inventory";
 export * from "./production";
+export * from "./lots";

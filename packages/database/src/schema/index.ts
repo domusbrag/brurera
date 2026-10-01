@@ -6,6 +6,7 @@ export * from "./commercial.js";
 export * from "./company.js";
 export * from "./inventory.js";
 export * from "./items.js";
+export * from "./lots.js";
 export * from "./people.js";
 export * from "./production.js";
 export * from "./purchasing.js";

@@ -28,6 +28,7 @@ import { useCan, useCurrentUser } from "../user-context";
 import { EntityForm, toFormValues, toPayload, type FieldDef } from "./entity-form";
 import { PresentationsPanel } from "../inventory/presentations";
 import { MasterList } from "./master-list";
+import { ConservationSummary } from "../lots/conservation";
 import {
   ActiveToggle,
   AuditHistory,
@@ -617,6 +618,7 @@ export function ProductDetail({ id }: { id: string }) {
         />
       </section>
       {can(P.RECIPES_READ) && <ProductTheoreticalCost product={data} />}
+      {data.controlsStock && <ConservationSummary productId={id} />}
       <AuditHistory entityType="product" entityId={id} version={version} />
     </div>
   );

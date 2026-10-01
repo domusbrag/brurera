@@ -1,10 +1,13 @@
 "use client";
 
 import {
+  CONSERVATION_STATE_LABELS,
   PERMISSIONS as P,
   PRODUCTION_LINE_TYPE_LABELS,
   PRODUCTION_STATUSES,
   PRODUCTION_STATUS_LABELS,
+  type ConservationProfileDto,
+  type ConservationStateDto,
   type ProductDto,
   type ProductionMaterialLineDto,
   type ProductionOrderDto,
@@ -38,6 +41,7 @@ import {
   useResource,
 } from "../masters/ui";
 import { useCan, useCurrentUser } from "../user-context";
+import { ConservationBadge, LOTS_BASE, formatShelfLife } from "../lots/lot-shared";
 import {
   AvailabilityTable,
   PRODUCTION_BASE,
@@ -331,7 +335,18 @@ export function ProductionDetail({ id }: { id: string }) {
             ],
             [
               "Lote",
-              data.batchCode ?? (data.status === "DRAFT" ? "Se asigna al planificar" : null),
+              data.productLot ? (
+                <span key="lot">
+                  {can(P.PRODUCT_LOTS_READ) ? (
+                    <Link href={`${LOTS_BASE}/${data.productLot.id}`}>{data.productLot.code}</Link>
+                  ) : (
+                    data.productLot.code
+                  )}{" "}
+                  <ConservationBadge state={data.productLot.conservationState} />
+                </span>
+              ) : (
+                (data.batchCode ?? (data.status === "DRAFT" ? "Se asigna al planificar" : null))
+              ),
             ],
             ["Fecha programada", formatDate(data.scheduledFor)],
             ["Depósito de materias primas", data.sourceWarehouse.name],
@@ -1046,6 +1061,14 @@ function ReviewDialog({
   const unit = order.saleUnit.symbol;
   const short = order.availability ? !order.availability.sufficient : false;
   const estimated = order.costs?.estimated ?? null;
+  const can = useCan();
+  const { data: conservation } = useResource<ConservationProfileDto>(
+    can(P.PRODUCT_CONSERVATION_READ) ? `/api/products/${order.product.id}/conservation` : null,
+  );
+  const initialStates = conservation?.states.filter((s) => s.enabled && s.allowedAsInitial) ?? [];
+  const [initialState, setInitialState] = useState<ConservationStateDto | "">("");
+  const chosenState = initialState || conservation?.defaultInitialState || "FRESH";
+  const chosenEntry = conservation?.states.find((s) => s.state === chosenState);
 
   async function confirm() {
     setPending(true);
@@ -1055,6 +1078,7 @@ function ReviewDialog({
         `/api/production-orders/${order.id}/complete`,
         {
           method: "POST",
+          body: initialState ? { conservationState: initialState } : {},
         },
       );
       ref.current?.close();
@@ -1155,8 +1179,28 @@ function ReviewDialog({
       <p className="muted">
         Al confirmar se descuentan las materias primas de {order.sourceWarehouse.name} y entran{" "}
         {formatQuantity(order.actualOutputNormalized, unit)} de {order.product.name} en{" "}
-        {order.outputWarehouse.name}. No se puede deshacer.
+        {order.outputWarehouse.name}
+        {conservation?.configured
+          ? `, en un lote ${CONSERVATION_STATE_LABELS[chosenState].toLowerCase()} que dura ${formatShelfLife(chosenEntry?.shelfLifeMinutes ?? null)}`
+          : ", en un lote fresco sin vencimiento (el producto no tiene conservación configurada)"}
+        . No se puede deshacer.
       </p>
+      {initialStates.length > 1 && (
+        <div className="form__field">
+          <label htmlFor="initial-state">Estado del lote producido</label>
+          <select
+            id="initial-state"
+            value={chosenState}
+            onChange={(e) => setInitialState(e.target.value as ConservationStateDto)}
+          >
+            {initialStates.map((s) => (
+              <option key={s.state} value={s.state}>
+                {CONSERVATION_STATE_LABELS[s.state]} · dura {formatShelfLife(s.shelfLifeMinutes)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {error && (
         <div className="form__error" role="alert">
           {error}

@@ -187,6 +187,17 @@ ENDPOINTS.push(
   ],
   ["GET", `/api/production-orders/${ANY_ID}/movements`, [P.PRODUCTION_ORDERS_READ]],
   ["GET", "/api/production/responsibles", [P.PRODUCTION_ORDERS_READ]],
+  // Lotes, conservación y vencimientos (Fase 4.5)
+  ["GET", `/api/products/${ANY_ID}/conservation`, [P.PRODUCT_CONSERVATION_READ]],
+  ["PUT", `/api/products/${ANY_ID}/conservation`, [P.PRODUCT_CONSERVATION_MANAGE]],
+  ["GET", `/api/inventory/products/${ANY_ID}/lots`, [P.PRODUCT_LOTS_READ]],
+  ["GET", `/api/inventory/products/${ANY_ID}/availability`, [P.PRODUCT_LOTS_READ]],
+  ["GET", "/api/inventory/expiring", [P.INVENTORY_EXPIRY_READ]],
+  ["GET", `/api/product-lots/${ANY_ID}`, [P.PRODUCT_LOTS_READ]],
+  ["POST", `/api/product-lots/${ANY_ID}/transform`, [P.PRODUCT_LOTS_TRANSFORM]],
+  ["POST", `/api/product-lots/${ANY_ID}/waste`, [P.PRODUCT_LOTS_WASTE]],
+  ["POST", `/api/product-lots/${ANY_ID}/block`, [P.PRODUCT_LOTS_QUALITY]],
+  ["POST", `/api/product-lots/${ANY_ID}/unblock`, [P.PRODUCT_LOTS_QUALITY]],
 );
 
 let ctx: TestContext;

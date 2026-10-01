@@ -22,6 +22,8 @@ export const STOCK_MOVEMENT_TYPES = [
   "WASTE",
   "PRODUCTION_CONSUMPTION",
   "PRODUCTION_OUTPUT",
+  "LOT_TRANSFORMATION_OUT",
+  "LOT_TRANSFORMATION_IN",
 ] as const;
 export type StockMovementType = (typeof STOCK_MOVEMENT_TYPES)[number];
 
@@ -36,11 +38,13 @@ export const INBOUND_MOVEMENT_TYPES: readonly StockMovementType[] = [
   "PURCHASE_RECEIPT",
   "ADJUSTMENT_POSITIVE",
   "PRODUCTION_OUTPUT",
+  "LOT_TRANSFORMATION_IN",
 ];
 export const OUTBOUND_MOVEMENT_TYPES: readonly StockMovementType[] = [
   "ADJUSTMENT_NEGATIVE",
   "WASTE",
   "PRODUCTION_CONSUMPTION",
+  "LOT_TRANSFORMATION_OUT",
 ];
 
 /** +1 si el tipo ingresa stock, −1 si lo saca. */

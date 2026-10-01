@@ -32,7 +32,10 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   núcleo transaccional del stock en `ledger.ts`). Fase 4: `production` (órdenes de producción:
   `production.service.ts` con las transiciones y el completado atómico, `production.data.ts` con
   lecturas, plan en vivo, disponibilidad y DTOs) y, en `inventory`, `product-stock.service.ts`
-  (stock y costo de productos terminados). Los módulos futuros siguen la lista de la
+  (stock y costo de productos terminados). Fase 4.5: `lots` (`lots.service.ts`: lote al completar,
+  congelar / descongelar, merma, bloqueo, disponibilidad a una fecha, próximos a vencer y resumen
+  por producto; `conservation.service.ts`: perfil de conservación; `lots.data.ts`: lecturas y
+  DTOs) y, en `ledger.ts`, `postLotMovement` y el saldo por lote. Los módulos futuros siguen la lista de la
   especificación (§30).
 - **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
   `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
@@ -113,6 +116,18 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
 PRODUCTION_ALREADY_COMPLETED`) + único `(company_id, source_line_id)` (línea para consumos, orden
   para la salida). La vista previa del alta (`POST /api/production-orders/preview`) inserta la orden
   dentro de una transacción y la revierte, así muestra exactamente lo que se guardaría.
+- **Lotes (Fase 4.5, ADR-043 a 049):** el lote (`product_lots`) nace dentro de la transacción de
+  completar, antes del `PRODUCTION_OUTPUT`, que lo referencia (`product_lot_id`). Todo movimiento
+  de producto tiene lote y actualiza tres proyecciones en el mismo paso: saldo del lote, saldo
+  agregado por depósito y costo del producto (Σ lotes = agregado, por trigger y por test).
+  Congelar / descongelar (`transformLot`) y merma (`wasteLot`) son una transacción: bloquean el
+  lote → saldo del lote → costo del producto → saldo del producto (orden global), revalidan saldo
+  (`409 INSUFFICIENT_LOT_QUANTITY`) y estado (vencido, bloqueado, agotado), generan
+  `LOT_TRANSFORMATION_OUT` + `IN` (neto cero, al costo del lote, promedio sin cambio) o `WASTE`
+  (al costo del lote) y auditan. Idempotencia por `operationId` del cliente: reintento → `200
+replayed: true`; el mismo id en otra operación → `409 OPERATION_ID_REUSED`. "Vencido", "próximo
+  a vencer" y "agotado" se derivan al consultar (no hay jobs); la disponibilidad a una fecha y el
+  orden FEFO salen de `@bakery/domain` (`calculateAvailabilityAt`, `sortFefo`).
 - **Visibilidad de costos:** las rutas de inventario calculan `canSeeCosts` con el permiso
   `inventory.cost.read`; sin él, promedio, valor de inventario, costo unitario y valor de los
   movimientos y costo de la última compra vienen en `null`, e `GET /api/inventory/costs/:id`
@@ -171,6 +186,14 @@ PRODUCTION_ALREADY_COMPLETED`) + único `(company_id, source_line_id)` (línea p
   **Productos terminados** (`inventory/product-stock-pages.tsx`) y los movimientos muestran
   materias primas y productos con enlace a la orden. Navegación: **Producción → Órdenes** (con
   `production_orders.read`) antes de Recetas.
+- **Lotes (Fase 4.5):** `src/components/lots/` — `conservation.tsx` (resumen en la ficha del
+  producto y formulario `/productos/[id]/conservacion` con vida útil en horas o días),
+  `lot-pages.tsx` (lotes y disponibilidad a una fecha en la ficha de stock del producto, detalle
+  `/stock/lotes/[id]` con bloqueo, formularios congelar / descongelar / merma con resumen y
+  `operationId` por intento, y `/stock/productos/por-vencer`) y `lot-shared.tsx` (estados, vida
+  útil y tiempo restante en palabras). Productos terminados suma columnas por conservación; los
+  movimientos muestran el lote; la orden completada enlaza su lote y, si el producto admite varios
+  estados iniciales, el diálogo de completar permite elegirlo.
 - La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared
@@ -191,7 +214,10 @@ Reglas de negocio puras, sin base ni HTTP: conversión de unidades (`convertQuan
 `selectEffectiveCost`) y producción (`production.ts`: máquina de estados `assertTransition`,
 `normalizeOutput`, `normalizeConsumption`, `scaleFactor`, `planProduction`, `consumptionVariance`,
 `outputPerformance`, `actualMaterialCost`, `actualUnitMaterialCost`, `aggregateRequirements`,
-`findShortages`, `formatBatchCode`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
+`findShortages`, `formatBatchCode`) y lotes (`lots.ts`: transiciones `canTransform` /
+`assertTransformation`, `shelfLifeToMinutes`, `calculateUsableUntil`, `resolveInitialConservation`,
+`resolveTransformation`, `lotOutflow`, `applyLotMovement`, `lotEligibilityAt`, `isNearExpiry`,
+`sortFefo`, `calculateAvailabilityAt`, `recommendFefo`, `childLotCode`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
 
 ### packages/database
 

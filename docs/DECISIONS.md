@@ -432,7 +432,8 @@ se genera al planificar (`LOT-AAAAMMDD-NNN`, único por empresa) sólo como traz
 consumos extra son líneas de la orden con motivo obligatorio: nunca modifican la receta.
 **Consecuencias.** Una sola entidad responde "qué, con qué receta, cuánto, cuánto costó". No hay
 stock por lote, vencimientos ni FIFO (roadmap); si se necesitan, el lote pasará a tabla propia y la
-orden lo referenciará.
+orden lo referenciará. _(Fase 4.5: el lote pasó a tabla propia, ver ADR-043; la orden sigue
+siendo el documento de producción y el origen de su lote raíz.)_
 
 ## ADR-040 — Versión de receta fijada al planificar
 
@@ -480,3 +481,93 @@ cada consumo, la orden para la salida).
 INSUFFICIENT_STOCK`; tres "Completar" simultáneos dan `[200, 409, 409]` con un único juego de
 movimientos; cuatro órdenes con las mismas materias primas completan sin deadlocks (tests de
 concurrencia).
+
+## ADR-043 — El lote de producto nace de la orden de producción y se transforma en lotes hijos
+
+**Contexto.** Fase 4.5 necesita stock por lote con conservación y vencimiento (ADR-039 anticipaba
+que el lote pasaría a tabla propia).
+**Decisión.** `product_lots` es la tabla del lote. Un lote raíz por orden `COMPLETED`, creado en la
+misma transacción que el `PRODUCTION_OUTPUT` (que lo referencia) y con el `batch_code` de la orden
+como código (si la orden no tenía, se genera al completar). Congelar / descongelar no cambia el
+estado del lote: crea un lote hijo (`parent_lot_id`, código `<padre>.<n>`, misma orden de origen)
+con su propio vencimiento. Los campos históricos del lote son inmutables por trigger; sólo cambian
+calidad y notas.
+**Consecuencias.** La procedencia de cualquier kilo se recorre hasta su orden. Un lote puede quedar
+repartido en varios estados y vencimientos; cada parte es un lote. No hay lotes de compra ni de
+materias primas (fuera de alcance).
+
+## ADR-044 — Valorización por lote sin tocar el costo promedio
+
+**Contexto.** Transformar o descartar parte de un lote no puede cambiar el costo promedio del
+producto ni agregar costo, y el valor de inventario debe seguir siendo exacto.
+**Decisión.** Cada lote lleva su valor (`product_lot_balances.inventory_value`). Las salidas de
+lote (transformación y merma) se valorizan al costo unitario del lote (`lotOutflow`; si se agota,
+exactamente su valor restante, sin residuos de redondeo) y se aplican con `applyLotMovement`, que
+cambia cantidad y valor del producto pero nunca `moving_average_cost`. La transformación es
+`LOT_TRANSFORMATION_OUT` + `IN` por el mismo valor: neto cero. La merma escribe historial de costo
+(`product_inventory_cost_history`) porque cambia el valor de inventario; la transformación no.
+**Consecuencias.** Σ valores de lote = valor de inventario del producto en todo momento (test de
+reconciliación). El promedio sólo cambia con producciones. Fase 5 decidirá si la venta sale al
+costo del lote (FEFO) o al promedio.
+
+## ADR-045 — Transiciones de conservación permitidas
+
+**Contexto.** Una panadería congela lo fresco o refrigerado y descongela lo congelado; recongelar
+lo descongelado es un riesgo sanitario.
+**Decisión.** Transiciones: `FRESH → FROZEN`, `REFRIGERATED → FROZEN`, `FROZEN → THAWED`
+(`CONSERVATION_TRANSITIONS` en `@bakery/domain`), sólo si el estado destino está habilitado en el
+perfil del producto. `THAWED → FROZEN` nunca. Fresco → refrigerado y refrigerado → fresco quedan
+fuera del MVP (pendiente de definición de negocio). Un lote vencido, bloqueado o agotado no se
+transforma (409 `LOT_EXPIRED` / `LOT_BLOCKED` / `LOT_DEPLETED`).
+**Consecuencias.** El formulario de descongelar advierte que no se puede volver a congelar y la
+ficha de un lote descongelado no ofrece congelar.
+
+## ADR-046 — Vencimiento derivado, sin jobs; vida útil desconocida cuenta como utilizable
+
+**Contexto.** "Vencido" depende del momento de la consulta; un job que cambie estados agrega
+fallas y desfases.
+**Decisión.** `usable_until` se calcula una sola vez al nacer el lote (estado + vida útil del
+perfil vigente) y no cambia. "Vencido", "próximo a vencer" y "agotado" se derivan en cada consulta
+(`lotEligibilityAt`, `at > usable_until` = vencido). Un lote sin vida útil (producto sin perfil o
+lote migrado) es utilizable y se informa como "vida útil sin configurar" (`shelfLifeUnknown`).
+Cambiar el perfil no recalcula lotes existentes.
+**Consecuencias.** La disponibilidad a una fecha es una consulta pura y reproducible. Los lotes
+migrados no vencen hasta que se registren manualmente (merma) o se agoten.
+
+## ADR-047 — Migración de Fase 4 a lotes: backfill del ledger con BLOCKER
+
+**Contexto.** Los datos de Fase 4 tienen stock de producto sin lote; inventar procedencia
+falsearía la trazabilidad.
+**Decisión.** 0008 crea un lote raíz por orden `COMPLETED` desde su `PRODUCTION_OUTPUT`
+(`FRESH`, sin vencimiento, nota "migrado"). Si existe un movimiento de producto que no sea la
+salida de una orden completada, o si al final Σ lotes ≠ saldo agregado o ≠ costo del producto
+(cantidad o valor), la migración aborta con `FASE_4_5_MIGRATION_BLOCKER` y, por correr en una
+transacción, no aplica nada. Completar `product_lot_id` en el ledger es la única escritura sobre
+`stock_movements`: el trigger append-only se suspende sólo para esa sentencia; cantidades, valores
+y referencias no cambian (verificado antes/después).
+**Consecuencias.** Una base inconsistente no se migra en silencio: hay que corregirla primero. El
+check `stock_movements_product_lot` se agrega al final, ya con los datos completos.
+
+## ADR-048 — Calidad separada de conservación; permiso propio
+
+**Contexto.** Un lote puede estar en buen estado de conservación pero retenido por calidad.
+**Decisión.** `quality_status` (`AVAILABLE` / `BLOCKED` con motivo) es independiente del estado de
+conservación. Bloquear y desbloquear son operaciones auditadas (`PRODUCT_LOT_BLOCKED` /
+`UNBLOCKED`) con el permiso `product_lots.quality` (agregado a los pedidos por la especificación;
+Depósito, Administrador y Dueño). Un lote bloqueado no cuenta como disponible ni se transforma,
+pero admite merma.
+**Consecuencias.** Producción puede congelar pero no bloquear ni registrar merma de producto
+terminado.
+
+## ADR-049 — Idempotencia de operaciones sobre lotes con operationId del cliente
+
+**Contexto.** Congelar o descartar con doble click o reintento de red no puede duplicar
+movimientos ni lotes.
+**Decisión.** Cada operación lleva un `operationId` (UUID generado por la UI una vez por intento).
+Transformación: único `(company_id, operation_id)` en `product_lots` y `source_line_id =
+operationId` en el `OUT`. Merma: `source_line_id = operationId` (único del ledger). Se verifica
+antes y después de bloquear el lote: un reintento devuelve `200` con el mismo resultado y
+`replayed: true`; el mismo id en otra operación o lote, `409 OPERATION_ID_REUSED`.
+**Consecuencias.** Dos pedidos simultáneos con el mismo id producen un solo hijo; dos con ids
+distintos se serializan por el lock del lote y el segundo puede recibir `409
+INSUFFICIENT_LOT_QUANTITY` (300 + 300 sobre 500).

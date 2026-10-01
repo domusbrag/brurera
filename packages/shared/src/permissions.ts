@@ -85,6 +85,14 @@ export const PERMISSIONS = {
   PRODUCTION_ORDERS_CANCEL: "production_orders.cancel",
   PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL: "production_orders.add_extra_material",
   PRODUCTION_COST_READ: "production.cost.read",
+
+  PRODUCT_LOTS_READ: "product_lots.read",
+  PRODUCT_LOTS_TRANSFORM: "product_lots.transform",
+  PRODUCT_LOTS_WASTE: "product_lots.waste",
+  PRODUCT_LOTS_QUALITY: "product_lots.quality",
+  PRODUCT_CONSERVATION_READ: "product_conservation.read",
+  PRODUCT_CONSERVATION_MANAGE: "product_conservation.manage",
+  INVENTORY_EXPIRY_READ: "inventory.expiry.read",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -299,6 +307,42 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     code: P.PRODUCTION_COST_READ,
     module: "production",
     description: "Ver costos esperados y reales de producción",
+  },
+
+  {
+    code: P.PRODUCT_LOTS_READ,
+    module: "product_lots",
+    description: "Ver lotes de producto terminado, su trazabilidad y disponibilidad a una fecha",
+  },
+  {
+    code: P.PRODUCT_LOTS_TRANSFORM,
+    module: "product_lots",
+    description: "Congelar y descongelar lotes (transformación de conservación)",
+  },
+  {
+    code: P.PRODUCT_LOTS_WASTE,
+    module: "product_lots",
+    description: "Registrar mermas de producto terminado sobre un lote",
+  },
+  {
+    code: P.PRODUCT_LOTS_QUALITY,
+    module: "product_lots",
+    description: "Bloquear y desbloquear lotes por calidad",
+  },
+  {
+    code: P.PRODUCT_CONSERVATION_READ,
+    module: "product_conservation",
+    description: "Ver la conservación y vida útil configuradas de los productos",
+  },
+  {
+    code: P.PRODUCT_CONSERVATION_MANAGE,
+    module: "product_conservation",
+    description: "Configurar conservación, vida útil y estado inicial de los productos",
+  },
+  {
+    code: P.INVENTORY_EXPIRY_READ,
+    module: "inventory",
+    description: "Ver productos terminados próximos a vencer",
   },
 ];
 

@@ -8,6 +8,7 @@ import {
 } from "@bakery/domain";
 import {
   inventoryCostHistory,
+  productLots,
   productionOrders,
   products,
   purchaseReceipts,
@@ -318,8 +319,15 @@ function referenceLabel(
   receiptNumber: string | null,
   purchaseNumber: string | null,
   productionCode: string | null = null,
+  lotCode: string | null = null,
 ): StockMovementDto["reference"] {
   if (!type || !id) return null;
+  if (type === "PRODUCT_LOT_TRANSFORMATION") {
+    return { type, id, label: lotCode ? `Transformación → ${lotCode}` : "Transformación de lote" };
+  }
+  if (type === "PRODUCT_LOT") {
+    return { type, id, label: lotCode ? `Lote ${lotCode}` : "Lote" };
+  }
   if (type === "PRODUCTION_ORDER") {
     return { type, id, label: productionCode ?? "Orden de producción" };
   }
@@ -348,6 +356,12 @@ export async function selectMovements(
       material: { id: rawMaterials.id, code: rawMaterials.internalCode, name: rawMaterials.name },
       product: { id: products.id, code: products.internalCode, name: products.name },
       productionCode: productionOrders.internalCode,
+      lot: { id: productLots.id, code: productLots.lotCode },
+      // Lote referenciado por una transformación (el hijo) o una merma de lote.
+      referenceLotCode: sql<
+        string | null
+      >`(case when ${stockMovements.referenceType} in ('PRODUCT_LOT_TRANSFORMATION', 'PRODUCT_LOT')
+        then (select rl.lot_code from product_lots rl where rl.id = ${stockMovements.referenceId}) end)`,
       warehouse: { id: warehouses.id, code: warehouses.code, name: warehouses.name },
       unit: { id: unitsOfMeasure.id, code: unitsOfMeasure.code, symbol: unitsOfMeasure.symbol },
       actor: { id: users.id, displayName: users.displayName },
@@ -358,6 +372,7 @@ export async function selectMovements(
     .from(stockMovements)
     .leftJoin(rawMaterials, eq(rawMaterials.id, stockMovements.rawMaterialId))
     .leftJoin(products, eq(products.id, stockMovements.productId))
+    .leftJoin(productLots, eq(productLots.id, stockMovements.productLotId))
     .innerJoin(warehouses, eq(warehouses.id, stockMovements.warehouseId))
     .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, stockMovements.baseUnitId))
     .leftJoin(users, eq(users.id, stockMovements.actorUserId))
@@ -387,6 +402,7 @@ export async function selectMovements(
       r.receiptNumber,
       r.purchaseNumber,
       r.productionCode,
+      r.referenceLotCode,
     );
     const rawMaterial = r.material?.id ? r.material : null;
     const product = r.product?.id ? r.product : null;
@@ -404,6 +420,7 @@ export async function selectMovements(
       quantity: r.mv.quantity,
       baseUnit: r.unit,
       balanceAfter: r.mv.balanceAfter,
+      productLot: r.lot?.id ? { id: r.lot.id, code: r.lot.code } : null,
       unitCost: canSeeCosts ? r.mv.unitCost : null,
       totalValue: canSeeCosts ? r.mv.totalValue : null,
       reason: r.mv.reason,
@@ -645,7 +662,13 @@ async function operationTargets(
 }
 
 interface ManualOperation {
-  type: Exclude<StockMovementType, "PRODUCTION_CONSUMPTION" | "PRODUCTION_OUTPUT">;
+  type: Exclude<
+    StockMovementType,
+    | "PRODUCTION_CONSUMPTION"
+    | "PRODUCTION_OUTPUT"
+    | "LOT_TRANSFORMATION_OUT"
+    | "LOT_TRANSFORMATION_IN"
+  >;
   rawMaterialId: string;
   warehouseId: string;
   quantity: string;

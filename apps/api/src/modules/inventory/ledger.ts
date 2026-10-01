@@ -1,16 +1,19 @@
 import {
   applyInbound,
+  applyLotMovement,
   applyOutbound,
   COST_SCALE,
   InventoryError,
   NORMALIZED_QUANTITY_SCALE,
   nextBalance,
   toFixedString,
+  D,
   type CostedMovement,
   type StockMovementType,
 } from "@bakery/domain";
 import {
   inventoryCostHistory,
+  productLotBalances,
   productInventoryCostHistory,
   productInventoryCosts,
   rawMaterialInventoryCosts,
@@ -366,6 +369,8 @@ export interface ProductMovementRequest {
   sourceLineId: string;
   productionOrderId: string;
   productionOrderCode: string;
+  /** Lote raíz que crea esta producción (Fase 4.5). */
+  productLotId: string;
   notes?: string | null;
   currency: string;
 }
@@ -419,6 +424,7 @@ export async function postProductMovement(
       referenceType: req.referenceType,
       referenceId: req.referenceId,
       sourceLineId: req.sourceLineId,
+      productLotId: req.productLotId,
       actorUserId: ctx.userId,
       notes: req.notes ?? null,
     })
@@ -429,6 +435,7 @@ export async function postProductMovement(
     .update(stockBalances)
     .set({ quantity: warehouseAfter, lastMovementId: movement.id })
     .where(eq(stockBalances.id, balance.id));
+  await applyToLotBalance(tx, ctx, movement, req.productId);
 
   const { before, after } = costed;
   await tx
@@ -497,4 +504,198 @@ export async function postProductMovement(
   }
 
   return { movement, costed, warehouseBefore: fixedQty(balance.quantity), warehouseAfter };
+}
+
+/* ---------- Lotes de producto terminado (Fase 4.5) ---------- */
+
+type MovementRow = typeof stockMovements.$inferSelect;
+
+/** Bloquea (creándolo vacío si falta) el saldo de un lote en su depósito. */
+export async function lockLotBalance(
+  tx: Transaction,
+  ctx: OperationContext,
+  lot: { id: string; productId: string; warehouseId: string },
+) {
+  await tx
+    .insert(productLotBalances)
+    .values({
+      companyId: ctx.companyId,
+      warehouseId: lot.warehouseId,
+      productLotId: lot.id,
+      productId: lot.productId,
+    })
+    .onConflictDoNothing();
+  const [row] = await tx
+    .select()
+    .from(productLotBalances)
+    .where(
+      and(
+        eq(productLotBalances.companyId, ctx.companyId),
+        eq(productLotBalances.warehouseId, lot.warehouseId),
+        eq(productLotBalances.productLotId, lot.id),
+      ),
+    )
+    .for("update");
+  if (!row) throw new Error("Saldo de lote no encontrado tras crearlo");
+  return row;
+}
+
+/** Aplica un movimiento ya insertado al saldo de su lote (el trigger valida la suma). */
+async function applyToLotBalance(
+  tx: Transaction,
+  ctx: OperationContext,
+  movement: MovementRow,
+  productId: string,
+) {
+  if (!movement.productLotId) throw new Error("Movimiento de producto sin lote");
+  const balance = await lockLotBalance(tx, ctx, {
+    id: movement.productLotId,
+    productId,
+    warehouseId: movement.warehouseId,
+  });
+  const quantity = fixedQty(new D(balance.quantity).plus(movement.quantity));
+  const value = fixedMoney(new D(balance.inventoryValue).plus(movement.totalValue));
+  await tx
+    .update(productLotBalances)
+    .set({ quantity, inventoryValue: value, lastMovementId: movement.id })
+    .where(eq(productLotBalances.id, balance.id));
+  return { quantityBefore: fixedQty(balance.quantity), quantityAfter: quantity };
+}
+
+export interface LotMovementRequest {
+  productId: string;
+  productCode: string;
+  productName: string;
+  lot: { id: string; code: string; warehouseId: string };
+  saleUnitId: string;
+  movementType: "LOT_TRANSFORMATION_OUT" | "LOT_TRANSFORMATION_IN" | "WASTE";
+  /** Cantidad POSITIVA en unidad de venta; el signo lo pone el tipo. */
+  quantity: string;
+  /** Valor POSITIVO que sale o entra (costo del lote, no el promedio). */
+  value: string;
+  occurredAt: Date;
+  referenceType: "PRODUCT_LOT_TRANSFORMATION" | "PRODUCT_LOT";
+  referenceId: string;
+  sourceLineId: string;
+  reason?: string | null;
+  notes?: string | null;
+  /** Historial de costo del producto: sólo en movimientos que cambian el valor neto (merma). */
+  recordCostHistory: boolean;
+}
+
+/**
+ * Movimiento de un lote de producto terminado (transformación o merma), dentro
+ * de la transacción del llamador, que ya bloqueó el lote (product_lots FOR
+ * UPDATE). Locks: costo del producto → saldo agregado del depósito → saldo del
+ * lote. Valoriza al COSTO DEL LOTE y no recalcula el promedio móvil del producto.
+ */
+export async function postLotMovement(
+  tx: Transaction,
+  ctx: OperationContext,
+  req: LotMovementRequest,
+): Promise<PostedMovement & { lotBefore: string; lotAfter: string }> {
+  const cost = await lockProductCost(tx, ctx, req.productId);
+  const balance = await lockProductBalance(
+    tx,
+    ctx,
+    req.lot.warehouseId,
+    req.productId,
+    req.saleUnitId,
+  );
+  const sign = req.movementType === "LOT_TRANSFORMATION_IN" ? 1 : -1;
+  let costed: CostedMovement;
+  let warehouseAfter: string;
+  try {
+    const qty = new D(req.quantity).times(sign);
+    costed = applyLotMovement(
+      {
+        quantity: cost.quantity,
+        inventoryValue: cost.inventoryValue,
+        movingAverageCost: cost.movingAverageCost,
+      },
+      qty,
+      new D(req.value).times(sign),
+    );
+    warehouseAfter = fixedQty(nextBalance(balance.quantity, costed.quantity));
+  } catch (err) {
+    inventoryError(err);
+  }
+
+  const [movement] = await tx
+    .insert(stockMovements)
+    .values({
+      companyId: ctx.companyId,
+      warehouseId: req.lot.warehouseId,
+      itemType: "PRODUCT",
+      productId: req.productId,
+      productLotId: req.lot.id,
+      movementType: req.movementType,
+      quantity: fixedQty(costed.quantity),
+      baseUnitId: req.saleUnitId,
+      unitCost: fixedMoney(costed.unitCost),
+      totalValue: fixedMoney(costed.totalValue),
+      balanceAfter: warehouseAfter,
+      occurredAt: req.occurredAt,
+      referenceType: req.referenceType,
+      referenceId: req.referenceId,
+      sourceLineId: req.sourceLineId,
+      reason: req.reason ?? null,
+      actorUserId: ctx.userId,
+      notes: req.notes ?? null,
+    })
+    .returning();
+  if (!movement) throw new Error("Movimiento sin fila");
+
+  await tx
+    .update(stockBalances)
+    .set({ quantity: warehouseAfter, lastMovementId: movement.id })
+    .where(eq(stockBalances.id, balance.id));
+  const lotBalance = await applyToLotBalance(tx, ctx, movement, req.productId);
+
+  const { before, after } = costed;
+  const money = (v: CostedMovement["before"]["movingAverageCost"]) =>
+    v === null ? null : fixedMoney(v);
+  await tx
+    .update(productInventoryCosts)
+    .set({
+      quantity: fixedQty(after.quantity),
+      inventoryValue: fixedMoney(after.inventoryValue),
+      movingAverageCost: money(after.movingAverageCost),
+      lastMovementId: movement.id,
+      lastUpdatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(productInventoryCosts.companyId, ctx.companyId),
+        eq(productInventoryCosts.productId, req.productId),
+      ),
+    );
+  if (req.recordCostHistory) {
+    await tx.insert(productInventoryCostHistory).values({
+      companyId: ctx.companyId,
+      productId: req.productId,
+      movementId: movement.id,
+      movementSequence: movement.sequence,
+      movementType: req.movementType,
+      productionOrderId: null,
+      quantityBefore: fixedQty(before.quantity),
+      quantityAfter: fixedQty(after.quantity),
+      valueBefore: fixedMoney(before.inventoryValue),
+      valueAfter: fixedMoney(after.inventoryValue),
+      averageBefore: money(before.movingAverageCost),
+      averageAfter: money(after.movingAverageCost),
+      batchQuantity: fixedQty(costed.quantity),
+      batchUnitCost: fixedMoney(costed.unitCost),
+      batchValue: fixedMoney(costed.totalValue),
+      actorUserId: ctx.userId,
+    });
+  }
+  return {
+    movement,
+    costed,
+    warehouseBefore: fixedQty(balance.quantity),
+    warehouseAfter,
+    lotBefore: lotBalance.quantityBefore,
+    lotAfter: lotBalance.quantityAfter,
+  };
 }

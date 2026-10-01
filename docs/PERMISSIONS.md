@@ -123,6 +123,13 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | production | `production_orders.cancel` | Cancelar órdenes de producción no completadas | ✅ | ✅ | — | — | — | ✅ | — |
 | production | `production_orders.add_extra_material` | Agregar y quitar consumos extra durante la producción | ✅ | ✅ | — | — | — | ✅ | — |
 | production | `production.cost.read` | Ver costos esperados y reales de producción | ✅ | ✅ | ✅ | — | — | — | — |
+| product_lots | `product_lots.read` | Ver lotes de producto terminado, su trazabilidad y disponibilidad a una fecha | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
+| product_lots | `product_lots.transform` | Congelar y descongelar lotes (transformación de conservación) | ✅ | ✅ | — | — | — | ✅ | ✅ |
+| product_lots | `product_lots.waste` | Registrar mermas de producto terminado sobre un lote | ✅ | ✅ | — | — | — | — | ✅ |
+| product_lots | `product_lots.quality` | Bloquear y desbloquear lotes por calidad | ✅ | ✅ | — | — | — | — | ✅ |
+| product_conservation | `product_conservation.read` | Ver la conservación y vida útil configuradas de los productos | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
+| product_conservation | `product_conservation.manage` | Configurar conservación, vida útil y estado inicial de los productos | ✅ | ✅ | — | — | — | — | — |
+| Inventario | `inventory.expiry.read` | Ver productos terminados próximos a vencer | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
 
 - **ADMIN** — Administrador del sistema: Acceso global, incluida la administración técnica.
 - **OWNER** — Dueño: Acceso global al negocio.

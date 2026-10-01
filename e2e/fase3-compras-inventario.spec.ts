@@ -87,6 +87,7 @@ async function openStock(page: Page, material: string) {
   await openSection(page, "Stock");
   await expect(page.getByRole("heading", { level: 1, name: "Stock" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(material);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(material);
   await page.getByRole("link", { name: material, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: new RegExp(material) })).toBeVisible();
 }
@@ -326,6 +327,7 @@ test("Fase 3: stock mínimo (bajo mínimo → OK al recibir una compra)", async 
   await page.getByRole("link", { name: "Bajo mínimo", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Stock bajo mínimo" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(azucar);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(azucar);
   const row = page.getByRole("row").filter({ hasText: azucar });
   await expect(row).toContainText("40 kg");
   await expect(row).toContainText("50 kg");
@@ -352,6 +354,7 @@ test("Fase 3: stock mínimo (bajo mínimo → OK al recibir una compra)", async 
   await page.getByRole("link", { name: "Bajo mínimo", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Stock bajo mínimo" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(azucar);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(azucar);
   await expect(page.getByText(`Sin resultados para “${azucar}”.`)).toBeVisible();
   expect(consoleErrors).toEqual([]);
 });

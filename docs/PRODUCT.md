@@ -41,8 +41,37 @@ costos, precios, reportes, auditoría y configuración empresarial.
 
 ## Estado
 
-Fases 0 (fundación), 1 (maestros), 2 (recetas + costo teórico) y 3 (compras + inventario)
-aceptadas; Fase 4 (producción) implementada y esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+Fases 0 (fundación), 1 (maestros), 2 (recetas + costo teórico), 3 (compras + inventario) y 4
+(producción) aceptadas; Fase 4.5 (lotes, conservación y vida útil) implementada y esperando gate
+humano. Ver [ROADMAP](ROADMAP.md).
+
+### Lotes, conservación y vida útil (Fase 4.5)
+
+- **Configurar la conservación de un producto** (Productos → producto → Conservación →
+  Configurar): qué estados admite (fresco, refrigerado, congelado, descongelado), cuánto dura en
+  cada uno (en horas o días), en cuáles puede nacer al producirse, el estado inicial por defecto y
+  con cuánta anticipación avisar "próximo a vencer". Cambiarla vale para lotes nuevos: los
+  existentes conservan su vencimiento. Sin configurar, los lotes nacen frescos y sin vencimiento.
+- **Cada producción completada crea un lote** con el código de lote de la orden, su estado inicial
+  (el por defecto o, si el producto admite varios, el elegido al confirmar) y su "utilizable hasta".
+  La orden completada enlaza a su lote.
+- **Ver los lotes de un producto** (Stock → Productos terminados → producto): stock físico,
+  utilizable ahora, próximo a vencer, cantidades por conservación, lotes ordenados por vencimiento
+  (primero el que hay que usar antes) y **disponibilidad a una fecha**: cuánto habrá utilizable,
+  por ejemplo, el sábado, y por qué el resto no (vencido o bloqueado).
+- **Congelar** parte o todo un lote fresco o refrigerado y **descongelar** parte de uno congelado:
+  se crea un lote nuevo con su propio vencimiento, el stock total y su valor no cambian. Antes de
+  confirmar se ve el resumen; al descongelar se avisa que no se puede volver a congelar.
+- **Registrar merma de un lote** (vencimiento, daño, calidad, otro): sale al costo del lote, sin
+  cambiar el costo promedio.
+- **Bloquear o desbloquear un lote** por calidad: un lote bloqueado no se cuenta como disponible.
+- **Próximos a vencer** (Stock → Próximos a vencer): lotes vencidos o que vencen dentro del aviso
+  de cada producto o de una ventana elegida.
+- En el listado de productos terminados: físico, fresco, refrigerado, congelado, utilizable ahora
+  y próximo a vencer. Los movimientos muestran su lote.
+
+Fuera de esta fase: reservas de stock, ventas que consuman lotes (Fase 5), transferir lotes entre
+depósitos y vencimiento automático con tareas programadas (el estado se calcula en cada consulta).
 
 ### Producción (Fase 4)
 
@@ -81,7 +110,7 @@ sólo materias primas: no incluyen mano de obra, energía ni indirectos. Quien n
 `production.cost.read` ve cantidades, diferencias y stock, pero ningún importe de producción.
 
 Fuera de esta fase: reservar stock al iniciar, revertir una producción completada, stock por lote,
-vencimientos, FIFO, mano de obra y gastos en el costo, planificación automática (MRP).
+vencimientos y FIFO (Fase 4.5), mano de obra y gastos en el costo, planificación automática (MRP).
 
 ### Compras e inventario (Fase 3)
 

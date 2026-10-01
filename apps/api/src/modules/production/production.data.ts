@@ -16,6 +16,7 @@ import {
   employees,
   productionMaterialLines,
   productionOrders,
+  productLots,
   products,
   rawMaterials,
   recipeVersions,
@@ -34,7 +35,7 @@ import {
   type ProductionMaterialLineDto,
   type ProductionOrderDto,
 } from "@bakery/shared";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { todayIn, type OperationContext } from "../../lib/context.js";
 import { notFound } from "../../lib/db-errors.js";
 import { AppError } from "../../lib/errors.js";
@@ -619,6 +620,25 @@ export async function getOrder(
         : null,
   };
 
+  const [rootLot] =
+    order.status === "COMPLETED"
+      ? await db
+          .select({
+            id: productLots.id,
+            code: productLots.lotCode,
+            conservationState: productLots.conservationState,
+            usableUntil: productLots.usableUntil,
+          })
+          .from(productLots)
+          .where(
+            and(
+              eq(productLots.companyId, ctx.companyId),
+              eq(productLots.productionOrderId, order.id),
+              isNull(productLots.parentLotId),
+            ),
+          )
+      : [];
+
   const dto: ProductionOrderDto = {
     id: order.id,
     code: order.internalCode,
@@ -661,6 +681,9 @@ export async function getOrder(
         }
       : null,
     batchCode: order.batchCode,
+    productLot: rootLot
+      ? { ...rootLot, usableUntil: rootLot.usableUntil?.toISOString() ?? null }
+      : null,
     responsible: responsible ? { id: responsible.id, name: responsible.name } : null,
     notes: order.notes,
     cancelReason: order.cancelReason,
