@@ -350,7 +350,7 @@ function ProductCostHistory({ productId, unit }: { productId: string; unit: stri
                   <th scope="col">Fecha</th>
                   <th scope="col">Producción</th>
                   <th scope="col" className="num">
-                    Lote
+                    Lote producido
                   </th>
                   <th scope="col" className="num">
                     Promedio anterior

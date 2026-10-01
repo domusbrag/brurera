@@ -12,8 +12,8 @@ RESULTADOS, RIESGOS, DEUDA, SIGUIENTE PASO) → detenerse.
 | 0    | Discovery + Foundation        | Completa — aceptada           |
 | 1    | Maestros                      | Completa — aceptada           |
 | 2    | Recetas + costo teórico       | Completa — aceptada           |
-| 3    | Compras + inventario          | **Completa — esperando gate** |
-| 4    | Producción                    | Pendiente                     |
+| 3    | Compras + inventario          | Completa — aceptada           |
+| 4    | Producción                    | **Completa — esperando gate** |
 | 5    | Ventas + clientes             | Pendiente                     |
 | UX   | UX/DESIGN OPTIMIZATION        | Pendiente (después de Fase 5) |
 | 6    | Proveedores + finanzas + caja | Pendiente                     |
@@ -87,10 +87,17 @@ producto terminado (Fase 4/5) y transferencias entre depósitos.
 
 ## Fase 4 — Producción
 
-Órdenes de producción.
-**E2E:** comprar materias primas → receta → orden → completar → verificar descuento exacto,
-stock de producto, costo, versión de receta y auditoría. **Rollback:** provocar una falla dentro
-de la transacción y verificar que no quedó stock parcialmente modificado.
+**Completa — esperando gate humano.** Órdenes de producción `OP-0001` que son también el lote
+(`LOT-AAAAMMDD-NNN`), con estados `DRAFT → PLANNED → IN_PROGRESS → COMPLETED` (cancelables antes
+de completar). La versión de receta se fija al planificar; el plan escala la receta y congela el
+costo esperado; iniciar exige stock; en curso se cargan consumo real (unidades compatibles), consumos
+extra con motivo y salida real; completar genera en una transacción `PRODUCTION_CONSUMPTION` al
+costo promedio y `PRODUCTION_OUTPUT` al costo material real, con promedio móvil del producto
+terminado e historial. Stock y ficha de productos terminados. Ver
+[reports/FASE_4_REPORTE.md](reports/FASE_4_REPORTE.md). Quedan fuera (deuda o fases futuras):
+reservas de stock (`INVENTORY_RESERVATIONS`), reversión de producciones (`PRODUCTION_REVERSAL`),
+stock por lote, vencimientos y FIFO, mano de obra, energía e indirectos en el costo, MRP y
+planificación automática.
 
 ## Fase 5 — Ventas + clientes
 

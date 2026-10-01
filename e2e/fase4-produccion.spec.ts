@@ -180,7 +180,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   await expect(heading).toContainText("Borrador");
 
   // Planificar: fija receta, cantidades, costo esperado y asigna lote.
-  await confirmIn(page, "Planificar");
+  await confirmIn(page, "Planificar producción");
   await expect(heading).toContainText("Planificada");
   await expect(page.locator("dl.details")).toContainText(/LOT-\d{8}-\d{3}/);
   await expect(summaryValue(section(page, "Costo material"), "Costo esperado")).toContainText(
@@ -318,7 +318,7 @@ test("Fase 4: faltante de materia prima → compra recibida → se puede iniciar
   await expect(heading).toContainText("Borrador");
 
   // Se puede planificar con faltante, pero no iniciar.
-  await confirmIn(page, "Planificar");
+  await confirmIn(page, "Planificar producción");
   await expect(heading).toContainText("Planificada");
   const availability = section(page, /^Disponibilidad en/);
   await expect(availability.getByRole("row").filter({ hasText: manteca })).toContainText("Falta");

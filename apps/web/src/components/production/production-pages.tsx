@@ -119,6 +119,11 @@ export function ProductionList() {
           ),
         },
         { header: "Producto", cell: (o) => o.product.name },
+        {
+          header: "Receta",
+          cell: (o) => `v${o.recipeVersion.versionNumber}`,
+          className: "hide-md",
+        },
         { header: "Fecha", cell: (o) => formatDate(o.scheduledFor) },
         { header: "Estado", cell: (o) => <ProductionStatusBadge status={o.status} /> },
         {
@@ -197,7 +202,7 @@ export function ProductionDetail({ id }: { id: string }) {
           <>
             {data.status === "DRAFT" && can(P.PRODUCTION_ORDERS_PLAN) && (
               <ConfirmAction
-                label="Planificar"
+                label="Planificar producción"
                 title={`¿Planificar la orden ${data.code}?`}
                 message={
                   <>
@@ -208,7 +213,7 @@ export function ProductionDetail({ id }: { id: string }) {
                     )}
                   </>
                 }
-                confirmLabel="Planificar"
+                confirmLabel="Planificar producción"
                 onConfirm={async () => {
                   replace(
                     await apiFetch<ProductionOrderDto>(`/api/production-orders/${id}/plan`, {
@@ -1095,6 +1100,10 @@ function ReviewDialog({
         <div>
           <dt>Rendimiento</dt>
           <dd>{order.output ? formatPercent(order.output.yieldPerformance) : "—"}</dd>
+        </div>
+        <div>
+          <dt>Stock suficiente</dt>
+          <dd>{order.availability ? (short ? "No" : "Sí") : "—"}</dd>
         </div>
       </dl>
       <div className="table-wrap">

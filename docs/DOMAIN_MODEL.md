@@ -14,7 +14,7 @@ Convenciones:
   operaciones explícitas).
 - Estados de documentos como enums con transiciones validadas; nunca banderas booleanas sueltas.
 
-## Diagrama ER — Fases 0 a 3 (implementado)
+## Diagrama ER — Fases 0 a 4 (implementado)
 
 ```mermaid
 erDiagram
@@ -72,17 +72,25 @@ erDiagram
     RAW_MATERIAL ||--o| RAW_MATERIAL_INVENTORY_COST : "costo de empresa"
     STOCK_MOVEMENT ||--o{ RAW_MATERIAL_INVENTORY_COST : "último aplicado"
     STOCK_MOVEMENT ||--|| INVENTORY_COST_HISTORY : "antes / después"
+
+    PRODUCT ||--o{ PRODUCTION_ORDER : "se produce en"
+    RECIPE_VERSION ||--o{ PRODUCTION_ORDER : "fijada al planificar"
+    WAREHOUSE ||--o{ PRODUCTION_ORDER : "materias primas / producto terminado"
+    EMPLOYEE |o--o{ PRODUCTION_ORDER : "responsable"
+    PRODUCTION_ORDER ||--o{ PRODUCTION_MATERIAL_LINE : "RECIPE / EXTRA"
+    RAW_MATERIAL ||--o{ PRODUCTION_MATERIAL_LINE : ""
+    PRODUCTION_MATERIAL_LINE |o--o| STOCK_MOVEMENT : "PRODUCTION_CONSUMPTION (una vez)"
+    PRODUCTION_ORDER |o--o| STOCK_MOVEMENT : "PRODUCTION_OUTPUT (una vez)"
+    PRODUCT ||--o{ STOCK_MOVEMENT : ""
+    PRODUCT ||--o{ STOCK_BALANCE : "saldo por depósito"
+    PRODUCT ||--o| PRODUCT_INVENTORY_COST : "costo promedio material"
+    STOCK_MOVEMENT ||--|| PRODUCT_INVENTORY_COST_HISTORY : "antes / lote / después"
 ```
 
 ## Diagrama ER — fases futuras (previsto)
 
 ```mermaid
 erDiagram
-    RECIPE_VERSION ||--o{ PRODUCTION_ORDER : "usada en"
-    PRODUCTION_ORDER ||--o{ PRODUCTION_COST_SNAPSHOT : ""
-    PRODUCTION_ORDER ||--o{ STOCK_MOVEMENT : "consumo y salida"
-    PRODUCT ||--o{ STOCK_MOVEMENT : "stock de producto"
-
     CUSTOMER ||--o{ SALE : ""
     PRICE_LIST ||--o{ CUSTOMER : "predeterminada"
     PRICE_LIST ||--o{ PRICE_LIST_ITEM : ""
@@ -314,12 +322,78 @@ prima: `OUT_OF_STOCK` si no hay existencia; `LOW` si hay menos que el mínimo (m
 `OK`. El faltante es `mínimo − existencia` (0 si no falta). La vista "Bajo mínimo" incluye las sin
 stock con mínimo y muestra el proveedor preferido.
 
-## Producción (Fase 4)
+## Producción (Fase 4, implementado)
 
-`ProductionOrder` (producto, versión de receta, cantidad planificada/real, fecha, responsable,
-estado `DRAFT`/`PLANNED`/`IN_PROGRESS`/`COMPLETED`/`CANCELLED`). Completar, en una transacción:
-validar disponibilidad → consumos negativos → costo real y teórico → `ProductionCostSnapshot` →
-salida positiva de producto → rendimiento real y merma.
+**Orden de producción = lote** (ADR-039). `production_orders`: código `OP-0001`, producto,
+receta y versión, depósito de materias primas y de producto terminado, fecha programada, cantidad
+planificada (como se ingresó + unidad + normalizada a la unidad de venta), factor de escala, merma
+teórica de la versión (sólo referencia), cantidad real (ídem), lote opcional `LOT-AAAAMMDD-NNN`
+(único por empresa, se genera al planificar), responsable (empleado activo), actor y fecha de cada
+transición, motivo de cancelación y notas. El **snapshot de costos** son columnas de la orden:
+`planned_material_cost`, `planned_unit_material_cost`, `planned_cost_status` (al planificar) y
+`actual_material_cost`, `actual_unit_material_cost` (al completar).
+
+`production_material_lines`: `RECIPE` (derivadas de la receta al planificar) o `EXTRA` (agregadas en
+curso, motivo obligatorio, nunca cambian la receta). Plan (cantidad, unidad, normalizada a la unidad
+base, costo unitario, origen, costo), real (cantidad en unidad compatible, normalizada), costo real,
+variación y movimiento de consumo.
+
+**Ciclo de vida.**
+
+```
+DRAFT → PLANNED → IN_PROGRESS → COMPLETED
+DRAFT | PLANNED | IN_PROGRESS → CANCELLED
+```
+
+| Estado        | Qué se puede hacer                                                             | Stock |
+| ------------- | ------------------------------------------------------------------------------ | ----- |
+| `DRAFT`       | Editar todo; el plan se calcula en vivo (no se guarda).                        | No    |
+| `PLANNED`     | Versión, líneas y costo esperado fijos; sólo responsable, lote y notas.        | No    |
+| `IN_PROGRESS` | Cargar consumo real (unidad compatible), extras y salida real; guardar avance. | No    |
+| `COMPLETED`   | Nada: hecho histórico (409 `PRODUCTION_IMMUTABLE`, trigger en la base).        | Sí    |
+| `CANCELLED`   | Nada.                                                                          | No    |
+
+**Fijación de receta** (ADR-040): la versión sugerida es la vigente para la fecha programada; en
+DRAFT se puede elegir otra publicada; al planificar queda fija y una versión nueva no la cambia.
+
+**Cantidades.** `scaleFactor = salida planificada normalizada / rendimiento normalizado`; cada
+ingrediente = cantidad de receta × factor, normalizada a la unidad base de la materia prima. Real:
+la unidad debe ser compatible (`INCOMPATIBLE_UNITS`); variación = real − plan (y %).
+Rendimiento: `variación = real − plan`, `rendimiento = real / plan × 100`. No se genera `WASTE` por
+rendimiento: un rendimiento menor sube el costo unitario.
+
+**Producto producible.** De la empresa, activo, con receta y `controls_stock = true`
+(`PRODUCT_NOT_STOCK_CONTROLLED`). Una orden en curso puede completarse aunque el producto se haya
+desactivado después. Una materia prima dada de baja en la receta bloquea planificar e iniciar.
+
+**Disponibilidad.** Necesario / disponible / diferencia por materia prima en el depósito de origen
+(plan en DRAFT/PLANNED, consumo cargado en IN_PROGRESS). Planificar se permite con faltante;
+iniciar no (`INSUFFICIENT_MATERIALS_FOR_PRODUCTION`). No hay reservas: completar revalida
+(`INSUFFICIENT_STOCK`).
+
+**Costos — cuatro conceptos distintos.**
+
+| Concepto                | Dónde                        | Cuándo se fija          | Fuente                                                 |
+| ----------------------- | ---------------------------- | ----------------------- | ------------------------------------------------------ |
+| Costo teórico           | Receta / snapshot de versión | Al publicar (o en vivo) | Costo efectivo (promedio → referencia)                 |
+| Costo esperado          | Orden planificada            | DRAFT → PLANNED         | Costo efectivo de ese momento, por línea con su origen |
+| Costo material real     | Orden completada             | Al completar            | Σ `total_value` de los `PRODUCTION_CONSUMPTION`        |
+| Costo promedio material | Inventario del producto      | Con cada producción     | Promedio ponderado móvil de los lotes (`applyInbound`) |
+
+En curso se muestra además un **costo estimado** (consumo cargado × promedio actual), que no se
+guarda. Costo unitario real = costo material real / salida real. Ninguno incluye mano de obra,
+energía ni indirectos.
+
+**Completar** (ADR-041/042): una transacción con locks en orden fijo; consumos al promedio vigente
+(sin cambiarlo), salida valorizada exactamente con el costo real, promedio e historial del
+producto (`product_inventory_costs`, `product_inventory_cost_history`), auditoría
+`PRODUCTION_ORDER_COMPLETED` y `PRODUCT_MOVING_AVERAGE_COST_CHANGED`. Sin reversión
+(`PRODUCTION_REVERSAL`).
+
+**Producto terminado en inventario.** `stock_balances` y `stock_movements` ya eran genéricos desde
+0006 (`item_type`, exactamente uno de `raw_material_id` / `product_id`); Fase 4 los usa para
+`PRODUCT`. El producto sale de Fase 4 con stock por depósito, costo promedio material, valor de
+inventario e historial, listo para el costo de venta de Fase 5.
 
 ## Ventas y cuentas (Fases 5–6)
 
@@ -350,10 +424,10 @@ integración fiscal argentina (`ArgentinaFiscalInvoiceProvider`) es un milestone
 | Maestros   | Nada se borra; se desactiva. Usuario ≠ empleado.                            | **Fase 1:** sin endpoints DELETE; tests de desactivación y de baja de empleado con acceso.                                                                                                                                     |
 | Unidades   | Solo se convierte dentro de la misma raíz; masa ↔ volumen se rechaza.       | **Fase 1:** `@bakery/domain` con decimal.js; tests unitarios e integración (422 `INCOMPATIBLE_UNITS`).                                                                                                                         |
 | Inventario | Todo cambio de stock tiene un `StockMovement`; el stock nunca es negativo.  | **Fase 3:** ledger append-only y saldos/costo custodiados por triggers, CHECK ≥ 0, `INSUFFICIENT_STOCK`; `inventory-invariants.test.ts` (1–3, 7, 21).                                                                          |
-| Producción | Completar genera consumo + salida en una única transacción.                 | Fase 4: test de rollback provocando falla.                                                                                                                                                                                     |
+| Producción | Completar genera consumo + salida en una única transacción.                 | **Fase 4:** `completeOrder` en una transacción con locks en orden fijo; test §73 fuerza una falla después de los consumos (trigger temporal) y verifica que nada cambió; idempotencia `[200, 409, 409]`.                       |
 | Recetas    | Una versión publicada es inmutable; una vigente y un borrador por receta.   | **Fase 2:** triggers en la base + índices únicos parciales; tests de integración (v1 intacta tras v2, UPDATE/DELETE directos rechazados).                                                                                      |
 | Costo      | Falta de costo ≠ costo cero; el snapshot no cambia con los costos.          | **Fase 2:** dominio devuelve `INCOMPLETE`/null; snapshots append-only por trigger; unit, integración y E2E de costo incompleto. **Fase 3:** el snapshot tampoco cambia con el promedio de compras (test §62, E2E pasos 16–17). |
 | Compras    | Una recepción confirmada afecta stock una sola vez y no se modifica.        | **Fase 3:** estado verificado con lock + único `(company_id, source_line_id)` + triggers de inmutabilidad; tests de doble confirmación, rollback y concurrencia.                                                               |
 | Ventas     | Una venta confirmada afecta stock una sola vez.                             | Fase 5: ídem.                                                                                                                                                                                                                  |
-| Costos     | Producciones históricas conservan snapshot de costos.                       | Fase 4.                                                                                                                                                                                                                        |
+| Costos     | Producciones históricas conservan snapshot de costos.                       | **Fase 4:** costos esperado y real son columnas de la orden, inmutables tras completar (trigger `production_orders_guard`); tests de UPDATE directo rechazado.                                                                 |
 | Caja       | Todo movimiento financiero relevante es trazable a su origen.               | Fase 6: referencia obligatoria salvo movimientos manuales con motivo.                                                                                                                                                          |

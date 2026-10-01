@@ -41,8 +41,47 @@ costos, precios, reportes, auditoría y configuración empresarial.
 
 ## Estado
 
-Fases 0 (fundación), 1 (maestros) y 2 (recetas + costo teórico) aceptadas; Fase 3 (compras +
-inventario) implementada y esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+Fases 0 (fundación), 1 (maestros), 2 (recetas + costo teórico) y 3 (compras + inventario)
+aceptadas; Fase 4 (producción) implementada y esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+
+### Producción (Fase 4)
+
+Una persona con los permisos correspondientes puede, sin intervención técnica:
+
+- **Crear una orden de producción** (Producción → Órdenes → Nueva orden): producto, fecha,
+  cantidad (en la unidad de venta u otra compatible), depósito de materias primas, depósito de
+  producto terminado y responsable. Mientras completa el formulario ve la receta sugerida (la
+  vigente para esa fecha), cuánto rinde, la escala, qué materias primas necesita, cuánto hay y
+  cuánto falta, y (con permiso) el costo esperado. Se guarda como borrador; no mueve stock.
+- **Planificar**: se fijan la versión de receta, las cantidades y el costo esperado y se asigna un
+  lote (`LOT-AAAAMMDD-NNN`). Se puede planificar aunque falte materia prima, para producir más
+  adelante; la orden muestra el faltante con un acceso a "Comprar".
+- **Iniciar** sólo con stock suficiente en el depósito de materias primas; si falta, el botón está
+  deshabilitado y se ve qué falta. Después de una recepción de compra, "Volver a verificar" habilita
+  el inicio.
+- **Cargar lo real**: cuánto se usó de cada materia prima (arranca con lo planificado; acepta otra
+  unidad compatible, p. ej. gramos), **consumos extra** con motivo (sin tocar la receta) y la
+  **cantidad obtenida**. Puede guardar el avance.
+- **Revisar y confirmar**: un resumen con plan contra real, rendimiento, faltantes y (con permiso)
+  el costo estimado; "Confirmar producción" descuenta las materias primas y suma el producto
+  terminado en una sola operación. Si mientras tanto alguien consumió el stock, se rechaza con el
+  detalle de lo que falta y no se mueve nada.
+- **Ver la producción completada**: plan contra real por materia prima, rendimiento, costo esperado
+  contra costo material real (total y por unidad) y su diferencia, los movimientos de stock y el
+  historial. Una producción completada no se modifica ni se borra.
+- **Cancelar** una orden antes de completarla, con motivo opcional; no mueve stock.
+- **Ver el stock de productos terminados** (Stock → Productos terminados) y la ficha de cada
+  producto: stock por depósito, costo promedio material, valor, producciones recientes,
+  movimientos, historial de costo, receta vigente, precio de venta y margen teórico.
+
+Cuatro costos distintos, siempre con su nombre: **costo teórico** (receta), **costo esperado**
+(fijado al planificar), **costo material real** (fijado al completar, suma de lo consumido al costo
+promedio de cada materia prima) y **costo promedio material** del producto en inventario. Todos son
+sólo materias primas: no incluyen mano de obra, energía ni indirectos. Quien no tiene
+`production.cost.read` ve cantidades, diferencias y stock, pero ningún importe de producción.
+
+Fuera de esta fase: reservar stock al iniciar, revertir una producción completada, stock por lote,
+vencimientos, FIFO, mano de obra y gastos en el costo, planificación automática (MRP).
 
 ### Compras e inventario (Fase 3)
 
@@ -82,8 +121,8 @@ Una persona con los permisos correspondientes puede, sin intervención técnica:
   stock inicial y cambio de costo promedio queda en la auditoría con su autor.
 
 Fuera de esta fase: cuentas a pagar y pagos a proveedores (Fase 6), devoluciones a proveedor,
-cerrar una compra con faltante, transferencias entre depósitos y stock de producto terminado
-(Fases 4 y 5).
+cerrar una compra con faltante y transferencias entre depósitos. El stock de producto terminado
+llegó en Fase 4.
 
 ### Recetas y costo teórico (Fase 2)
 

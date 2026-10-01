@@ -16,6 +16,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F3] Las acciones de inventario (ajustar, merma, stock inicial) están en la cabecera del listado
   y del detalle; con más acciones, la cabecera se recarga. Evaluar un menú de acciones.
 
+- [F4] Producción suma "Órdenes" antes de "Recetas" y Stock suma la pestaña "Productos
+  terminados": ya son cuatro pestañas en Inventario. Revisar junto con la subnavegación por módulo.
+
 ## INFORMATION_ARCHITECTURE
 
 - [F3] La ficha de la materia prima (Maestros) y la ficha de stock (Inventario) muestran parte de
@@ -24,12 +27,21 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F3] Las recepciones de una compra se ven dentro de la compra y en una página propia; no hay un
   listado global de recepciones (p. ej. "lo que llegó hoy").
 
+- [F4] La ficha de stock de un producto terminado y la ficha del producto (Maestros) se solapan
+  (precio, receta). Mismo criterio que materias primas: definir qué vive en cada una.
+- [F4] El detalle de una orden muestra receta, depósitos, lote y tiempos en un bloque de
+  "Detalles" largo; en una orden en curso lo importante (consumo y salida) queda debajo del pliegue
+  en 1366×768. Evaluar un encabezado compacto y la carga real arriba.
+
 ## VISUAL_HIERARCHY
 
 - [F3] Los tres costos (promedio de inventario, referencia manual, usado por recetas) se
   distinguen por rótulo; falta una jerarquía visual que destaque el que efectivamente se usa.
 - [F2/F3] Los resúmenes `cost-summary` se usan para cosas distintas (costos, totales, impacto de
   una merma). Un componente de "métricas" con variantes ayudaría a la consistencia.
+
+- [F4] Costos de producción: esperado, estimado, real y diferencia se distinguen por rótulo y nota
+  al pie. Falta una representación visual (p. ej. barra plan vs real) que destaque la diferencia.
 
 ## FORMS
 
@@ -40,22 +52,41 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F3] Crear una presentación de compra exige ir a la ficha de la materia prima; un alta rápida
   desde el formulario de compra acortaría el recorrido.
 
+- [F4] Consumo real: la columna "Diferencia" se recalcula al guardar el avance, no mientras se
+  escribe. Calcularla en vivo en el navegador (misma función del dominio) daría feedback inmediato.
+- [F4] El formulario de consumo extra es una fila de cinco campos; en 768 px pasa a dos columnas
+  y queda largo. Evaluar un diálogo propio.
+- [F4] Los campos de fecha (`input type=date`) muestran el formato del navegador (mm/dd/aaaa en un
+  navegador en inglés) aunque la app muestre dd/mm/aaaa. Unificar con un selector propio.
+
 ## TABLES
 
 - [F3] Movimientos de inventario: filtros por fecha y por referencia existen en la API pero no en
-  la UI. Sumar un selector de rango de fechas común a todos los listados.
+  la UI. Sumar un selector de rango de fechas común a todos los listados. _(F4: se sumaron
+  "Desde/Hasta" en movimientos y órdenes de producción; falta un componente de rango común.)_
 - [F3] Columnas ocultas en pantallas chicas (`hide-sm`) sin forma de verlas; evaluar filas
   expandibles.
+
+- [F4] El listado de órdenes tiene 9 columnas; en tablet se ocultan responsable, lote y costo.
+  Evaluar agrupar por estado (en curso / planificadas / completadas) en lugar de una sola tabla.
+- [F4] Los enlaces "Ver todas / Ver todos" de los paneles usan el color de enlace por defecto del
+  navegador, no el de la marca (también en la ficha de stock de materias primas).
 
 ## DASHBOARD
 
 - [F3] El inicio todavía no muestra alertas de stock bajo mínimo ni compras pendientes de
   recibir (previsto en Fase 8, pero conviene un primer indicador).
 
+- [F4] El inicio no muestra órdenes en curso ni planificadas con faltante de materia prima.
+
 ## RESPONSIVE
 
 - [F3] En 768 px de ancho el menú pasa a panel desplegable; las tablas con 6+ columnas dependen
   del scroll horizontal del contenedor. Revisar densidad para tablet en uso de depósito.
+
+- [F4] El diálogo "Revisar antes de completar" usa casi todo el alto en 768×1024 cuando hay
+  muchas materias primas; tiene scroll propio, pero el botón "Confirmar producción" queda abajo.
+  Evaluar un pie fijo dentro del diálogo.
 
 ## ACCESSIBILITY
 
@@ -72,3 +103,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   preferido y generar un pedido con varias líneas.
 - [F3] Una compra con faltante definitivo (el proveedor no entregará el resto) no tiene forma de
   cerrarse "recibida con faltante"; hoy queda "Recibida en parte". Requiere definición de negocio.
+- [F4] Una orden planificada con faltante muestra "Comprar" por materia prima; con varios
+  faltantes conviene "Comprar todo lo que falta" agrupado por proveedor preferido.
+- [F4] "Revisar y completar" guarda el avance antes de abrir la revisión; si el usuario vuelve
+  sin confirmar, lo cargado ya quedó guardado (es lo esperado, pero no se avisa).
+- [F4] No hay reversa de una producción completada (deuda PRODUCTION_REVERSAL): un error de carga
+  se corrige hoy con ajustes manuales de stock. Definir el flujo de reversa con negocio.
