@@ -888,3 +888,7 @@ h2 {
 .cost-summary--costs dd {
   font-size: 1rem;
 }
+
+.cost-summary + .details {
+  margin-top: 1rem;
+}

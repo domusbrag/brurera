@@ -502,15 +502,17 @@ export function StockDetail({ id }: { id: string }) {
               {data.effectiveCost === null
                 ? "Sin costo"
                 : formatReferenceCost(data.effectiveCost, currency, unit)}
-              <span className="cost-summary__note">
-                {" "}
-                Origen:{" "}
-                {data.effectiveCostSource === "PURCHASE_MOVING_AVERAGE"
-                  ? "compras (promedio ponderado)"
-                  : data.effectiveCostSource
-                    ? COST_SOURCE_LABELS[data.effectiveCostSource].toLowerCase()
-                    : "—"}
-              </span>
+              {data.effectiveCostSource && (
+                <span className="cost-summary__note">
+                  {" "}
+                  Origen:{" "}
+                  {data.effectiveCostSource === "PURCHASE_MOVING_AVERAGE"
+                    ? "compras (promedio ponderado)"
+                    : data.effectiveCostSource
+                      ? COST_SOURCE_LABELS[data.effectiveCostSource].toLowerCase()
+                      : "—"}
+                </span>
+              )}
             </dd>
           </div>
           {data.canSeeCosts && (
