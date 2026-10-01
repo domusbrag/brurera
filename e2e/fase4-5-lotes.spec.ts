@@ -328,6 +328,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   // Listado de productos terminados con columnas por conservación.
   await page.getByRole("link", { name: "← Stock de productos terminados" }).click();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);
   const row = page.getByRole("row").filter({ hasText: pan });
   await expect(row).toContainText("95 kg");
   await expect(row).toContainText("65 kg");
@@ -374,6 +375,7 @@ test("Fase 4.5: lote de vida corta en Próximos a vencer y fuera de la disponibi
   await page.getByRole("link", { name: "Próximos a vencer" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Próximos a vencer" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(lot.code);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(lot.code);
   const row = page.getByRole("row").filter({ hasText: lot.code });
   await expect(row).toContainText("Próximo a vencer");
   await expect(row).toContainText("30 kg");

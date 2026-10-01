@@ -180,6 +180,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   // 14. Buscar el cliente
   await openSection(page, "Clientes");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(run);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(run);
   await expect(page.getByText("1 resultado")).toBeVisible();
   await page.getByRole("link", { name: `Almacén ${run} S.R.L.` }).click();
 
@@ -196,6 +197,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await expect(page.getByRole("cell", { name: "Cliente desactivado" })).toBeVisible();
   await openSection(page, "Clientes");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(run);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(run);
   await expect(page.getByText(`Sin resultados para “${run}”.`)).toBeVisible();
   await page.getByLabel("Estado").selectOption("inactive");
   await expect(page.getByText("1 resultado")).toBeVisible();

@@ -93,6 +93,7 @@ async function createProduct(
 async function openRecipe(page: Page, productName: string, run: string) {
   await openSection(page, "Recetas");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(run);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(run);
   await page.getByRole("link", { name: productName }).click();
   await expect(page.getByRole("heading", { name: "Historial de versiones" })).toBeVisible();
 }
@@ -196,6 +197,7 @@ test("Fase 2: receta, publicación, cambio de costo y nueva versión", async ({ 
   // 15. Cambiar el costo de la harina: 800 → 1.000
   await openSection(page, "Materias primas");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(harina);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(harina);
   await page.getByRole("link", { name: harina }).click();
   await changeReferenceCost(page, "kg", "1000");
   await expect(page.getByText("$1.000,00 / kg", { exact: true })).toBeVisible();
@@ -325,6 +327,7 @@ test("Fase 2: receta con costo incompleto", async ({ page }, testInfo) => {
   // El listado marca el costo incompleto
   await openSection(page, "Recetas");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(run);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(run);
   const row = page.getByRole("row").filter({ hasText: pizza });
   await expect(row).toContainText("Costo incompleto");
   await expect(row).not.toContainText("$0");

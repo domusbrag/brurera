@@ -105,6 +105,7 @@ async function createProductWithRecipe(
 async function initialStock(page: Page, material: string, quantity: string, cost: string) {
   await openSection(page, "Stock");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(material);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(material);
   await page.getByRole("link", { name: material, exact: true }).click();
   await page.getByRole("link", { name: "Cargar stock inicial" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Cargar stock inicial" })).toBeVisible();
@@ -242,6 +243,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
     page.getByRole("heading", { level: 1, name: "Stock de productos terminados" }),
   ).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);
   const row = page.getByRole("row").filter({ hasText: pan });
   await expect(row).toContainText("96 kg");
   await row.getByRole("link", { name: pan }).click();
@@ -260,14 +262,17 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   // Materias primas: 200 − 76,05 = 123,95 kg de harina; 10 − 1,5 = 8,5 kg de sal.
   await openSection(page, "Stock");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(harina);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(harina);
   await expect(page.getByRole("row").filter({ hasText: harina })).toContainText("123,95 kg");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(sal);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(sal);
   await expect(page.getByRole("row").filter({ hasText: sal })).toContainText("8,5 kg");
 
   // Movimientos de inventario: filtro por productos terminados, con enlace a la orden.
   await page.getByRole("link", { name: "Movimientos", exact: true }).click();
   await page.getByRole("combobox", { name: "Artículo" }).selectOption("PRODUCT");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);
   const outRow = page.getByRole("row").filter({ hasText: pan });
   await expect(outRow).toContainText("Producción terminada");
   await outRow.getByRole("link", { name: /Producción OP-/ }).click();
@@ -277,6 +282,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   await openSection(page, "Órdenes");
   await page.getByRole("combobox", { name: "Estado" }).selectOption("COMPLETED");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);
   await expect(page.getByRole("row").filter({ hasText: pan })).toContainText("Completada");
 
   expect(consoleErrors).toEqual([]);
