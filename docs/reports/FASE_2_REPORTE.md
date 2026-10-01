@@ -291,7 +291,16 @@ La tabla que relaciona las invariantes 1–16 con sus tests está en [TESTING](.
 
 ## CI
 
-El workflow `CI` (job `verify`) corre lint, typecheck, migraciones, seed, test, build y Playwright. Corrió en el PR #2: el primer push (`30149a7`) dio **success**, en el run 36799309673. El resultado del commit final queda en el PR y se informa en el hilo.
+```
+CI_REMOTE_STATUS = PASS (run 36800063242 sobre 3df4b34)
+```
+
+El workflow `CI` (job `verify`) corre lint, typecheck, migraciones, seed, test, build y Playwright (E2E). Pasó en las dos corridas del PR #2:
+
+- `30149a7`: run 36799309673, success.
+- `3df4b34`: run 36800063242, success. Es el último commit con código, tests y docs.
+
+El commit que sólo agrega este resultado al reporte vuelve a correr el mismo CI.
 
 ## Hallazgos UX (revisión manual)
 
