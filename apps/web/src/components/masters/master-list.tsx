@@ -31,6 +31,8 @@ export interface MasterListProps<T> {
     allLabel?: string;
     options: { value: string; label: string }[];
   }[];
+  /** Filtros de fecha (desde/hasta) sincronizados con la URL. */
+  dateFilters?: { name: string; label: string }[];
   statusLabels?: { active: string; inactive: string };
   /** Opciones propias del filtro de estado (p. ej. estados de una compra). */
   statusOptions?: { value: string; label: string }[];
@@ -69,6 +71,7 @@ function MasterListInner<T extends { id: string }>({
   createHref,
   canCreate,
   extraFilters = [],
+  dateFilters = [],
   statusLabels = { active: "Activos", inactive: "Inactivos" },
   statusOptions,
   defaultStatus = "active",
@@ -105,7 +108,7 @@ function MasterListInner<T extends { id: string }>({
   }, [draft]);
 
   const extraValues = Object.fromEntries(
-    extraFilters.map((f) => [f.name, params.get(f.name) ?? undefined]),
+    [...extraFilters, ...dateFilters].map((f) => [f.name, params.get(f.name) ?? undefined]),
   );
   const { data, error } = useResource<Page<T>>(
     listPath(endpoint, {
@@ -174,6 +177,16 @@ function MasterListInner<T extends { id: string }>({
                 </option>
               ))}
             </select>
+          ))}
+          {dateFilters.map((f) => (
+            <label key={f.name} className="filters__date">
+              <span>{f.label}</span>
+              <input
+                type="date"
+                value={params.get(f.name) ?? ""}
+                onChange={(e) => setParams({ [f.name]: e.target.value || null })}
+              />
+            </label>
           ))}
         </div>
 

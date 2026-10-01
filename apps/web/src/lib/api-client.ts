@@ -7,6 +7,8 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly fieldErrors: Record<string, string> = {},
+    /** Detalle crudo del error (p. ej. faltantes de stock por materia prima). */
+    readonly details: unknown[] = [],
   ) {
     super(message);
     this.name = "ApiError";
@@ -25,11 +27,11 @@ const GENERIC_MESSAGES: Record<number, string> = {
  */
 export async function apiFetch<T>(
   path: string,
-  options: { method?: "GET" | "POST" | "PATCH" | "PUT"; body?: unknown } = {},
+  options: { method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"; body?: unknown } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
   const init: RequestInit = { method, cache: "no-store" };
-  if (method !== "GET") {
+  if (method !== "GET" && method !== "DELETE") {
     init.headers = { "content-type": "application/json" };
     init.body = JSON.stringify(options.body ?? {});
   }
@@ -60,7 +62,13 @@ export async function apiFetch<T>(
       body?.error.code === "VALIDATION_ERROR"
         ? "Revisá los datos marcados."
         : (GENERIC_MESSAGES[res.status] ?? body?.error.message ?? "Ocurrió un error inesperado.");
-    throw new ApiError(res.status, body?.error.code ?? "HTTP_ERROR", message, fieldErrors);
+    throw new ApiError(
+      res.status,
+      body?.error.code ?? "HTTP_ERROR",
+      message,
+      fieldErrors,
+      Array.isArray(details) ? details : [],
+    );
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

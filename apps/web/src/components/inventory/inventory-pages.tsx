@@ -4,6 +4,8 @@ import {
   ADJUSTMENT_REASON_LABELS,
   COST_SOURCE_LABELS,
   PERMISSIONS as P,
+  STOCK_ITEM_TYPE_LABELS,
+  STOCK_ITEM_TYPES,
   STOCK_MOVEMENT_TYPE_LABELS,
   STOCK_MOVEMENT_TYPES_DTO,
   STOCK_STATUS_LABELS,
@@ -29,8 +31,9 @@ import { useCan, useCurrentUser } from "../user-context";
 import { PresentationsPanel } from "./presentations";
 
 /*
- * Inventario de materias primas (Fase 3). Todo lo que se ve acá se deriva de
- * los movimientos: no hay ninguna pantalla que edite un saldo.
+ * Inventario de materias primas (Fase 3) y piezas comunes con el stock de
+ * productos terminados (Fase 4). Todo lo que se ve acá se deriva de los
+ * movimientos: no hay ninguna pantalla que edite un saldo.
  */
 
 export const STOCK_BASE = "/stock";
@@ -45,11 +48,14 @@ export function StockStatusBadge({ status }: { status: StockStatusDto }) {
   return <span className={STATUS_BADGE[status]}>{STOCK_STATUS_LABELS[status]}</span>;
 }
 
-/** Pestañas de Inventario: Stock | Movimientos | Bajo mínimo. */
+export const PRODUCT_STOCK_BASE = `${STOCK_BASE}/productos`;
+
+/** Pestañas de Inventario: Materias primas | Productos terminados | Movimientos | Bajo mínimo. */
 export function StockTabs() {
   const pathname = usePathname();
   const tabs = [
-    { href: STOCK_BASE, label: "Stock" },
+    { href: STOCK_BASE, label: "Materias primas" },
+    { href: PRODUCT_STOCK_BASE, label: "Productos terminados" },
     { href: `${STOCK_BASE}/movimientos`, label: "Movimientos" },
     { href: `${STOCK_BASE}/bajo-minimo`, label: "Bajo mínimo" },
   ];
@@ -94,7 +100,7 @@ export function StockActions({ rawMaterialId }: { rawMaterialId?: string }) {
   );
 }
 
-function useWarehouseOptions() {
+export function useWarehouseOptions() {
   const [options, setOptions] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     fetchOptions<WarehouseDto>("/api/warehouses")
@@ -112,7 +118,7 @@ export function StockList() {
   const currency = user.company.currencyCode;
   return (
     <MasterList<InventoryItemDto>
-      title="Stock"
+      title="Stock de materias primas"
       subtitle="Existencias de materias primas, calculadas desde los movimientos de inventario."
       endpoint="/api/inventory"
       basePath={STOCK_BASE}
@@ -204,29 +210,52 @@ function SignedQuantity({ m }: { m: StockMovementDto }) {
   );
 }
 
+/** Enlace al documento que originó un movimiento o un cambio de costo. */
+export function ReferenceLink({
+  reference,
+}: {
+  reference: { type: string; id: string; label: string } | null;
+}) {
+  if (reference?.type === "PURCHASE")
+    return <Link href={`/compras/${reference.id}`}>{reference.label}</Link>;
+  if (reference?.type === "PRODUCTION_ORDER")
+    return <Link href={`/produccion/${reference.id}`}>Producción {reference.label}</Link>;
+  return null;
+}
+
 function MovementReference({ m }: { m: StockMovementDto }) {
-  if (m.reference?.type === "PURCHASE")
-    return <Link href={`/compras/${m.reference.id}`}>{m.reference.label}</Link>;
+  if (m.reference?.type === "PURCHASE" || m.reference?.type === "PRODUCTION_ORDER")
+    return <ReferenceLink reference={m.reference} />;
   return <>{reasonLabel(m) ?? "—"}</>;
 }
 
-function movementColumns(
+/** Ruta del stock de un artículo (materia prima o producto terminado). */
+export function itemStockHref(m: Pick<StockMovementDto, "itemType" | "item">): string {
+  return m.itemType === "PRODUCT"
+    ? `${PRODUCT_STOCK_BASE}/${m.item.id}`
+    : `${STOCK_BASE}/${m.item.id}`;
+}
+
+export function movementColumns(
   timezone: string,
   currency: string,
   showCosts: boolean,
-  withMaterial: boolean,
+  withItem: boolean,
 ) {
   return [
     {
       header: "Fecha",
       cell: (m: StockMovementDto) => formatDateTime(m.occurredAt, timezone),
     },
-    ...(withMaterial
+    ...(withItem
       ? [
           {
-            header: "Materia prima",
+            header: "Artículo",
             cell: (m: StockMovementDto) => (
-              <Link href={`${STOCK_BASE}/${m.rawMaterial.id}`}>{m.rawMaterial.name}</Link>
+              <>
+                <Link href={itemStockHref(m)}>{m.item.name}</Link>
+                <span className="cost-source">{STOCK_ITEM_TYPE_LABELS[m.itemType]}</span>
+              </>
             ),
           },
         ]
@@ -278,7 +307,7 @@ export function MovementList() {
       subtitle="Historial completo e inalterable: cada entrada y salida de stock, quién la hizo y por qué."
       endpoint="/api/inventory/movements"
       basePath={`${STOCK_BASE}/movimientos`}
-      searchPlaceholder="Buscar materia prima"
+      searchPlaceholder="Buscar materia prima o producto"
       emptyText="Todavía no hay movimientos."
       statusParam="movementType"
       defaultStatus=""
@@ -291,11 +320,21 @@ export function MovementList() {
       ]}
       extraFilters={[
         {
+          name: "itemType",
+          label: "Artículo",
+          allLabel: "Materias primas y productos",
+          options: STOCK_ITEM_TYPES.map((t) => ({ value: t, label: STOCK_ITEM_TYPE_LABELS[t] })),
+        },
+        {
           name: "warehouseId",
           label: "Depósito",
           allLabel: "Todos los depósitos",
           options: warehouses,
         },
+      ]}
+      dateFilters={[
+        { name: "from", label: "Desde" },
+        { name: "to", label: "Hasta" },
       ]}
       headerExtra={
         <div className="toolbar">
@@ -391,7 +430,7 @@ export function StockDetail({ id }: { id: string }) {
   return (
     <div className="page">
       <PageHeader
-        breadcrumb={{ href: STOCK_BASE, label: "Stock" }}
+        breadcrumb={{ href: STOCK_BASE, label: "Stock de materias primas" }}
         title={
           <>
             {data.rawMaterial.name} <StockStatusBadge status={data.status} />
@@ -547,13 +586,13 @@ export function StockDetail({ id }: { id: string }) {
       </section>
 
       <PresentationsPanel rawMaterialId={id} baseUnit={data.baseUnit} />
-      <MaterialMovements rawMaterialId={id} name={data.rawMaterial.name} />
+      <ItemMovements filter={{ rawMaterialId: id }} name={data.rawMaterial.name} />
       {can(P.INVENTORY_COST_READ) && <CostHistory rawMaterialId={id} unit={unit} />}
     </div>
   );
 }
 
-function Pager({
+export function Pager({
   page,
   total,
   pageSize,
@@ -593,12 +632,19 @@ function Pager({
   );
 }
 
-function MaterialMovements({ rawMaterialId, name }: { rawMaterialId: string; name: string }) {
+/** Últimos movimientos de un artículo (materia prima o producto terminado). */
+export function ItemMovements({
+  filter,
+  name,
+}: {
+  filter: { rawMaterialId: string } | { productId: string };
+  name: string;
+}) {
   const user = useCurrentUser();
   const can = useCan();
   const [page, setPage] = useState(1);
   const { data, error } = useResource<Page<StockMovementDto>>(
-    listPath("/api/inventory/movements", { rawMaterialId, page, pageSize: 10 }),
+    listPath("/api/inventory/movements", { ...filter, page, pageSize: 10 }),
   );
   const columns = movementColumns(
     user.company.timezone,
@@ -696,10 +742,10 @@ function CostHistory({ rawMaterialId, unit }: { rawMaterialId: string; unit: str
                     <td>{formatDateTime(h.createdAt, user.company.timezone)}</td>
                     <td>
                       {STOCK_MOVEMENT_TYPE_LABELS[h.movementType]}
-                      {h.reference?.type === "PURCHASE" && (
+                      {h.reference && (
                         <>
                           {" · "}
-                          <Link href={`/compras/${h.reference.id}`}>{h.reference.label}</Link>
+                          <ReferenceLink reference={h.reference} />
                         </>
                       )}
                     </td>

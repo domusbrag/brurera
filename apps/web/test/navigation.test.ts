@@ -57,13 +57,26 @@ describe("menú según permisos", () => {
   });
 
   it("Compras y Stock (Fase 3) aparecen sólo con su permiso de lectura", async () => {
-    const { visibleNavigation, CURRENT_PHASE } = await import("@/lib/navigation");
-    expect(CURRENT_PHASE).toBe(3);
+    const { visibleNavigation } = await import("@/lib/navigation");
     const slugsOf = (perms: string[]) =>
       visibleNavigation(perms).flatMap((g) => g.items.map((i) => i.slug));
     expect(slugsOf(["purchases.read"])).toContain("compras");
     expect(slugsOf(["purchases.read"])).not.toContain("stock");
     expect(slugsOf(["inventory.read"])).toContain("stock");
     expect(slugsOf(["inventory.read"])).not.toContain("compras");
+  });
+
+  it("Producción → Órdenes (Fase 4) aparece sólo con production_orders.read, antes que Recetas", async () => {
+    const { visibleNavigation, CURRENT_PHASE } = await import("@/lib/navigation");
+    expect(CURRENT_PHASE).toBe(4);
+    const group = (perms: string[]) =>
+      visibleNavigation(perms).find((g) => g.label === "Producción")?.items ?? [];
+    const both = group(["production_orders.read", "recipes.read"]);
+    expect(both.map((i) => [i.slug, i.label])).toEqual([
+      ["produccion", "Órdenes"],
+      ["recetas", "Recetas"],
+    ]);
+    expect(group(["recipes.read"]).map((i) => i.slug)).toEqual(["recetas"]);
+    expect(group(["inventory.read"])).toEqual([]);
   });
 });

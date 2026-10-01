@@ -522,7 +522,7 @@ export function ProductForm({ id }: { id?: string }) {
       name: "controlsStock",
       label: "Controla stock",
       kind: "checkbox",
-      hint: "Si está marcado, las ventas descontarán stock (desde la Fase 3).",
+      hint: "Si está marcado, el producto lleva stock: se produce con órdenes de producción y entra al stock al completarlas.",
     },
     { name: "imageUrl", label: "URL de imagen", kind: "url", full: true },
     { name: "description", label: "Descripción", kind: "textarea" },

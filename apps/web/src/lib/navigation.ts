@@ -19,7 +19,7 @@ export interface NavGroup {
 }
 
 /** Última fase implementada: los módulos de fases posteriores son "próxima etapa". */
-export const CURRENT_PHASE = 3;
+export const CURRENT_PHASE = 4;
 
 export const CONFIG_SECTIONS: {
   slug: string;
@@ -70,8 +70,8 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Producción",
     items: [
+      { slug: "produccion", label: "Órdenes", phase: 4, anyOf: [P.PRODUCTION_ORDERS_READ] },
       { slug: "recetas", label: "Recetas", phase: 2, anyOf: [P.RECIPES_READ] },
-      { slug: "produccion", label: "Órdenes de producción", phase: 4 },
     ],
   },
   {

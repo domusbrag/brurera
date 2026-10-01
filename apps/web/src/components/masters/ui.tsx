@@ -10,7 +10,13 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
-import { formatDateTime, formatMoney, formatQuantity, formatReferenceCost } from "@/lib/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  formatQuantity,
+  formatReferenceCost,
+} from "@/lib/format";
 import { useCan, useCurrentUser } from "../user-context";
 
 /** Carga un recurso de la API con estado de carga/error y recarga manual. */
@@ -283,9 +289,69 @@ const FIELD_LABELS: Record<string, string> = {
   supplierDocumentNumber: "Documento del proveedor",
   taxTotal: "Impuestos",
   lines: "Líneas",
+  productId: "Producto",
+  scheduledFor: "Fecha programada",
+  plannedOutputQuantity: "Cantidad a producir",
+  plannedOutputUnitId: "Unidad",
+  recipeVersionId: "Versión de receta",
+  sourceWarehouseId: "Depósito de materias primas",
+  outputWarehouseId: "Depósito de producto terminado",
+  responsibleEmployeeId: "Responsable",
+  batchCode: "Lote",
+  actualOutput: "Salida real",
 };
 
+/** Detalle de un evento de una orden de producción (OP-0001…). */
+function describeProduction(metadata: Record<string, unknown>): string | null {
+  const str = (key: string) =>
+    typeof metadata[key] === "string" ? (metadata[key] as string) : null;
+  const currency = str("currency") ?? "ARS";
+  if (str("actualMaterialCost") !== null && str("actualOutput") !== null) {
+    const unit = str("unit") ?? "";
+    return [
+      `Salida ${formatQuantity(str("actualOutput"), unit)}`,
+      str("batchCode") ? `lote ${str("batchCode")}` : null,
+      `costo material ${formatMoney(str("actualMaterialCost"), currency)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  if ("plannedCostStatus" in metadata) {
+    const shortages = Array.isArray(metadata.shortages) ? (metadata.shortages as string[]) : [];
+    return [
+      `Versión ${String(metadata.versionNumber)}`,
+      str("batchCode") ? `lote ${str("batchCode")}` : null,
+      str("plannedMaterialCost")
+        ? `costo esperado ${formatMoney(str("plannedMaterialCost"), currency)}`
+        : "costo esperado incompleto",
+      shortages.length > 0 ? `faltante: ${shortages.join(", ")}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  if ("previousStatus" in metadata) return str("reason") ? `Motivo: ${str("reason")}` : null;
+  if (str("rawMaterial") !== null && "lineId" in metadata) {
+    const qty = str("quantity");
+    return [
+      str("rawMaterial"),
+      qty && str("unit") ? formatQuantity(qty, str("unit")!) : null,
+      str("notes"),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  if (typeof metadata.versionNumber === "number" && str("scheduledFor") !== null) {
+    return `${str("product") ?? ""} · versión ${metadata.versionNumber} · para el ${formatDate(str("scheduledFor"))}`;
+  }
+  if (str("batchCode") !== null && !("changes" in metadata)) return `Lote ${str("batchCode")}`;
+  return null;
+}
+
 function describeChanges(metadata: Record<string, unknown>): string | null {
+  if (typeof metadata.code === "string" && metadata.code.startsWith("OP-")) {
+    const production = describeProduction(metadata);
+    if (production) return production;
+  }
   const version =
     typeof metadata.versionNumber === "number" ? `Versión ${metadata.versionNumber}` : null;
   if (version) {
