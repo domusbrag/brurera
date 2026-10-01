@@ -11,10 +11,11 @@ RESULTADOS, RIESGOS, DEUDA, SIGUIENTE PASO) → detenerse.
 | ---- | ----------------------------- | ----------------------------- |
 | 0    | Discovery + Foundation        | Completa — aceptada           |
 | 1    | Maestros                      | Completa — aceptada           |
-| 2    | Recetas + costo teórico       | **Completa — esperando gate** |
-| 3    | Compras + inventario          | Pendiente                     |
+| 2    | Recetas + costo teórico       | Completa — aceptada           |
+| 3    | Compras + inventario          | **Completa — esperando gate** |
 | 4    | Producción                    | Pendiente                     |
 | 5    | Ventas + clientes             | Pendiente                     |
+| UX   | UX/DESIGN OPTIMIZATION        | Pendiente (después de Fase 5) |
 | 6    | Proveedores + finanzas + caja | Pendiente                     |
 | 7    | Facturación interna           | Pendiente                     |
 | 8    | Dashboard y reportes          | Pendiente                     |
@@ -72,6 +73,18 @@ mínimo, mermas.
 **E2E obligatoria:** stock harina 0 → compra 100 kg → confirmar → stock 100 → otra compra de
 100 kg a otro precio → promedio ponderado correcto.
 
+**Implementado:** presentaciones de compra por materia prima ("Bolsa 25 kg" de esta harina),
+compras `DRAFT → ORDERED → PARTIALLY_RECEIVED → RECEIVED` (o `CANCELLED` sin recepciones
+confirmadas), recepciones parciales `DRAFT → POSTED` (inmutables al confirmar, idempotentes),
+ledger append-only `stock_movements` con cantidad con signo (stock inicial, recepción, ajuste
+positivo/negativo, merma), saldos por depósito y costo por empresa como proyecciones mantenidas en
+la misma transacción y custodiadas por triggers, costo promedio ponderado móvil por empresa con
+historial, stock negativo prohibido (`INSUFFICIENT_STOCK`), stock bajo mínimo, valorización
+(con permiso `inventory.cost.read`) y costo efectivo de recetas (promedio → referencia manual →
+incompleto). Ver [reports/FASE_3_REPORTE.md](reports/FASE_3_REPORTE.md). Quedan fuera: cuentas a
+pagar y pagos (Fase 6), devoluciones a proveedor, cierre de compras con faltante, stock de
+producto terminado (Fase 4/5) y transferencias entre depósitos.
+
 ## Fase 4 — Producción
 
 Órdenes de producción.
@@ -83,6 +96,19 @@ de la transacción y verificar que no quedó stock parcialmente modificado.
 
 Ventas, precios, cliente, salida de stock, pagos, cuenta corriente.
 **Prueba:** stock 100 → venta 20 → stock 80 → pago 50 % → saldo correcto → segundo pago → saldo 0.
+
+## UX/DESIGN OPTIMIZATION (después de Fase 5)
+
+Sprint de diseño transversal, **no** se ejecuta durante las fases funcionales: durante cada fase se
+corrigen los problemas evidentes y se registran en [UX_BACKLOG.md](UX_BACKLOG.md) los hallazgos que
+piden una revisión de conjunto.
+
+Objetivos: arquitectura de información, navegación, densidad de tablas, formularios, consistencia
+visual, dashboard, jerarquía, estados vacíos, recorridos frecuentes, accesibilidad, tablet y un
+diseño profesional de producto.
+
+**Gate:** backlog revisado (cada hallazgo resuelto o descartado con motivo), revisión manual en
+desktop y tablet, sin regresiones en E2E.
 
 ## Fase 6 — Proveedores + finanzas + caja
 

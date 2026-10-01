@@ -107,7 +107,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByRole("button", { name: "Crear proveedor" }).click();
   await expect(page.getByRole("heading", { name: `Molino ${run} S.A.` })).toBeVisible();
   await expect(
-    page.getByText("Compras y cuenta corriente estarán disponibles en una fase posterior."),
+    page.getByText("Cuenta corriente y pagos estarán disponibles en una fase posterior."),
   ).toBeVisible();
 
   // 8. Unidad derivada: bolsa de 25 kg, y prueba de conversión
@@ -146,7 +146,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByRole("button", { name: "Crear materia prima" }).click();
   await expect(page.getByRole("heading", { name: `Harina 0000 ${run}` })).toBeVisible();
   await expect(page.getByText("Materia prima", { exact: true })).toBeVisible();
-  await expect(page.getByText("$850,125 / kg")).toBeVisible();
+  await expect(page.getByText("$850,125 / kg", { exact: true })).toBeVisible();
 
   // 11. Categoría de productos
   await page.goto("/configuracion/categorias/nuevo");

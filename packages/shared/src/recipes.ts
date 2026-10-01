@@ -240,6 +240,9 @@ export interface RecipeIngredientDto {
     baseUnit: UnitRefDto;
     referenceCost: string | null;
     referenceCostSource: CostSourceDto;
+    /** Costo que usan las recetas hoy (promedio de inventario o referencia manual). */
+    effectiveCost: string | null;
+    effectiveCostSource: CostSourceDto | null;
   };
   quantity: string;
   unit: UnitRefDto;

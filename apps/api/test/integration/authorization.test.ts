@@ -122,6 +122,34 @@ ENDPOINTS.push(
   ["POST", `/api/recipe-versions/${ANY_ID}/archive`, [P.RECIPES_ARCHIVE]],
   ["GET", `/api/recipe-versions/${ANY_ID}/cost`, [P.RECIPES_READ]],
   ["GET", `/api/recipe-versions/${ANY_ID}/diff`, [P.RECIPES_READ]],
+  // Presentaciones de compra (Fase 3)
+  ["GET", `/api/raw-materials/${ANY_ID}/presentations`, [P.PRESENTATIONS_READ]],
+  ["POST", `/api/raw-materials/${ANY_ID}/presentations`, [P.PRESENTATIONS_MANAGE]],
+  ["PATCH", `/api/raw-material-presentations/${ANY_ID}`, [P.PRESENTATIONS_MANAGE]],
+  ["POST", `/api/raw-material-presentations/${ANY_ID}/deactivate`, [P.PRESENTATIONS_MANAGE]],
+  ["POST", `/api/raw-material-presentations/${ANY_ID}/activate`, [P.PRESENTATIONS_MANAGE]],
+  // Compras y recepciones (Fase 3)
+  ["GET", "/api/purchases", [P.PURCHASES_READ]],
+  ["POST", "/api/purchases", [P.PURCHASES_CREATE]],
+  ["GET", `/api/purchases/${ANY_ID}`, [P.PURCHASES_READ]],
+  ["PATCH", `/api/purchases/${ANY_ID}`, [P.PURCHASES_UPDATE]],
+  ["POST", `/api/purchases/${ANY_ID}/order`, [P.PURCHASES_ORDER]],
+  ["POST", `/api/purchases/${ANY_ID}/cancel`, [P.PURCHASES_CANCEL]],
+  ["GET", `/api/purchases/${ANY_ID}/receipts`, [P.PURCHASES_READ]],
+  ["POST", `/api/purchases/${ANY_ID}/receipts`, [P.PURCHASES_RECEIVE]],
+  ["GET", `/api/purchase-receipts/${ANY_ID}`, [P.PURCHASES_READ]],
+  ["PATCH", `/api/purchase-receipts/${ANY_ID}`, [P.PURCHASES_RECEIVE]],
+  ["POST", `/api/purchase-receipts/${ANY_ID}/post`, [P.PURCHASES_RECEIVE]],
+  ["POST", `/api/purchase-receipts/${ANY_ID}/cancel`, [P.PURCHASES_RECEIVE]],
+  // Inventario (Fase 3)
+  ["GET", "/api/inventory", [P.INVENTORY_READ]],
+  ["GET", `/api/inventory/raw-materials/${ANY_ID}`, [P.INVENTORY_READ]],
+  ["GET", "/api/inventory/movements", [P.INVENTORY_READ]],
+  ["GET", "/api/inventory/low-stock", [P.INVENTORY_READ]],
+  ["GET", `/api/inventory/costs/${ANY_ID}`, [P.INVENTORY_READ, P.INVENTORY_COST_READ]],
+  ["POST", "/api/inventory/initial-stock", [P.INVENTORY_INITIAL_STOCK]],
+  ["POST", "/api/inventory/adjustments", [P.INVENTORY_ADJUST]],
+  ["POST", "/api/inventory/waste", [P.INVENTORY_WASTE]],
 );
 
 let ctx: TestContext;

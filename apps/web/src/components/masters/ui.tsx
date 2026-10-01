@@ -1,10 +1,16 @@
 "use client";
 
-import { AUDIT_ACTION_LABELS, PERMISSIONS, type AuditLogItemDto, type Page } from "@bakery/shared";
+import {
+  AUDIT_ACTION_LABELS,
+  PERMISSIONS,
+  STOCK_MOVEMENT_TYPE_LABELS,
+  type AuditLogItemDto,
+  type Page,
+} from "@bakery/shared";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
-import { formatDateTime, formatReferenceCost } from "@/lib/format";
+import { formatDateTime, formatMoney, formatQuantity, formatReferenceCost } from "@/lib/format";
 import { useCan, useCurrentUser } from "../user-context";
 
 /** Carga un recurso de la API con estado de carga/error y recarga manual. */
@@ -271,6 +277,12 @@ const FIELD_LABELS: Record<string, string> = {
   documentNumber: "Documento",
   hireDate: "Fecha de ingreso",
   imageUrl: "Imagen",
+  supplierId: "Proveedor",
+  purchaseDate: "Fecha",
+  expectedDate: "Fecha esperada",
+  supplierDocumentNumber: "Documento del proveedor",
+  taxTotal: "Impuestos",
+  lines: "Líneas",
 };
 
 function describeChanges(metadata: Record<string, unknown>): string | null {
@@ -293,16 +305,49 @@ function describeChanges(metadata: Record<string, unknown>): string | null {
     return [version, ...extra].join(" · ");
   }
   const changes = metadata.changes as Record<string, unknown> | undefined;
-  const cost = changes?.referenceCost as { from: string | null; to: string | null } | undefined;
-  if (cost && typeof metadata.perUnit === "string") {
-    const currency = typeof metadata.currency === "string" ? metadata.currency : "ARS";
-    const show = (v: string | null) =>
-      v === null ? "sin costo" : formatReferenceCost(v, currency, metadata.perUnit as string);
-    return `Costo de referencia: ${show(cost.from)} → ${show(cost.to)}`;
+  const currency = typeof metadata.currency === "string" ? metadata.currency : "ARS";
+  for (const [key, label] of [
+    ["referenceCost", "Costo de referencia"],
+    ["movingAverageCost", "Costo promedio"],
+  ] as const) {
+    const cost = changes?.[key] as { from: string | null; to: string | null } | undefined;
+    if (cost && typeof metadata.perUnit === "string") {
+      const show = (v: string | null) =>
+        v === null ? "sin costo" : formatReferenceCost(v, currency, metadata.perUnit as string);
+      return `${label}: ${show(cost.from)} → ${show(cost.to)}`;
+    }
+  }
+  // Operación de inventario: "Merma · Depósito Principal: 50 kg → 47 kg".
+  const movementType = metadata.movementType as keyof typeof STOCK_MOVEMENT_TYPE_LABELS;
+  if (
+    STOCK_MOVEMENT_TYPE_LABELS[movementType] &&
+    typeof metadata.unit === "string" &&
+    typeof metadata.before === "string" &&
+    typeof metadata.after === "string"
+  ) {
+    const unit = metadata.unit;
+    return `${STOCK_MOVEMENT_TYPE_LABELS[movementType]} · ${String(metadata.warehouse ?? "")}: ${formatQuantity(metadata.before, unit)} → ${formatQuantity(metadata.after, unit)}`;
+  }
+  if (typeof metadata.receipt === "string") {
+    const value =
+      typeof metadata.inventoryValue === "string"
+        ? ` · ${formatMoney(metadata.inventoryValue, currency)}`
+        : "";
+    return `Recepción ${metadata.receipt}${value}`;
+  }
+  if (typeof metadata.presentation === "string") {
+    return `Presentación “${metadata.presentation}”`;
   }
   if (changes && typeof changes === "object") {
     const fields = Object.keys(changes).map((k) => FIELD_LABELS[k] ?? k);
-    return fields.length > 0 ? `Cambió: ${fields.join(", ")}` : null;
+    if (typeof metadata.lines === "number" && typeof metadata.number === "string")
+      fields.push("líneas");
+    if (fields.length > 0) return `Cambió: ${[...new Set(fields)].join(", ")}`;
+  }
+  if (typeof metadata.number === "string") {
+    const total =
+      typeof metadata.total === "string" ? ` · ${formatMoney(metadata.total, currency)}` : "";
+    return `Compra ${metadata.number}${total}`;
   }
   if (Array.isArray(metadata.to)) return `Roles: ${(metadata.to as string[]).join(", ")}`;
   if (typeof metadata.terminationDate === "string") return `Egreso: ${metadata.terminationDate}`;

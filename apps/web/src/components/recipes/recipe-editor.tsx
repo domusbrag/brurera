@@ -145,6 +145,9 @@ export function DraftEdit({ recipeId, versionId }: { recipeId: string; versionId
       referenceCost: i.rawMaterial.referenceCost,
       referenceCostSource: i.rawMaterial.referenceCostSource,
       referenceCostUpdatedAt: null,
+      movingAverageCost: null,
+      effectiveCost: i.rawMaterial.effectiveCost,
+      effectiveCostSource: i.rawMaterial.effectiveCostSource,
       active: false,
       createdAt: "",
       updatedAt: "",
@@ -263,8 +266,9 @@ function RecipeEditor({
         quantity: toDecimal(line.quantity),
         unit: toCostingUnit(unit),
         baseUnit: toCostingUnit(base),
-        referenceCost: m.referenceCost,
-        costSource: m.referenceCost === null ? null : m.referenceCostSource,
+        // Mismo costo que usa la API: promedio móvil de inventario o referencia manual.
+        referenceCost: m.effectiveCost,
+        costSource: m.effectiveCostSource,
       });
     }
     try {
@@ -509,7 +513,7 @@ function RecipeEditor({
                     Unidad
                   </th>
                   <th scope="col" className="num hide-sm">
-                    Costo referencia
+                    Costo usado
                   </th>
                   <th scope="col" className="num">
                     Costo ingrediente
@@ -585,10 +589,10 @@ function RecipeEditor({
                       <td className="num hide-sm">
                         {!m ? (
                           "—"
-                        ) : m.referenceCost === null ? (
+                        ) : m.effectiveCost === null ? (
                           <span className="badge badge--warn">Sin costo</span>
                         ) : (
-                          formatReferenceCost(m.referenceCost, currency, m.baseUnit.symbol)
+                          formatReferenceCost(m.effectiveCost, currency, m.baseUnit.symbol)
                         )}
                       </td>
                       <td className="num">

@@ -101,6 +101,19 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | Recetas | `recipes.update` | Editar recetas y borradores de versiones (y descartarlos) | ✅ | ✅ | — | — | — | ✅ | — |
 | Recetas | `recipes.publish` | Publicar una versión (la vuelve vigente y archiva la anterior) | ✅ | ✅ | — | — | — | — | — |
 | Recetas | `recipes.archive` | Archivar versiones vigentes y desactivar o reactivar recetas | ✅ | ✅ | — | — | — | — | — |
+| Compras | `purchases.read` | Ver compras y sus recepciones | ✅ | ✅ | ✅ | — | ✅ | — | ✅ |
+| Compras | `purchases.create` | Crear compras (borrador) | ✅ | ✅ | — | — | ✅ | — | — |
+| Compras | `purchases.update` | Editar compras en borrador y datos administrativos | ✅ | ✅ | — | — | ✅ | — | — |
+| Compras | `purchases.order` | Confirmar el pedido de una compra al proveedor | ✅ | ✅ | — | — | ✅ | — | — |
+| Compras | `purchases.receive` | Registrar y confirmar recepciones de mercadería (mueven stock y costo) | ✅ | ✅ | — | — | ✅ | — | ✅ |
+| Compras | `purchases.cancel` | Cancelar compras sin mercadería recibida | ✅ | ✅ | — | — | ✅ | — | — |
+| Inventario | `inventory.read` | Ver stock y movimientos | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
+| Inventario | `inventory.adjust` | Ajustar stock (positivo o negativo) con motivo | ✅ | ✅ | — | — | — | — | ✅ |
+| Inventario | `inventory.waste` | Registrar mermas | ✅ | ✅ | — | — | — | — | ✅ |
+| Inventario | `inventory.initial_stock` | Cargar stock inicial valorizado | ✅ | ✅ | ✅ | — | — | — | — |
+| Inventario | `inventory.cost.read` | Ver costo promedio, valorización e historial de costos del inventario | ✅ | ✅ | ✅ | — | ✅ | — | — |
+| Presentaciones de compra | `presentations.read` | Ver presentaciones de compra de materias primas | ✅ | ✅ | ✅ | — | ✅ | — | ✅ |
+| Presentaciones de compra | `presentations.manage` | Crear, modificar y desactivar presentaciones de compra | ✅ | ✅ | — | — | ✅ | — | — |
 
 - **ADMIN** — Administrador del sistema: Acceso global, incluida la administración técnica.
 - **OWNER** — Dueño: Acceso global al negocio.

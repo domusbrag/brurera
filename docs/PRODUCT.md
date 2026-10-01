@@ -41,8 +41,49 @@ costos, precios, reportes, auditoría y configuración empresarial.
 
 ## Estado
 
-Fases 0 (fundación) y 1 (maestros) aceptadas; Fase 2 (recetas + costo teórico) implementada y
-esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+Fases 0 (fundación), 1 (maestros) y 2 (recetas + costo teórico) aceptadas; Fase 3 (compras +
+inventario) implementada y esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+
+### Compras e inventario (Fase 3)
+
+Una persona con los permisos correspondientes puede, sin intervención técnica:
+
+- **Crear una presentación de compra** para una materia prima: "Bolsa 25 kg" de _esta_ harina,
+  "Paquete 500 g" de _esta_ levadura. Cada presentación pertenece a una sola materia prima; no
+  existe una "bolsa" universal.
+- **Crear una compra** a un proveedor (borrador), con líneas en presentaciones o en unidades
+  compatibles (kg, g…), precio, descuento e impuestos; ver el subtotal, el total y la equivalencia
+  ("4 bolsas = 100 kg") en vivo. Después **confirmar el pedido**. Crear una compra no mueve stock.
+- **Registrar una recepción parcial** (llegaron 2 de 4 bolsas): la compra queda "Recibida en
+  parte" con lo pendiente a la vista. **Completarla** con otra recepción la deja "Recibida". No se
+  puede recibir más de lo pendiente, y una recepción confirmada no se vuelve a aplicar ni se
+  modifica.
+- **Ver el stock** por materia prima y por depósito, con filtros (búsqueda, depósito, bajo mínimo,
+  sin stock), y el detalle de cada materia prima con sus existencias, última compra, presentaciones
+  y movimientos.
+- **Ver los movimientos de stock**: qué entró y salió, cuándo, por qué documento o motivo, quién lo
+  hizo y el saldo después de cada uno.
+- **Ver el costo promedio** (promedio ponderado móvil de lo comprado) y la valorización del
+  inventario, con el historial de cada cambio de costo, si tiene el permiso de ver costos.
+- **Ver cómo cambia solo el costo teórico de las recetas**: en cuanto una materia prima tiene costo
+  promedio, las recetas pasan a usarlo en lugar del costo de referencia manual (que se conserva).
+  En la ficha de stock se ven los tres costos separados: promedio de inventario, referencia manual
+  y costo usado por recetas con su origen.
+- **Confiar en los snapshots**: el costo guardado al publicar una versión de receta no cambia con
+  las compras; las versiones nuevas guardan el promedio como origen del costo.
+- **Cargar el stock inicial** de una materia prima en un depósito, con su costo, una sola vez.
+- **Ajustar el stock** (positivo o negativo) con motivo: recuento físico, corrección de datos,
+  rotura, otro.
+- **Registrar una merma** con motivo: vencimiento, daño, pérdida en producción, calidad, otro. Ni
+  una merma ni un ajuste pueden dejar stock negativo.
+- **Ver las alertas de stock mínimo**: qué materias primas están bajo mínimo o sin stock, cuánto
+  falta y a qué proveedor preferido pedirlo.
+- **Reconstruir quién hizo qué**: cada compra, pedido, recepción, cancelación, ajuste, merma,
+  stock inicial y cambio de costo promedio queda en la auditoría con su autor.
+
+Fuera de esta fase: cuentas a pagar y pagos a proveedores (Fase 6), devoluciones a proveedor,
+cerrar una compra con faltante, transferencias entre depósitos y stock de producto terminado
+(Fases 4 y 5).
 
 ### Recetas y costo teórico (Fase 2)
 
@@ -54,7 +95,8 @@ esperando gate humano. Ver [ROADMAP](ROADMAP.md).
 - **Margen bruto teórico** = precio de venta − costo de ingredientes por unidad de venta. No
   incluye mano de obra, energía, alquiler, impuestos ni mermas reales: no es ganancia.
 - **Costo de referencia**: lo carga a mano quien tiene permiso para hacerlo. Es una referencia,
-  no el costo real de compra (que llega con Compras, Fase 3).
+  no el costo real de compra. Desde Fase 3, cuando hay costo promedio de compras, las recetas usan
+  ese promedio y la referencia queda como respaldo.
 - Al **publicar** una versión se guarda el costo de ese momento; después se ve junto al costo
   actual y su variación.
 - Si a un ingrediente le falta el costo, la receta muestra **Costo incompleto**, nunca $0 ni un
@@ -122,3 +164,8 @@ Los módulos ya implementados se muestran solo a quien tiene permiso para usarlo
 futuras se muestran siempre, marcados "Disponible en próxima etapa".
 
 Lenguaje del negocio, sin conceptos técnicos en la interfaz.
+
+Durante cada fase se corrigen los problemas de uso evidentes; los hallazgos que piden una revisión
+de conjunto (navegación, jerarquía visual, densidad, patrones de subnavegación) se registran en
+[UX_BACKLOG](UX_BACKLOG.md) y se resuelven en el sprint **UX/DESIGN OPTIMIZATION**, previsto
+después de la Fase 5.

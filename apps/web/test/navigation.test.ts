@@ -55,4 +55,15 @@ describe("menú según permisos", () => {
     const slugs = visibleNavigation(["units.read"]).flatMap((g) => g.items.map((i) => i.slug));
     expect(slugs).toContain("configuracion");
   });
+
+  it("Compras y Stock (Fase 3) aparecen sólo con su permiso de lectura", async () => {
+    const { visibleNavigation, CURRENT_PHASE } = await import("@/lib/navigation");
+    expect(CURRENT_PHASE).toBe(3);
+    const slugsOf = (perms: string[]) =>
+      visibleNavigation(perms).flatMap((g) => g.items.map((i) => i.slug));
+    expect(slugsOf(["purchases.read"])).toContain("compras");
+    expect(slugsOf(["purchases.read"])).not.toContain("stock");
+    expect(slugsOf(["inventory.read"])).toContain("stock");
+    expect(slugsOf(["inventory.read"])).not.toContain("compras");
+  });
 });

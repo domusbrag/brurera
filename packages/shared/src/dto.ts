@@ -154,6 +154,12 @@ export interface RawMaterialDto {
   referenceCost: string | null;
   referenceCostSource: "MANUAL_REFERENCE" | "PURCHASE_MOVING_AVERAGE" | "SUPPLIER_QUOTE" | "OTHER";
   referenceCostUpdatedAt: string | null;
+  /** Promedio ponderado móvil del inventario (null si nunca hubo ingresos valorizados). */
+  movingAverageCost: string | null;
+  /** Costo por unidad base que usan las recetas hoy (promedio > referencia > null). */
+  effectiveCost: string | null;
+  effectiveCostSource:
+    "MANUAL_REFERENCE" | "PURCHASE_MOVING_AVERAGE" | "SUPPLIER_QUOTE" | "OTHER" | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;

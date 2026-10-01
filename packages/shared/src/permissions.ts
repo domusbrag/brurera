@@ -59,6 +59,22 @@ export const PERMISSIONS = {
   RECIPES_UPDATE: "recipes.update",
   RECIPES_PUBLISH: "recipes.publish",
   RECIPES_ARCHIVE: "recipes.archive",
+
+  PURCHASES_READ: "purchases.read",
+  PURCHASES_CREATE: "purchases.create",
+  PURCHASES_UPDATE: "purchases.update",
+  PURCHASES_ORDER: "purchases.order",
+  PURCHASES_RECEIVE: "purchases.receive",
+  PURCHASES_CANCEL: "purchases.cancel",
+
+  INVENTORY_READ: "inventory.read",
+  INVENTORY_ADJUST: "inventory.adjust",
+  INVENTORY_WASTE: "inventory.waste",
+  INVENTORY_INITIAL_STOCK: "inventory.initial_stock",
+  INVENTORY_COST_READ: "inventory.cost.read",
+
+  PRESENTATIONS_READ: "presentations.read",
+  PRESENTATIONS_MANAGE: "presentations.manage",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -175,6 +191,58 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     code: P.RECIPES_ARCHIVE,
     module: "recipes",
     description: "Archivar versiones vigentes y desactivar o reactivar recetas",
+  },
+
+  { code: P.PURCHASES_READ, module: "purchases", description: "Ver compras y sus recepciones" },
+  { code: P.PURCHASES_CREATE, module: "purchases", description: "Crear compras (borrador)" },
+  {
+    code: P.PURCHASES_UPDATE,
+    module: "purchases",
+    description: "Editar compras en borrador y datos administrativos",
+  },
+  {
+    code: P.PURCHASES_ORDER,
+    module: "purchases",
+    description: "Confirmar el pedido de una compra al proveedor",
+  },
+  {
+    code: P.PURCHASES_RECEIVE,
+    module: "purchases",
+    description: "Registrar y confirmar recepciones de mercadería (mueven stock y costo)",
+  },
+  {
+    code: P.PURCHASES_CANCEL,
+    module: "purchases",
+    description: "Cancelar compras sin mercadería recibida",
+  },
+
+  { code: P.INVENTORY_READ, module: "inventory", description: "Ver stock y movimientos" },
+  {
+    code: P.INVENTORY_ADJUST,
+    module: "inventory",
+    description: "Ajustar stock (positivo o negativo) con motivo",
+  },
+  { code: P.INVENTORY_WASTE, module: "inventory", description: "Registrar mermas" },
+  {
+    code: P.INVENTORY_INITIAL_STOCK,
+    module: "inventory",
+    description: "Cargar stock inicial valorizado",
+  },
+  {
+    code: P.INVENTORY_COST_READ,
+    module: "inventory",
+    description: "Ver costo promedio, valorización e historial de costos del inventario",
+  },
+
+  {
+    code: P.PRESENTATIONS_READ,
+    module: "presentations",
+    description: "Ver presentaciones de compra de materias primas",
+  },
+  {
+    code: P.PRESENTATIONS_MANAGE,
+    module: "presentations",
+    description: "Crear, modificar y desactivar presentaciones de compra",
   },
 ];
 
