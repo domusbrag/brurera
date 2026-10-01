@@ -80,6 +80,10 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       // Seguimiento de producción con sus costos; no opera la planta.
       P.PRODUCTION_ORDERS_READ,
       P.PRODUCTION_COST_READ,
+      // Lotes y vencimientos: sólo lectura.
+      P.PRODUCT_LOTS_READ,
+      P.PRODUCT_CONSERVATION_READ,
+      P.INVENTORY_EXPIRY_READ,
     ],
   },
   {
@@ -146,6 +150,11 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.PRODUCTION_ORDERS_COMPLETE,
       P.PRODUCTION_ORDERS_CANCEL,
       P.PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL,
+      // Ve lotes y vencimientos y puede congelar/descongelar lo que produce.
+      P.PRODUCT_LOTS_READ,
+      P.PRODUCT_LOTS_TRANSFORM,
+      P.PRODUCT_CONSERVATION_READ,
+      P.INVENTORY_EXPIRY_READ,
     ],
   },
   {
@@ -165,6 +174,13 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.INVENTORY_READ,
       P.INVENTORY_ADJUST,
       P.INVENTORY_WASTE,
+      // Opera la conservación de producto terminado: congelar, descongelar, merma y bloqueo.
+      P.PRODUCT_LOTS_READ,
+      P.PRODUCT_LOTS_TRANSFORM,
+      P.PRODUCT_LOTS_WASTE,
+      P.PRODUCT_LOTS_QUALITY,
+      P.PRODUCT_CONSERVATION_READ,
+      P.INVENTORY_EXPIRY_READ,
     ],
   },
 ];

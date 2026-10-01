@@ -10,7 +10,7 @@ describe("base de datos (migraciones)", () => {
   });
   afterAll(() => ctx.close());
 
-  it("crea exactamente las tablas de Fases 0 a 3", async () => {
+  it("crea exactamente las tablas de Fases 0 a 4.5", async () => {
     const result = await ctx.database.db.execute<{ table_name: string }>(sql`
       select table_name from information_schema.tables
       where table_schema = 'public' and table_type = 'BASE TABLE' order by table_name
@@ -26,8 +26,12 @@ describe("base de datos (migraciones)", () => {
       "inventory_cost_history",
       "membership_roles",
       "permissions",
+      "product_conservation_profiles",
+      "product_conservation_settings",
       "product_inventory_cost_history",
       "product_inventory_costs",
+      "product_lot_balances",
+      "product_lots",
       "production_material_lines",
       "production_orders",
       "products",

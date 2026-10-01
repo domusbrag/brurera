@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProductLotSummaryDto } from "./lots";
 import type { CostSourceDto, PersonRefDto, UnitRefDto } from "./recipes";
 import { optionalPastInstant } from "./purchases";
 import { decimalString, optionalDecimalString, optionalText, uuid } from "./validation";
@@ -24,6 +25,8 @@ export const STOCK_MOVEMENT_TYPE_LABELS = {
   WASTE: "Merma",
   PRODUCTION_CONSUMPTION: "Consumo de producción",
   PRODUCTION_OUTPUT: "Producción terminada",
+  LOT_TRANSFORMATION_OUT: "Transformación (salida del lote)",
+  LOT_TRANSFORMATION_IN: "Transformación (ingreso al lote)",
 } as const;
 export type StockMovementTypeDto = keyof typeof STOCK_MOVEMENT_TYPE_LABELS;
 export const STOCK_MOVEMENT_TYPES_DTO = Object.keys(
@@ -181,6 +184,8 @@ export interface StockMovementDto {
   baseUnit: UnitRefDto;
   /** Saldo del depósito después del movimiento. */
   balanceAfter: string;
+  /** Lote de producto terminado (Fase 4.5); null en materias primas. */
+  productLot: { id: string; code: string } | null;
   unitCost: string | null;
   totalValue: string | null;
   reason: string | null;
@@ -284,6 +289,8 @@ export interface ProductStockItemDto extends InventoryValuationDto {
   companyQuantity: string;
   warehouseCount: number;
   lastProduction: { id: string; code: string; completedAt: string } | null;
+  /** Stock por lote: conservación, utilizable ahora, próximo a vencer (Fase 4.5). */
+  lots: ProductLotSummaryDto;
 }
 
 export interface ProductStockDetailDto extends InventoryValuationDto {
@@ -315,6 +322,10 @@ export interface ProductStockDetailDto extends InventoryValuationDto {
     versionId: string | null;
     versionNumber: number | null;
   } | null;
+  /** Stock por lote (Fase 4.5), de la empresa entera. */
+  lots: ProductLotSummaryDto;
+  nearExpiryMinutes: number;
+  conservationConfigured: boolean;
   canSeeCosts: boolean;
 }
 

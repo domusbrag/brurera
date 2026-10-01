@@ -272,6 +272,13 @@ export interface ProductionOrderDto {
   actualOutputNormalized: string | null;
   output: { variance: string; variancePercentage: string; yieldPerformance: string } | null;
   batchCode: string | null;
+  /** Lote de producto terminado que originó al completarse (Fase 4.5). */
+  productLot: {
+    id: string;
+    code: string;
+    conservationState: "FRESH" | "REFRIGERATED" | "FROZEN" | "THAWED";
+    usableUntil: string | null;
+  } | null;
   responsible: { id: string; name: string } | null;
   notes: string | null;
   cancelReason: string | null;

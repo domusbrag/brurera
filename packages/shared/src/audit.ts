@@ -86,6 +86,14 @@ export const AUDIT_ACTION_LABELS = {
   PRODUCTION_EXTRA_MATERIAL_REMOVED: "Consumo extra quitado",
   PRODUCTION_ORDER_COMPLETED: "Producción completada",
   PRODUCT_MOVING_AVERAGE_COST_CHANGED: "Costo promedio del producto modificado",
+
+  PRODUCT_CONSERVATION_PROFILE_CREATED: "Conservación del producto configurada",
+  PRODUCT_CONSERVATION_PROFILE_UPDATED: "Conservación del producto modificada",
+  PRODUCT_LOT_CREATED: "Lote de producto creado",
+  PRODUCT_LOT_TRANSFORMED: "Lote transformado (conservación)",
+  PRODUCT_LOT_WASTE_RECORDED: "Merma de lote registrada",
+  PRODUCT_LOT_BLOCKED: "Lote bloqueado por calidad",
+  PRODUCT_LOT_UNBLOCKED: "Lote desbloqueado",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;

@@ -27,13 +27,16 @@ import type { z } from "zod";
 import type { OperationContext } from "../../lib/context.js";
 import { invalidReference, notFound } from "../../lib/db-errors.js";
 import { likePattern, pageWindow, toPage } from "../../lib/listing.js";
+import { loadProfile } from "../lots/lots.data.js";
+import { lotSummaries } from "../lots/lots.service.js";
 import { companyCurrency } from "../recipes/recipes.data.js";
 import { fixedMoney, fixedQty } from "./ledger.js";
 
 /*
- * Stock de productos terminados (Fase 4). Sólo lo mueve una producción
- * completada (PRODUCTION_OUTPUT). La valorización es COSTO MATERIAL promedio
- * (sin mano de obra ni indirectos) y requiere inventory.cost.read.
+ * Stock de productos terminados (Fase 4). Entra por una producción completada
+ * (PRODUCTION_OUTPUT) y, desde Fase 4.5, vive por lote: cambia de conservación
+ * por transformación y sale por merma de lote. La valorización es COSTO
+ * MATERIAL (sin mano de obra ni indirectos) y requiere inventory.cost.read.
  */
 
 type Db = Database | Transaction;
@@ -115,6 +118,12 @@ export async function listProductStock(
       .leftJoin(stockBalances, balanceJoin)
       .where(where),
   ]);
+  const summaries = await lotSummaries(
+    db,
+    ctx,
+    rows.map((r) => r.id),
+    warehouse?.id ?? null,
+  );
   const items = rows.map((r): ProductStockItemDto => {
     const quantity = warehouse ? r.warehouseQuantity : r.companyQuantity;
     const value =
@@ -140,6 +149,7 @@ export async function listProductStock(
         : null,
       movingAverageCost: canSeeCosts ? r.movingAverageCost : null,
       inventoryValue: canSeeCosts ? value : null,
+      lots: summaries.get(r.id)!,
     };
   });
   return toPage(items, total?.n ?? 0, query);
@@ -225,6 +235,8 @@ export async function getProductStock(
         .where(and(eq(recipeVersions.recipeId, recipe.id), eq(recipeVersions.status, "ACTIVE")))
     : [];
   const average = cost?.movingAverageCost ?? null;
+  const summary = (await lotSummaries(db, ctx, [productId], null)).get(productId)!;
+  const profile = await loadProfile(db, ctx, productId);
   const margin =
     canSeeCosts && average !== null
       ? (() => {
@@ -272,6 +284,9 @@ export async function getProductStock(
           versionNumber: activeVersion?.versionNumber ?? null,
         }
       : null,
+    lots: summary,
+    nearExpiryMinutes: profile.nearExpiryMinutes,
+    conservationConfigured: profile.configured,
     canSeeCosts,
   };
 }

@@ -1,6 +1,7 @@
 import type { Database } from "@bakery/database";
 import {
   PERMISSIONS,
+  completeProductionSchema,
   cancelProductionSchema,
   createProductionOrderSchema,
   extraMaterialSchema,
@@ -150,7 +151,13 @@ export async function productionRoutes(app: FastifyInstance, { db }: { db: Datab
     "/production-orders/:id/complete",
     { preHandler: requirePermission(P.PRODUCTION_ORDERS_COMPLETE) },
     (req) =>
-      production.completeOrder(db, operationContext(req), orderId(req.params), canSeeCosts(req)),
+      production.completeOrder(
+        db,
+        operationContext(req),
+        orderId(req.params),
+        parseInput(completeProductionSchema, req.body ?? {}),
+        canSeeCosts(req),
+      ),
   );
   app.get(
     "/production-orders/:id/availability",
