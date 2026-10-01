@@ -38,6 +38,84 @@ niegan a correr si `DATABASE_URL_TEST` no apunta a una base terminada en `_test`
 Playwright usa el Chromium del sistema si `PLAYWRIGHT_CHROMIUM_EXECUTABLE` está definido; si no,
 el de `playwright install chromium`. Corre en dos viewports: desktop y tablet (820×1180).
 
+## Cobertura de Fase 3
+
+Se corren con los mismos comandos: `pnpm test` (unit + integración) y `pnpm test:e2e`. Para
+iterar sólo sobre esta fase: `pnpm --filter @bakery/domain test`,
+`pnpm --filter @bakery/api test:integration` y
+`pnpm exec playwright test e2e/fase3-compras-inventario.spec.ts` (con el build y la base de
+desarrollo migrada + seed, como el resto de los E2E).
+
+| Suite             | Archivo(s)                                  | Tests | Qué cubre                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------- | ------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| domain (unit)     | `packages/domain/test/inventory.test.ts`    |    23 | Presentaciones (4 bolsas × 25 kg = 100 kg; Paquete 500 g → 0,5 kg; bolsa sin presentación rechazada), importes y adquisición (4 × $20.000 / 100 kg = $800/kg, descuento, impuestos fuera del costo), promedio (100 @ $1.000 + 100 @ $1.200 = 200 @ $1.100; stock en cero; redondeo a 6), salidas (90 kg @ $1.000), sin stock negativo, stock inicial y ajuste positivo, signo, OK/LOW/OUT_OF_STOCK, costo efectivo |
+| shared (unit)     | `packages/shared/test/permissions.test.ts`  |       | Formato `modulo.accion` o `modulo.recurso.accion` (`inventory.cost.read`); `PERMISSIONS.md` al día con los permisos nuevos                                                                                                                                                                                                                                                                                         |
+| database (unit)   | `packages/database/test/schema.test.ts`     |       | Las 9 tablas nuevas en el esquema, sin float                                                                                                                                                                                                                                                                                                                                                                       |
+| web (unit)        | `apps/web/test/navigation.test.ts`          |       | Compras y Stock en el menú sólo con `purchases.read` / `inventory.read`                                                                                                                                                                                                                                                                                                                                            |
+| api (integración) | `purchases-inventory.test.ts`               |    32 | Escenario principal (§61), salidas/ajustes/stock negativo, descuentos e impuestos, receta + inventario (§62), recepción parcial (§63), idempotencia (§64), rollback (§65), cancelación y edición por estado, listados paginados                                                                                                                                                                                    |
+| api (integración) | `inventory-invariants.test.ts`              |    19 | Invariantes 1–17 en la API y en la base (escritura directa rechazada por trigger, CHECK, UNIQUE o FK) y concurrencia (21)                                                                                                                                                                                                                                                                                          |
+| api (integración) | `inventory-tenancy.test.ts`                 |     9 | Empresa A/B en compras, recepciones, presentaciones, stock, movimientos, costos y operaciones manuales (422/404), FKs compuestas en la base                                                                                                                                                                                                                                                                        |
+| api (integración) | `authorization.test.ts`, `database.test.ts` |       | 25 endpoints nuevos (presentaciones, compras, recepciones, inventario) en la matriz rol × endpoint; tablas de Fases 0 a 3                                                                                                                                                                                                                                                                                          |
+| E2E               | `e2e/fase3-compras-inventario.spec.ts`      |     2 | Flujo de 21 pasos y stock mínimo, sin errores de consola, en desktop y tablet                                                                                                                                                                                                                                                                                                                                      |
+
+**Escenarios de integración principales** (`purchases-inventory.test.ts`):
+
+- **Principal (§61):** harina con referencia manual $900/kg; stock inicial 100 kg @ $1.000 (una
+  sola vez por depósito); compra de 4 bolsas × 25 kg a $30.000 la bolsa → 100 kg a $1.200/kg; al
+  confirmar: 200 kg, $220.000, promedio $1.100; la referencia sigue en $900 y las recetas usan
+  $1.100; historial de costo con dos cambios; movimientos con signo y saldo posterior.
+- **Receta + inventario (§62):** el snapshot publicado con la referencia queda intacto, el costo
+  actual pasa al promedio y una versión nueva guarda `PURCHASE_MOVING_AVERAGE` como origen.
+- **Recepción parcial (§63):** 6 de 10 → `PARTIALLY_RECEIVED` con 4 pendientes; recibir 5 se
+  rechaza; los 4 restantes → `RECEIVED`; otra recepción se rechaza; un borrador que excede lo
+  pendiente al momento de confirmar se rechaza (lo pendiente se revalida al confirmar).
+- **Idempotencia (§64):** confirmar dos veces → `409 ALREADY_POSTED`, sin segundo movimiento ni
+  auditoría.
+- **Rollback (§65):** un trigger temporal sobre `audit_logs` hace fallar la auditoría
+  `PURCHASE_RECEIPT_POSTED`, el último paso de la confirmación (500); se verifica que no quedaron
+  movimientos, que saldo, valor y promedio siguen como antes, que la compra sigue `ORDERED` y la
+  recepción `DRAFT`, y que no hay auditoría de promedio ni de la recepción. Sin la falla, la misma
+  recepción se confirma normalmente.
+- **Concurrencia (`inventory-invariants.test.ts`, 21):** tres confirmaciones simultáneas de la
+  misma recepción (una aplica, las otras 409); cuatro recepciones y tres mermas simultáneas de la
+  misma materia prima en dos depósitos (el historial de costo encadena "antes" con "después", sin
+  actualizaciones perdidas); mermas simultáneas que juntas superan el stock (sólo pasan las que
+  alcanzan, nunca queda negativo).
+
+**E2E** (`e2e/fase3-compras-inventario.spec.ts`): (1) login → proveedor → harina con referencia
+$900 → presentación "Bolsa 25 kg" (y receta publicada con la referencia) → stock inicial 100 kg @
+$1.000 → compra de 4 bolsas a $30.000 → pedido → recepción parcial de 2 bolsas → "recibida en
+parte" → completar → 200 kg → promedio $1.100 con la referencia en $900 → receta: costo actual
+$825/kg y snapshot en $675/kg → merma de 3 kg → 197 kg con el mismo promedio → movimientos con
+signo y saldo → auditoría; sin UUIDs visibles. (2) Stock mínimo: azúcar con mínimo 50 kg y stock
+inicial 40 kg → "Bajo mínimo" con faltante 10 kg y en la vista de bajo mínimo → compra recibida →
+OK. Ambos sin errores de consola, en los proyectos desktop y tablet.
+
+### Invariantes de Fase 3 → tests
+
+| #     | Invariante                                                      | Dónde                                                                            |
+| ----- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 1     | Todo cambio de stock tiene su movimiento (saldos = suma ledger) | `inventory-invariants.test.ts` › 1                                               |
+| 2     | `stock_movements` es append-only                                | ídem › 2 (UPDATE y DELETE rechazados por trigger)                                |
+| 3     | El saldo no cambia sin un movimiento nuevo                      | ídem › 3 (`stock_balances_guard`, `raw_material_inventory_costs_guard`)          |
+| 4     | Una recepción no se aplica dos veces                            | ídem › 4 (409 y UNIQUE por línea de origen); `purchases-inventory.test.ts` › §64 |
+| 5     | Una recepción confirmada es inmutable                           | ídem › 5 (cabecera y líneas)                                                     |
+| 6     | No se recibe más de lo pendiente                                | ídem › 6 (409 y CHECK recibido ≤ pedido); §63                                    |
+| 7     | El stock nunca queda negativo                                   | ídem › 7 (`INSUFFICIENT_STOCK` y CHECK ≥ 0); `inventory.test.ts`                 |
+| 8     | Una compra cancelada no recibe                                  | ídem › 8; cancelación (§45)                                                      |
+| 9     | Una compra con recepción confirmada no se cancela               | ídem › 9; cancelación (§45)                                                      |
+| 10    | Una presentación es de una sola materia prima                   | ídem › 10 (422 y FK compuesta)                                                   |
+| 11    | El packaging no tiene conversión universal                      | ídem › 11; `inventory.test.ts` › presentaciones                                  |
+| 12    | La cantidad recibida se normaliza a la unidad base              | ídem › 12; `inventory.test.ts`                                                   |
+| 13    | Promedio ponderado correcto                                     | ídem › 13; `inventory.test.ts`; §61                                              |
+| 14    | Una salida no cambia el promedio                                | ídem › 14; `inventory.test.ts`; salidas y ajustes                                |
+| 15    | Los snapshots de recetas son inmutables                         | ídem › 15; §62; E2E pasos 16–17                                                  |
+| 16–17 | El costo efectivo usa el promedio y conserva la referencia      | ídem › 16–17; `inventory.test.ts` › costo efectivo; §61                          |
+| 18    | Aislamiento por empresa                                         | `inventory-tenancy.test.ts`                                                      |
+| 19    | Autorización por permiso                                        | `authorization.test.ts`                                                          |
+| 20    | Confirmar una recepción es atómico                              | `purchases-inventory.test.ts` › rollback (§65)                                   |
+| 21    | Concurrencia: costo y stock consistentes                        | `inventory-invariants.test.ts` › 21                                              |
+
 ## Cobertura de Fase 2
 
 | Suite             | Archivo(s)                                  | Tests | Qué cubre                                                                                                                                                                                                                                                         |

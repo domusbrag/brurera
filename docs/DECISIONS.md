@@ -249,3 +249,174 @@ significa depende del artículo (25 kg de harina, 1 kg de azúcar) y eso no se m
 quien necesite "bolsa de 25 kg" la define como unidad derivada de masa (ADR-018).
 **Consecuencias.** Sin conversiones engañosas. Cuando compras lo requiera (Fase 3), se evaluará una
 conversión por artículo (`raw_material_units`) con su propia migración.
+
+**Actualización (Fase 3).** Resuelto por ADR-030: presentaciones de compra por materia prima
+(`raw_material_presentations`) en lugar de `raw_material_units`. Las recetas no cambian.
+
+## ADR-026 — Ledger de stock append-only y autoritativo
+
+**Contexto.** El stock no se edita: se deriva de movimientos (principio 2 de PRODUCT). Sumar el
+ledger en cada consulta no escala y no permite bloquear un saldo para validar una salida.
+**Decisión.** `stock_movements` es la única fuente de verdad, append-only por trigger: una
+corrección es un movimiento nuevo, nunca un UPDATE o DELETE. `stock_balances` (saldo por empresa +
+depósito + ítem) y `raw_material_inventory_costs` (cantidad, valor y promedio por materia prima a
+nivel empresa) son **proyecciones** materializadas que se actualizan en la misma transacción que
+el movimiento, junto con una fila append-only de `inventory_cost_history`. Toda escritura pasa por
+`postStockMovement` (`apps/api/src/modules/inventory/ledger.ts`). El movimiento lleva `sequence`
+(`bigserial`) para ordenar y referencia de origen (tipo, id y línea).
+**Consecuencias.** Consultas de stock baratas y saldos bloqueables. No hace falta un proceso de
+reconciliación periódico porque la base impide que una proyección diverja (ADR-027); los tests
+verifican además que saldos y costos coinciden con la suma del ledger. Un movimiento mal cargado
+se compensa con otro (ajuste), no se borra.
+
+## ADR-027 — Proyecciones de stock custodiadas por triggers
+
+**Decisión.** `stock_balances_guard` y `raw_material_inventory_costs_guard` sólo dejan crear una
+fila vacía (cantidad 0, sin movimiento, para poder bloquearla) y sólo dejan cambiarla si apunta a
+un movimiento **nuevo** (secuencia mayor que el último aplicado) de la misma empresa, materia prima
+(y depósito, para el saldo), con cantidad nueva = anterior + movimiento (y, para el costo, valor
+nuevo = anterior + valor del movimiento). Ninguna de las dos se borra. Los saldos y costos tienen
+`CHECK ≥ 0`.
+**Consecuencias.** Un `UPDATE stock_balances SET quantity = …` "a mano", un script o un bug que
+aplique dos veces el mismo movimiento fallan con SQLSTATE 23001. El costo es una lectura extra del
+movimiento por actualización, aceptable para el volumen previsto. Una migración que necesite
+reconstruir saldos deberá deshabilitar los triggers explícitamente.
+
+## ADR-028 — Cantidades con signo en el movimiento
+
+**Decisión.** Una única convención: el movimiento guarda la cantidad **con signo** en la unidad
+base de la materia prima, y el valor también con signo. Ingresos (`INITIAL_STOCK`,
+`PURCHASE_RECEIPT`, `ADJUSTMENT_POSITIVE`) > 0; salidas (`ADJUSTMENT_NEGATIVE`, `WASTE`) < 0. El
+usuario siempre ingresa cantidades positivas y el tipo pone el signo (`movementSign`,
+`signedQuantity` en `@bakery/domain`). Un CHECK exige signo, valor, motivo y referencia
+coherentes con el tipo. Los tipos de Fases 4 y 5 (`PRODUCTION_CONSUMPTION`, `PRODUCTION_OUTPUT`,
+`SALE`, `RETURN`) no se crean todavía: se agregarán al enum con su flujo.
+**Consecuencias.** El stock es `Σ quantity` sin mirar el tipo. El enum de la base sólo contiene
+tipos que hoy tienen flujo; agregar uno exige `ALTER TYPE … ADD VALUE` y ampliar el CHECK.
+
+## ADR-029 — Promedio ponderado móvil por empresa y política de redondeo
+
+**Decisión.** El costo de inventario de una materia prima es un promedio ponderado móvil a nivel
+**empresa** (no por depósito), calculado en `@bakery/domain` (`applyInbound`, `applyOutbound`).
+Ingreso: si la existencia era 0, el promedio nuevo es el costo del ingreso (no se arrastra un
+promedio sin existencia); si no, `(valor anterior + cantidad × costo) ÷ cantidad nueva`. Salida:
+el promedio no cambia y sale `cantidad × promedio`; si la existencia queda en 0, el valor queda en 0
+(la salida absorbe el residuo de redondeo). Escalas: cantidades 10 decimales, costo unitario y
+valor del movimiento 6, promedio 6 (HALF_UP). El valor de inventario se guarda como valor anterior
+
+- valor del movimiento, sin recalcularlo desde el promedio redondeado.
+  **Consecuencias.** Mover stock entre depósitos no cambiaría el costo (cuando existan
+  transferencias). El valor no acumula errores del promedio; `valor ÷ cantidad` puede diferir del
+  promedio guardado en el sexto decimal. Cada cambio de promedio queda en `inventory_cost_history` y
+  en la auditoría (`MOVING_AVERAGE_COST_CHANGED`).
+
+## ADR-030 — Presentaciones de compra por materia prima (resuelve ADR-025)
+
+**Decisión.** `raw_material_presentations`: una presentación pertenece a **una** materia prima
+("Bolsa 25 kg" de esta harina) y declara unidad de compra, cantidad contenida y unidad de esa
+cantidad, compatible con la unidad base. Como las unidades (ADR-018), la conversión es inmutable:
+sólo se renombra o se desactiva/activa; cambiarla exige otra presentación. Sin presentación, una
+línea de compra sólo acepta unidades de la misma raíz que la base (bolsa → kg sin presentación se
+rechaza con `INCOMPATIBLE_PURCHASE_UNIT`). La línea de compra **congela** el factor
+(`base_quantity_per_unit`) y la cantidad base pedida al guardarse. Una FK compuesta
+`(company_id, raw_material_id, presentation_id)` impide usar la presentación de otra materia prima.
+**Consecuencias.** No hay conversiones universales engañosas de "bolsa". Las presentaciones sólo
+se usan en compras: recetas y stock siguen en la unidad base. El nombre es único por materia
+prima.
+
+## ADR-031 — Costo efectivo para recetas
+
+**Decisión.** Las recetas usan un costo efectivo elegido por una función de dominio explícita,
+`selectEffectiveCost`: (1) promedio ponderado de inventario si existe (`PURCHASE_MOVING_AVERAGE`);
+(2) si no, costo de referencia manual (`MANUAL_REFERENCE`); (3) si no, ninguno (`INCOMPLETE`). La
+API lo aplica al cargar materias primas (`withEffectiveCost` / `toCostInputs` en
+`recipes.data.ts`) y lo envía en los DTO para que el editor web calcule lo mismo. El costo de
+referencia se conserva y sigue editable (ADR-024). Reemplaza el `futureMovingAverageCost` previsto
+en ADR-024.
+**Consecuencias.** El costo teórico actual de las recetas cambia solo al confirmar compras. Los
+snapshots publicados no cambian (append-only); los nuevos guardan el origen
+`PURCHASE_MOVING_AVERAGE` cuando corresponde. **Deuda de nombre:** en
+`recipe_cost_snapshot_lines` la columna `reference_cost` ahora significa "costo usado" (sea
+referencia o promedio); se renombrará cuando haga falta tocar esa tabla, sin reinterpretar datos
+porque cada línea guarda su `cost_source`.
+
+## ADR-032 — Impuestos informativos; inventario valorizado al neto
+
+**Decisión.** Bruto = cantidad × precio; neto = bruto − descuento (≤ bruto). El total de la compra
+suma impuestos, pero estos son informativos (se asumen recuperables) y **no** entran al costo. El
+costo de adquisición por unidad base es `neto de la línea ÷ cantidad base pedida`; una recepción
+parcial se valoriza al mismo costo unitario.
+**Consecuencias.** Simplificación documentada: si la empresa no recupera un impuesto, hoy no se
+puede capitalizar en el costo. Los gastos de flete o percepciones no se prorratean.
+
+## ADR-033 — Recepciones con estado e idempotencia doble
+
+**Decisión.** Crear una compra no mueve stock; sólo la confirmación de una recepción
+(`DRAFT → POSTED`, o `DRAFT → CANCELLED` si se descarta) lo hace. Confirmar es una sola
+transacción: revalida cada línea contra lo pendiente **al momento de confirmar** (otra recepción
+pudo confirmarse después de cargar el borrador), recalcula y congela las líneas, genera los
+movimientos, actualiza `received_quantity` y el estado de la compra, marca la recepción y audita.
+Idempotencia en dos capas: estado verificado con la recepción bloqueada (`409 ALREADY_POSTED`) e
+índice único `(company_id, source_line_id)` en `stock_movements`. Recepciones `POSTED` y
+`CANCELLED` y sus líneas son inmutables por trigger; `received_quantity ≤ ordered_quantity` por
+CHECK.
+**Consecuencias.** Un doble click, un reintento de red o dos usuarios confirmando a la vez no
+duplican stock. Una recepción confirmada con un error se corrige con un ajuste (no hay reversión
+de recepciones ni devoluciones todavía).
+
+## ADR-034 — Concurrencia por locks de fila en orden fijo
+
+**Decisión.** Las operaciones de inventario bloquean filas (`SELECT … FOR UPDATE`) siempre en el
+mismo orden: compra → recepción → líneas de compra → filas de costo de empresa de las materias
+primas **ordenadas por id** → saldo del depósito. Las filas de costo y saldo que no existen se
+crean vacías con `INSERT … ON CONFLICT DO NOTHING` antes de bloquearlas. Stock inicial, ajustes y
+mermas toman el mismo lock de costo antes de leer el promedio.
+**Consecuencias.** Toda operación sobre una materia prima se serializa sobre su fila de costo: no
+hay actualizaciones perdidas ni cálculos sobre un promedio viejo, y como el orden es fijo no hay
+deadlocks. Operaciones sobre materias primas distintas corren en paralelo. Sin colas ni locks de
+aplicación (se probó con confirmaciones y mermas simultáneas).
+
+## ADR-035 — Sin stock negativo (política del MVP)
+
+**Decisión.** Ninguna salida puede dejar negativo el saldo del depósito ni el total de la empresa:
+la API responde `409 INSUFFICIENT_STOCK` y la base lo respalda con `CHECK (quantity >= 0)` en
+saldos, costo de empresa y `balance_after` del movimiento.
+**Consecuencias.** El promedio siempre se calcula sobre existencias reales. Si en producción
+(Fase 4) se necesitara consumir antes de registrar la compra, se revisará con un ADR nuevo; hoy se
+corrige primero con un ajuste o una recepción.
+
+## ADR-036 — Visibilidad de la valorización del inventario
+
+**Decisión.** El permiso `inventory.cost.read` controla la valorización en las rutas de
+inventario: sin él, promedio, valor de inventario, costo y valor de los movimientos y costo de la
+última compra vienen en `null` (el cálculo de visibilidad está en la ruta, no en la UI), y el
+historial de costos (`GET /api/inventory/costs/:id`) responde 403. Depósito y Producción ven el
+stock sin costos; Compras, Administración, Admin y Dueño, con costos. El costo efectivo por unidad que usan las
+recetas sigue visible donde ya lo era en Fase 2 (materias primas y recetas, con sus permisos).
+**Consecuencias.** Quien cuenta y mueve mercadería no ve cuánto vale el inventario. El costo
+unitario no es secreto para quien ya ve recetas; si hiciera falta ocultarlo, será otro permiso.
+
+## ADR-037 — Operaciones manuales sin tabla de documento
+
+**Decisión.** Stock inicial, ajustes y mermas no tienen tabla propia: el movimiento **es** el
+documento (tipo, motivo, observación, fecha, actor) y se audita (`INITIAL_STOCK_POSTED`,
+`INVENTORY_ADJUSTED`, `INVENTORY_WASTE_RECORDED`). Motivos de ajuste: `PHYSICAL_COUNT`,
+`DATA_CORRECTION`, `BREAKAGE`, `OTHER`; de merma: `EXPIRED`, `DAMAGED`, `PRODUCTION_LOSS`,
+`QUALITY`, `OTHER` (columna `reason` con CHECK por tipo). El stock inicial exige costo y se carga
+una sola vez por materia prima y depósito (si ya hay movimientos ahí,
+`409 INITIAL_STOCK_ALREADY_LOADED`); un ajuste positivo sin costo entra al promedio vigente y, sin
+promedio, lo exige (`VALUATION_COST_REQUIRED`); las salidas no aceptan costo.
+**Consecuencias.** Una sola fuente, sin tablas vacías de semántica. Si más adelante hace falta un
+documento con varias líneas (inventario físico completo), se agregará una tabla que genere
+movimientos como hoy lo hacen las recepciones.
+
+## ADR-038 — Cancelación de compras sólo sin mercadería recibida
+
+**Decisión.** Una compra se cancela desde `DRAFT` u `ORDERED` y sólo si no tiene recepciones
+confirmadas (`409 PURCHASE_HAS_RECEIPTS`); las recepciones en borrador se descartan con ella.
+Después de pedida, sólo se editan notas, fecha esperada y documento del proveedor (trigger sobre
+las líneas). No hay "cerrar con faltante" ni devoluciones a proveedor en esta fase. Estado de pago
+y cuenta del proveedor quedan para Fase 6.
+**Consecuencias.** Una compra que el proveedor nunca completa queda `PARTIALLY_RECEIVED`
+indefinidamente (deuda registrada). Las diferencias de mercadería ya recibida se corrigen con
+ajustes explícitos.

@@ -1,6 +1,6 @@
 # Modelo de dominio
 
-Este documento describe las entidades del sistema y sus relaciones. **Las de las Fases 0 y 1
+Este documento describe las entidades del sistema y sus relaciones. **Las de las Fases 0 a 3
 existen hoy en la base.** El resto es diseño de referencia y se implementará (y podrá ajustarse) en
 la fase indicada, cada una con su propia migración.
 
@@ -14,7 +14,7 @@ Convenciones:
   operaciones explícitas).
 - Estados de documentos como enums con transiciones validadas; nunca banderas booleanas sueltas.
 
-## Diagrama ER — Fases 0, 1 y 2 (implementado)
+## Diagrama ER — Fases 0 a 3 (implementado)
 
 ```mermaid
 erDiagram
@@ -52,26 +52,36 @@ erDiagram
     UNIT_OF_MEASURE ||--o{ RECIPE_VERSION : "unidad del rendimiento"
     RECIPE_VERSION ||--o| RECIPE_COST_SNAPSHOT : "costo al publicar"
     RECIPE_COST_SNAPSHOT ||--o{ RECIPE_COST_SNAPSHOT_LINE : "desglose"
+
+    RAW_MATERIAL ||--o{ RAW_MATERIAL_PRESENTATION : "presentaciones de compra"
+    UNIT_OF_MEASURE ||--o{ RAW_MATERIAL_PRESENTATION : "unidad de compra / contenido"
+    SUPPLIER ||--o{ PURCHASE : ""
+    PURCHASE ||--o{ PURCHASE_LINE : ""
+    RAW_MATERIAL ||--o{ PURCHASE_LINE : ""
+    RAW_MATERIAL_PRESENTATION |o--o{ PURCHASE_LINE : "de la misma materia prima"
+    PURCHASE ||--o{ PURCHASE_RECEIPT : "recepciones"
+    WAREHOUSE ||--o{ PURCHASE_RECEIPT : "recibe en"
+    PURCHASE_RECEIPT ||--o{ PURCHASE_RECEIPT_LINE : ""
+    PURCHASE_LINE ||--o{ PURCHASE_RECEIPT_LINE : "recibido de"
+    PURCHASE_RECEIPT_LINE |o--o| STOCK_MOVEMENT : "genera (una vez)"
+    WAREHOUSE ||--o{ STOCK_MOVEMENT : ""
+    RAW_MATERIAL ||--o{ STOCK_MOVEMENT : ""
+    WAREHOUSE ||--o{ STOCK_BALANCE : ""
+    RAW_MATERIAL ||--o{ STOCK_BALANCE : "saldo por depósito"
+    STOCK_MOVEMENT ||--o{ STOCK_BALANCE : "último aplicado"
+    RAW_MATERIAL ||--o| RAW_MATERIAL_INVENTORY_COST : "costo de empresa"
+    STOCK_MOVEMENT ||--o{ RAW_MATERIAL_INVENTORY_COST : "último aplicado"
+    STOCK_MOVEMENT ||--|| INVENTORY_COST_HISTORY : "antes / después"
 ```
 
 ## Diagrama ER — fases futuras (previsto)
 
 ```mermaid
 erDiagram
-    PRODUCT ||--o{ RECIPE : ""
-    RECIPE ||--|{ RECIPE_VERSION : ""
-    RECIPE_VERSION ||--|{ RECIPE_INGREDIENT : ""
-    RAW_MATERIAL ||--o{ RECIPE_INGREDIENT : ""
-
-    SUPPLIER ||--o{ PURCHASE : ""
-    PURCHASE ||--|{ PURCHASE_ITEM : ""
-    RAW_MATERIAL ||--o{ PURCHASE_ITEM : ""
-
     RECIPE_VERSION ||--o{ PRODUCTION_ORDER : "usada en"
     PRODUCTION_ORDER ||--o{ PRODUCTION_COST_SNAPSHOT : ""
-
-    WAREHOUSE ||--o{ STOCK_MOVEMENT : ""
-    STOCK_MOVEMENT }o--|| STOCK_ITEM : "materia prima o producto"
+    PRODUCTION_ORDER ||--o{ STOCK_MOVEMENT : "consumo y salida"
+    PRODUCT ||--o{ STOCK_MOVEMENT : "stock de producto"
 
     CUSTOMER ||--o{ SALE : ""
     PRICE_LIST ||--o{ CUSTOMER : "predeterminada"
@@ -121,7 +131,7 @@ mismo con su acceso. Detalle en [PERMISSIONS.md](PERMISSIONS.md).
 | `Category`      | Una tabla con `type` `RAW_MATERIAL` / `PRODUCT`; nombre único por empresa y tipo; orden; activo.                                                                                                                                                                                                                                 |
 | `RawMaterial`   | `MP-0001`, nombre, categoría (tipo materia prima), unidad base **raíz**, stock mínimo, proveedor preferido, costo de referencia por unidad base (`referenceCost`, origen `MANUAL_REFERENCE`, fecha de actualización; permiso propio), activo. **Sin columna de stock.**                                                          |
 | `Product`       | `PROD-0001`, nombre, categoría (tipo producto), unidad de venta, precio de venta, controla stock, imagen, descripción, activo. **Sin costo**: saldrá de la receta (Fase 2).                                                                                                                                                      |
-| `Warehouse`     | `DEP-0001`, nombre, dirección, descripción, activo. Cada empresa nace con "Depósito Principal". Sin stock hasta Fase 3.                                                                                                                                                                                                          |
+| `Warehouse`     | `DEP-0001`, nombre, dirección, descripción, activo. Cada empresa nace con "Depósito Principal". Desde Fase 3 tiene saldos y movimientos de stock.                                                                                                                                                                                |
 
 Códigos: se generan por empresa y tipo si el usuario no los indica; también se aceptan manuales.
 Se guardan en mayúsculas con `UNIQUE (company_id, código)`. Los nombres y el CUIT no son únicos.
@@ -146,13 +156,14 @@ ADR-021). Archivar la vigente sin reemplazo deja la receta sin versión vigente.
 **Unidades.** La cantidad de cada ingrediente se carga en cualquier unidad con la misma raíz que la
 unidad base de la materia prima (g para harina en kg). El rendimiento se carga en una unidad con la
 misma raíz que la unidad de venta del producto. No hay conversión entre dimensiones ni "envase
-genérico → kg": el packaging específico por artículo (bolsa de 25 kg de un molino) queda diferido
-(ADR-024).
+genérico → kg": el packaging específico por artículo se resolvió en Fase 3 con presentaciones de
+compra por materia prima (ADR-030), que se usan sólo en compras; las recetas siguen en unidades de
+la misma raíz que la unidad base.
 
 **Costo teórico** (todo en decimal, sin redondeos intermedios):
 
 ```
-costo ingrediente = cantidad normalizada a unidad base × costo de referencia por unidad base
+costo ingrediente = cantidad normalizada a unidad base × costo efectivo por unidad base
 costo del lote    = Σ costo ingrediente                         (null si falta algún costo)
 costo unitario    = costo del lote ÷ rendimiento normalizado a la unidad de venta
 margen bruto      = precio de venta − costo unitario            (MARGEN BRUTO TEÓRICO)
@@ -163,34 +174,145 @@ La merma teórica es informativa: el rendimiento ya es la producción útil, as�
 otra vez. Si falta el costo de algún ingrediente el estado es `INCOMPLETE` y lote, unitario y
 margen son `null` (nunca 0).
 
-**Cuatro costos distintos** (no confundir):
+**Costo efectivo** (desde Fase 3, ADR-031): el costo por unidad base que usan las recetas sale de
+una función de dominio explícita, `selectEffectiveCost`, con esta prioridad:
 
-| Concepto                  | Qué es                                                                                                 | Dónde vive                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| `referenceCost`           | Costo por unidad base de una materia prima, cargado a mano (`MANUAL_REFERENCE`).                       | `raw_materials.reference_cost`      |
-| `snapshotCost`            | Costo de una versión calculado y congelado al publicarla, con los `referenceCost` de ese momento.      | `recipe_cost_snapshots` (+ líneas)  |
-| `currentTheoreticalCost`  | Costo de una versión recalculado ahora con los `referenceCost` actuales. Se compara con el snapshot.   | Calculado al pedirlo (no se guarda) |
-| `futureMovingAverageCost` | Costo promedio ponderado móvil que derivará de compras reales (`PURCHASE_MOVING_AVERAGE`). **Fase 3.** | No existe todavía                   |
+1. promedio ponderado móvil de inventario, si existe → origen `PURCHASE_MOVING_AVERAGE`;
+2. si no, costo de referencia manual → origen `MANUAL_REFERENCE`;
+3. si no, sin costo → la receta queda `INCOMPLETE` (nunca 0).
 
-## Inventario (Fase 3)
+**Costos distintos** (no confundir):
 
-`StockMovement`: depósito, tipo de ítem (`RAW_MATERIAL`/`PRODUCT`), ítem, cantidad con signo,
-unidad, fecha, tipo (`PURCHASE_RECEIPT`, `PRODUCTION_CONSUMPTION`, `PRODUCTION_OUTPUT`, `SALE`,
-`ADJUSTMENT_POSITIVE`, `ADJUSTMENT_NEGATIVE`, `WASTE`, `RETURN`, `INITIAL_STOCK`),
-`reference_type`/`reference_id` (documento origen), usuario, observación, costo unitario.
+| Concepto                 | Qué es                                                                                                                                           | Dónde vive                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| `referenceCost`          | Costo por unidad base de una materia prima, cargado a mano (`MANUAL_REFERENCE`). Se conserva y sigue editable aunque exista promedio.            | `raw_materials.reference_cost`               |
+| `movingAverageCost`      | Promedio ponderado móvil del inventario de la materia prima a nivel empresa, derivado de ingresos valorizados (compras, stock inicial, ajustes). | `raw_material_inventory_costs`               |
+| `effectiveCost`          | Costo que usan las recetas hoy: `movingAverageCost` si existe, si no `referenceCost`, si no ninguno. Viaja con su origen.                        | Calculado al pedirlo (`selectEffectiveCost`) |
+| `snapshotCost`           | Costo de una versión calculado y congelado al publicarla, con los costos efectivos de ese momento y su origen por línea.                         | `recipe_cost_snapshots` (+ líneas)           |
+| `currentTheoreticalCost` | Costo de una versión recalculado ahora con los costos efectivos actuales. Se compara con el snapshot.                                            | Calculado al pedirlo (no se guarda)          |
 
-- **El stock es la suma de movimientos.** Si por rendimiento se agrega un saldo cacheado, se
-  actualiza en la misma transacción que el movimiento y existe un proceso de reconciliación.
-- Idempotencia: restricción única sobre (`reference_type`, `reference_id`, línea, tipo) para que un
-  documento no genere movimientos dos veces.
-- Mermas (`WASTE`) con motivo: `VENCIMIENTO`, `ERROR_PRODUCCION`, `ROTURA`, `CALIDAD`, `AJUSTE`, `OTRO`.
+Los snapshots publicados antes de Fase 3 no cambian (append-only); los nuevos guardan
+`PURCHASE_MOVING_AVERAGE` como origen cuando corresponde. En las líneas del snapshot, la columna
+`reference_cost` significa "costo usado" (deuda de nombre, ADR-031).
 
-## Compras (Fase 3)
+## Compras (Fase 3, implementado)
 
-`Purchase` (proveedor, fecha, comprobante, estado `DRAFT` → `RECEIVED`; estado de pago
-`PENDING`/`PARTIAL`/`PAID`, subtotal, impuestos, total) + `PurchaseItem`. Recibir la compra en una
-transacción: movimientos positivos, recálculo de costo por **promedio ponderado móvil** (función de
-dominio única), movimiento en cuenta del proveedor, auditoría.
+| Entidad                   | Campos principales / notas                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RawMaterialPresentation` | Presentación de compra de **una** materia prima: nombre (único por materia prima), unidad de compra (bolsa), cantidad contenida > 0 y su unidad (25 kg), activa. La unidad contenida debe ser compatible con la unidad base. La conversión es inmutable: sólo se renombra o se desactiva/activa.                             |
+| `Purchase`                | `OC-0001`, proveedor, nro. de documento del proveedor, fecha, fecha esperada, estado, moneda, notas, subtotal, descuento total, impuestos (informativos), total, quién la creó / pidió / canceló y cuándo, motivo de cancelación.                                                                                            |
+| `PurchaseLine`            | Número de línea, materia prima, presentación opcional (de esa materia prima), unidad de compra, cantidad pedida > 0, precio unitario, bruto, descuento (≤ bruto), neto = bruto − descuento, factor a unidad base **congelado** (`base_quantity_per_unit`), cantidad base pedida y cantidad recibida (0 ≤ recibida ≤ pedida). |
+| `PurchaseReceipt`         | `REC-0001`, compra, depósito, fecha de recepción, estado `DRAFT` / `POSTED` / `CANCELLED`, nro. de remito, notas, quién la cargó y quién la confirmó.                                                                                                                                                                        |
+| `PurchaseReceiptLine`     | Línea de compra recibida (una vez por recepción): pedido, recibido antes, recibido ahora en unidad de compra, presentación, cantidad normalizada a unidad base, costo de adquisición por unidad base y valor de inventario de la línea. Se recalcula y congela al confirmar.                                                 |
+
+**Estados.**
+
+```
+Compra:     DRAFT ──pedir──▶ ORDERED ──recepción──▶ PARTIALLY_RECEIVED ──recepción──▶ RECEIVED
+              └──cancelar──▶ CANCELLED ◀──cancelar── ORDERED (sólo sin recepciones confirmadas)
+Recepción:  DRAFT ──confirmar──▶ POSTED (inmutable)      DRAFT ──descartar──▶ CANCELLED
+```
+
+- Crear una compra **no** mueve stock: sólo una recepción confirmada lo hace.
+- Una compra en `DRAFT` se edita completa; para pedirla necesita al menos una línea y un proveedor
+  activo. Una vez pedida, sólo cambian notas, fecha esperada y documento del proveedor; sus líneas
+  sólo cambian en la cantidad recibida (lo impone un trigger). Una compra que salió de `DRAFT` no
+  se borra.
+- Sólo `ORDERED` y `PARTIALLY_RECEIVED` reciben. Cuando todas las líneas están completas, la compra
+  pasa a `RECEIVED`.
+- Cancelar descarta las recepciones en borrador y sólo se permite sin mercadería recibida
+  (`409 PURCHASE_HAS_RECEIPTS`); las devoluciones a proveedor y el "cerrar con faltante" no existen
+  todavía (ADR-038).
+- **Sin estado de pago ni cuenta del proveedor en Fase 3**: cuentas a pagar, pagos y
+  `SupplierAccountMovement` llegan en Fase 6.
+
+**Presentaciones y conversión.** La equivalencia pertenece a materia prima + presentación: no hay
+una conversión universal de "bolsa" (ADR-030). Para una línea:
+
+```
+con presentación:  base_por_unidad = cantidad contenida convertida a la unidad base (Bolsa 25 kg → 25 kg)
+sin presentación:  la unidad de compra debe ser compatible con la base;  base_por_unidad = convert(1, unidad → base)
+cantidad base     = cantidad × base_por_unidad                          (4 bolsas × 25 kg = 100 kg)
+```
+
+El factor se congela en la línea al guardarla, así que cambios posteriores no reinterpretan una
+compra. Una FK compuesta `(company_id, raw_material_id, presentation_id)` hace imposible usar la
+presentación de otra materia prima.
+
+**Importes y costo de adquisición** (ADR-032):
+
+```
+bruto      = cantidad × precio unitario
+neto       = bruto − descuento                                 (descuento ≤ bruto)
+subtotal   = Σ bruto;   descuento total = Σ descuentos
+total      = subtotal − descuento total + impuestos            (impuestos informativos)
+costo de adquisición por unidad base = neto de la línea ÷ cantidad base pedida
+                                     (4 × $20.000 = $80.000 ÷ 100 kg = $800/kg)
+```
+
+Los impuestos no entran al costo de inventario. Una recepción parcial se valoriza al mismo costo
+unitario de la línea.
+
+## Inventario (Fase 3, implementado)
+
+| Entidad                    | Campos principales / notas                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StockMovement`            | **Ledger append-only y autoritativo.** Secuencia, depósito, tipo de ítem (`RAW_MATERIAL`; `PRODUCT` preparado), materia prima, tipo de movimiento, cantidad **con signo** en unidad base, costo unitario, valor con signo, saldo del depósito después, fecha, referencia (tipo + id + línea de origen), motivo, actor, observación. |
+| `StockBalance`             | Proyección: saldo por empresa + depósito + ítem, en unidad base (≥ 0), último movimiento aplicado.                                                                                                                                                                                                                                  |
+| `RawMaterialInventoryCost` | Proyección a nivel **empresa** por materia prima: cantidad total, valor de inventario, promedio ponderado móvil (null si nunca hubo ingreso valorizado), último movimiento aplicado.                                                                                                                                                |
+| `InventoryCostHistory`     | Append-only, una fila por movimiento: cantidad, valor y promedio antes y después, tipo, referencia y actor.                                                                                                                                                                                                                         |
+
+**El stock es la suma de movimientos** (ADR-026/027). Los saldos y el costo de empresa se
+actualizan en la misma transacción que el movimiento y los triggers de la base rechazan cualquier
+cambio que no sea exactamente "anterior + movimiento nuevo". No hay columna de stock editable en
+`raw_materials`.
+
+**Tipos de movimiento y signo** (ADR-028). La cantidad se guarda con signo en la unidad base:
+
+| Tipo                  | Signo | Origen                                                     | Motivo                                                      |
+| --------------------- | ----- | ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `INITIAL_STOCK`       | +     | Stock inicial (con costo obligatorio)                      | —                                                           |
+| `PURCHASE_RECEIPT`    | +     | Línea de una recepción confirmada (referencia obligatoria) | —                                                           |
+| `ADJUSTMENT_POSITIVE` | +     | Ajuste manual                                              | `PHYSICAL_COUNT`, `DATA_CORRECTION`, `BREAKAGE`, `OTHER`    |
+| `ADJUSTMENT_NEGATIVE` | −     | Ajuste manual                                              | ídem                                                        |
+| `WASTE`               | −     | Merma                                                      | `EXPIRED`, `DAMAGED`, `PRODUCTION_LOSS`, `QUALITY`, `OTHER` |
+
+Un CHECK exige signo, valor y motivo coherentes con el tipo. `PRODUCTION_CONSUMPTION`,
+`PRODUCTION_OUTPUT`, `SALE` y `RETURN` están **reservados**: no existen en el enum de la base y se
+agregarán cuando exista su flujo (Fases 4 y 5). Stock inicial, ajustes y mermas no tienen tabla de
+documento: el movimiento es el documento (ADR-037).
+
+**Promedio ponderado móvil** por materia prima a nivel empresa (ADR-029), con decimal.js:
+
+```
+ingreso:  si OldQty = 0 → NewAvg = costo del ingreso        (no arrastra un promedio sin existencia)
+          si no         → NewAvg = (OldValue + Qty × Cost) ÷ (OldQty + Qty)
+          NewValue = OldValue + Qty × Cost
+salida:   NewAvg = OldAvg                                   (merma y ajuste negativo no cambian el promedio)
+          NewValue = OldValue − Qty × OldAvg;  si la cantidad queda en 0, el valor queda en 0
+```
+
+Ejemplo: 100 kg @ $1.000 + 100 kg @ $1.200 → 200 kg @ $1.100 ($220.000); merma de 10 kg sobre
+100 kg @ $1.000 → 90 kg @ $1.000 ($90.000). El promedio se redondea a 6 decimales (HALF_UP); el
+valor es el acumulado de los valores de los movimientos.
+
+**Reglas de valorización de las operaciones manuales:**
+
+- **Stock inicial**: exige costo unitario; se carga una sola vez por materia prima y depósito (si
+  ya hay movimientos ahí, `409 INITIAL_STOCK_ALREADY_LOADED`: se corrige con un ajuste).
+- **Ajuste positivo**: sin costo indicado entra al promedio vigente (no lo cambia); si no hay
+  promedio, exige costo (`422 VALUATION_COST_REQUIRED`).
+- **Ajuste negativo y merma**: salen al promedio vigente; no aceptan costo.
+- Los ingresos requieren la materia prima activa; las salidas se permiten aunque esté desactivada.
+
+**Stock negativo prohibido** (ADR-035): una salida que no alcanza en el depósito (o en el total
+de la empresa) falla con `409 INSUFFICIENT_STOCK`; además, `CHECK (quantity >= 0)` en saldos y
+costo de empresa.
+
+**Stock mínimo.** El estado se calcula contra el total de la empresa y el mínimo de la materia
+prima: `OUT_OF_STOCK` si no hay existencia; `LOW` si hay menos que el mínimo (mínimo > 0); si no,
+`OK`. El faltante es `mínimo − existencia` (0 si no falta). La vista "Bajo mínimo" incluye las sin
+stock con mínimo y muestra el proveedor preferido.
 
 ## Producción (Fase 4)
 
@@ -220,18 +342,18 @@ integración fiscal argentina (`ArgentinaFiscalInvoiceProvider`) es un milestone
 
 ## Invariantes críticas
 
-| Área       | Invariante                                                                  | Cómo se garantiza / testea                                                                                                                      |
-| ---------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auditoría  | Las operaciones sensibles registran actor y timestamp. El log no se altera. | **Fase 0:** trigger que rechaza UPDATE/DELETE. **Fase 1:** cada alta/cambio/baja de maestro audita en la misma transacción (tests por entidad). |
-| Seguridad  | Autorización validada en backend por permiso.                               | **Fase 0/1:** matriz rol × endpoint verificada contra la API (`authorization.test.ts`).                                                         |
-| Tenancy    | Ningún dato cruza empresas.                                                 | **Fase 1:** empresa tomada solo de la sesión; FKs compuestas; tests Empresa A/B (leer, modificar, inferir, referenciar).                        |
-| Maestros   | Nada se borra; se desactiva. Usuario ≠ empleado.                            | **Fase 1:** sin endpoints DELETE; tests de desactivación y de baja de empleado con acceso.                                                      |
-| Unidades   | Solo se convierte dentro de la misma raíz; masa ↔ volumen se rechaza.       | **Fase 1:** `@bakery/domain` con decimal.js; tests unitarios e integración (422 `INCOMPATIBLE_UNITS`).                                          |
-| Inventario | Todo cambio de stock tiene un `StockMovement`.                              | Fase 3: sin columna de stock editable; tests de integración.                                                                                    |
-| Producción | Completar genera consumo + salida en una única transacción.                 | Fase 4: test de rollback provocando falla.                                                                                                      |
-| Recetas    | Una versión publicada es inmutable; una vigente y un borrador por receta.   | **Fase 2:** triggers en la base + índices únicos parciales; tests de integración (v1 intacta tras v2, UPDATE/DELETE directos rechazados).       |
-| Costo      | Falta de costo ≠ costo cero; el snapshot no cambia con los costos.          | **Fase 2:** dominio devuelve `INCOMPLETE`/null; snapshots append-only por trigger; unit, integración y E2E de costo incompleto.                 |
-| Compras    | Una compra recibida afecta stock una sola vez.                              | Fase 3: transición de estado + restricción única + test de doble ejecución.                                                                     |
-| Ventas     | Una venta confirmada afecta stock una sola vez.                             | Fase 5: ídem.                                                                                                                                   |
-| Costos     | Producciones históricas conservan snapshot de costos.                       | Fase 4.                                                                                                                                         |
-| Caja       | Todo movimiento financiero relevante es trazable a su origen.               | Fase 6: referencia obligatoria salvo movimientos manuales con motivo.                                                                           |
+| Área       | Invariante                                                                  | Cómo se garantiza / testea                                                                                                                                                                                                     |
+| ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Auditoría  | Las operaciones sensibles registran actor y timestamp. El log no se altera. | **Fase 0:** trigger que rechaza UPDATE/DELETE. **Fase 1:** cada alta/cambio/baja de maestro audita en la misma transacción (tests por entidad).                                                                                |
+| Seguridad  | Autorización validada en backend por permiso.                               | **Fase 0/1:** matriz rol × endpoint verificada contra la API (`authorization.test.ts`).                                                                                                                                        |
+| Tenancy    | Ningún dato cruza empresas.                                                 | **Fase 1:** empresa tomada solo de la sesión; FKs compuestas; tests Empresa A/B (leer, modificar, inferir, referenciar).                                                                                                       |
+| Maestros   | Nada se borra; se desactiva. Usuario ≠ empleado.                            | **Fase 1:** sin endpoints DELETE; tests de desactivación y de baja de empleado con acceso.                                                                                                                                     |
+| Unidades   | Solo se convierte dentro de la misma raíz; masa ↔ volumen se rechaza.       | **Fase 1:** `@bakery/domain` con decimal.js; tests unitarios e integración (422 `INCOMPATIBLE_UNITS`).                                                                                                                         |
+| Inventario | Todo cambio de stock tiene un `StockMovement`; el stock nunca es negativo.  | **Fase 3:** ledger append-only y saldos/costo custodiados por triggers, CHECK ≥ 0, `INSUFFICIENT_STOCK`; `inventory-invariants.test.ts` (1–3, 7, 21).                                                                          |
+| Producción | Completar genera consumo + salida en una única transacción.                 | Fase 4: test de rollback provocando falla.                                                                                                                                                                                     |
+| Recetas    | Una versión publicada es inmutable; una vigente y un borrador por receta.   | **Fase 2:** triggers en la base + índices únicos parciales; tests de integración (v1 intacta tras v2, UPDATE/DELETE directos rechazados).                                                                                      |
+| Costo      | Falta de costo ≠ costo cero; el snapshot no cambia con los costos.          | **Fase 2:** dominio devuelve `INCOMPLETE`/null; snapshots append-only por trigger; unit, integración y E2E de costo incompleto. **Fase 3:** el snapshot tampoco cambia con el promedio de compras (test §62, E2E pasos 16–17). |
+| Compras    | Una recepción confirmada afecta stock una sola vez y no se modifica.        | **Fase 3:** estado verificado con lock + único `(company_id, source_line_id)` + triggers de inmutabilidad; tests de doble confirmación, rollback y concurrencia.                                                               |
+| Ventas     | Una venta confirmada afecta stock una sola vez.                             | Fase 5: ídem.                                                                                                                                                                                                                  |
+| Costos     | Producciones históricas conservan snapshot de costos.                       | Fase 4.                                                                                                                                                                                                                        |
+| Caja       | Todo movimiento financiero relevante es trazable a su origen.               | Fase 6: referencia obligatoria salvo movimientos manuales con motivo.                                                                                                                                                          |

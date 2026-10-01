@@ -13,7 +13,7 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
                     apps/api (Fastify :4000) ──▶ packages/database (Drizzle) ──▶ PostgreSQL 16
                          │
                          ├──▶ packages/shared (permisos, roles, esquemas zod, DTOs)
-                         └──▶ packages/domain (reglas puras: unidades, códigos; decimal.js)
+                         └──▶ packages/domain (reglas puras: unidades, costos, inventario; decimal.js)
 ```
 
 ## Componentes
@@ -26,7 +26,11 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   (`*.service.ts`) y plugins. Fase 0: `health`, `auth`, `audit`. Fase 1: `company-settings`,
   `employees`, `users`, `roles`, `customers`, `suppliers`, `units`, `categories`, `raw-materials`,
   `products`, `warehouses`. Fase 2: `recipes` (recetas, versiones, costo teórico, snapshots) y
-  `PUT /api/raw-materials/:id/reference-cost`. Los módulos futuros siguen la lista de la especificación (§30).
+  `PUT /api/raw-materials/:id/reference-cost`. Fase 3: `presentations` (presentaciones de compra por
+  materia prima), `purchases` (compras y recepciones: `purchases.service.ts`,
+  `receipts.service.ts`) e `inventory` (consultas y operaciones manuales en `inventory.service.ts`;
+  núcleo transaccional del stock en `ledger.ts`). Los módulos futuros siguen la lista de la
+  especificación (§30).
 - **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
   `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
   `POST /api/x/:id/deactivate` y `/activate`. No hay `DELETE`. Un id de otra empresa responde 404
@@ -41,6 +45,12 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   `RECIPE_VERSION_NOT_ACTIVE`, `RECIPE_INACTIVE`, `RECIPE_INVALID` (422 con los problemas),
   `COST_INCOMPLETE_CONFIRMATION_REQUIRED`, `PRODUCT_INACTIVE`, `NO_ACTIVE_VERSION`,
   `NO_EFFECTIVE_VERSION`, `RAW_MATERIAL_IN_USE`, `SALE_UNIT_INCOMPATIBLE_WITH_RECIPE`.
+  Fase 3: `INSUFFICIENT_STOCK` (409), `ALREADY_POSTED`, `RECEIPT_IMMUTABLE`, `RECEIPT_CANCELLED`,
+  `RECEIPT_EXCEEDS_PENDING`, `RECEIPT_EMPTY`, `PURCHASE_NOT_RECEIVABLE`, `PURCHASE_HAS_RECEIPTS`,
+  `PURCHASE_NOT_EDITABLE`, `PURCHASE_NOT_DRAFT`, `PURCHASE_ALREADY_CANCELLED`,
+  `PURCHASE_WITHOUT_LINES`, `VALUATION_COST_REQUIRED`, `INITIAL_STOCK_ALREADY_LOADED`,
+  `INCOMPATIBLE_PRESENTATION_UNIT`, `INCOMPATIBLE_PURCHASE_UNIT`, `DISCOUNT_EXCEEDS_GROSS`,
+  `PRESENTATION_NAME_TAKEN`, `RAW_MATERIAL_INACTIVE`.
   Las violaciones de unicidad de la base se traducen por nombre de constraint
   (`mapUniqueViolations`).
 - **Regla de dependencias:** rutas → servicios → base de datos. Un módulo solo usa otro a través
@@ -53,6 +63,37 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   web lo usa para la vista previa en vivo, así que ambos dan exactamente el mismo resultado.
 - **Transacciones:** las operaciones de negocio reciben/abren una transacción Drizzle
   (`db.transaction`) y la auditoría se escribe con la misma transacción (ver `recordAudit`).
+- **Inventario como ledger (Fase 3, ADR-026/027):** `stock_movements` es la fuente de verdad,
+  append-only. `stock_balances` (saldo por depósito) y `raw_material_inventory_costs` (cantidad,
+  valor y promedio por materia prima a nivel empresa) son **proyecciones** que se actualizan en la
+  misma transacción que el movimiento, junto con una fila de `inventory_cost_history`. La única
+  puerta para cambiar existencias es `postStockMovement` (`modules/inventory/ledger.ts`): bloquea
+  el costo de la materia prima y el saldo del depósito, calcula con `@bakery/domain`
+  (`applyInbound`/`applyOutbound`, stock no negativo), inserta el movimiento, actualiza las dos
+  proyecciones, registra el historial y, si cambió el promedio, audita
+  `MOVING_AVERAGE_COST_CHANGED`. Triggers en la base rechazan cualquier cambio de saldo o costo
+  que no corresponda exactamente a un movimiento nuevo, así que un `UPDATE` "a mano" falla.
+- **Confirmar una recepción es atómico** (`postReceipt` en `receipts.service.ts`): en UNA
+  transacción valida estados, revalida lo pendiente contra las líneas de compra bloqueadas,
+  congela las líneas de la recepción, genera un movimiento por línea (con conversión a unidad base
+  y costo de adquisición), actualiza lo recibido y el estado de la compra, marca la recepción
+  `POSTED` y audita. Cualquier error revierte todo (hay un test que fuerza la falla en el último
+  paso).
+- **Concurrencia por orden fijo de locks:** compra → recepción → líneas de compra → filas de costo
+  de las materias primas **ordenadas por id** → saldos de depósito. Las filas de costo y de saldo
+  se crean vacías si no existen (`INSERT … ON CONFLICT DO NOTHING`) y se toman con
+  `SELECT … FOR UPDATE`. Toda operación que toca una materia prima (recepción, stock inicial,
+  ajuste, merma) se serializa sobre su fila de costo y nunca calcula sobre un estado viejo; como
+  todas toman los locks en el mismo orden, no hay deadlocks.
+- **Idempotencia:** confirmar dos veces una recepción responde `409 ALREADY_POSTED` (estado
+  verificado con la recepción bloqueada) y, como segunda barrera, un índice único
+  `(company_id, source_line_id)` en `stock_movements` impide que una línea de recepción genere dos
+  movimientos.
+- **Visibilidad de costos:** las rutas de inventario calculan `canSeeCosts` con el permiso
+  `inventory.cost.read`; sin él, promedio, valor de inventario, costo unitario y valor de los
+  movimientos y costo de la última compra vienen en `null`, e `GET /api/inventory/costs/:id`
+  (historial) responde 403. El costo efectivo por unidad que usan las recetas sigue visible donde
+  ya lo era en Fase 2.
 - **Validación:** toda entrada externa se valida con zod mediante `parseInput()`, que responde
   `400 VALIDATION_ERROR` con el detalle de campos.
 - **Errores:** `AppError(status, code, message)` para errores esperados. El error handler central
@@ -83,7 +124,18 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   errores por campo que recibe. Los permisos del usuario (`useCan`) solo ocultan acciones.
 - **Recetas (Fase 2):** `src/components/recipes/` — listado, editor (`recipe-editor.tsx`, con
   costo calculado en vivo por `@bakery/domain`), detalle, versión en sólo lectura y piezas de costo
-  (`cost-views.tsx`). Navegación: **Producción → Recetas**.
+  (`cost-views.tsx`). Navegación: **Producción → Recetas**. Desde Fase 3 la columna de costo de
+  ingredientes muestra el **costo usado** y su origen (promedio de compras o referencia manual).
+- **Compras e inventario (Fase 3):** `src/components/purchases/` — listado, alta y edición del
+  borrador con líneas y totales en vivo (`purchase-form.tsx`), detalle con recepciones y acciones
+  por estado, registro y confirmación de recepciones (rutas bajo `/compras`).
+  `src/components/inventory/` — stock con filtros, detalle por materia prima con los tres costos
+  separados (promedio de inventario, referencia manual, costo usado por recetas), movimientos,
+  bajo mínimo (`inventory-pages.tsx`), formularios de stock inicial, ajuste y merma con resumen
+  antes/después (`stock-operation.tsx`) y el panel de presentaciones de compra
+  (`presentations.tsx`), que aparece en la ficha de la materia prima y en la de stock (rutas bajo
+  `/stock`). Navegación: **Operaciones → Compras** e **Inventario → Stock**, visibles con
+  `purchases.read` e `inventory.read`.
 - La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared
@@ -98,7 +150,10 @@ Reglas de negocio puras, sin base ni HTTP: conversión de unidades (`convertQuan
 `validateDerivedUnit`, unidades estándar), formato de códigos internos y costeo de recetas
 (`calculateIngredientCost`, `normalizeRecipeYield`, `calculateUnitCost`, `calculateGrossMargin`,
 `calculateCostVariation`, `calculateRecipeCost`, `validateRecipeVersion`, `diffRecipeVersions`,
-`findEffectiveVersion`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
+`findEffectiveVersion`) e inventario (`inventory.ts`: `movementSign`, `baseQuantityPerPurchaseUnit`,
+`calculatePurchaseLineAmounts`, `calculatePurchaseTotals`, `acquisitionUnitCost`, `applyInbound`,
+`applyOutbound`, `positiveAdjustmentCost`, `nextBalance`, `stockStatus`, `shortage`,
+`selectEffectiveCost`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
 
 ### packages/database
 
@@ -143,6 +198,11 @@ inválida detiene el proceso con un mensaje claro. Ver `.env.example`.
   normalizadas a 10 (`numeric(28,10)`), porcentajes a 4 (`numeric(7,4)`). La UI redondea a 2
   decimales para mostrar dinero (HALF_UP), salvo costos por unidad menores a un centavo y costos de
   referencia, que se muestran tal como se cargaron (hasta 6).
+- **Inventario (Fase 3, ADR-029):** cantidades de stock en unidad base a 10 decimales
+  (`numeric(28,10)`), costos unitarios, valores y promedio a 6 (`numeric(20,6)`). El promedio se
+  redondea a 6 (HALF_UP), pero no se usa para reconstruir el valor: el valor de inventario es
+  siempre el anterior más el valor del movimiento (cantidad × costo, a 6 decimales), y el trigger
+  de la base lo verifica.
 
 ## Qué NO se hace (deliberadamente)
 

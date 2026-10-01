@@ -3,12 +3,14 @@
 ERP vertical para panificadoras: proveedores → compras → materias primas → stock → recetas →
 producción → productos → ventas → clientes → cobros. Monolito modular en TypeScript.
 
-> Estado: **Fase 2 (recetas + costo teórico)**, pendiente de aceptación. Sobre la fundación
-> (autenticación, roles y permisos, auditoría, shell) y los maestros de Fase 1 (empresa,
+> Estado: **Fase 3 (compras + inventario)**, pendiente de aceptación. Sobre la fundación
+> (autenticación, roles y permisos, auditoría, shell), los maestros de Fase 1 (empresa,
 > empleados, usuarios, clientes, proveedores, unidades, categorías, materias primas, productos y
-> depósitos) existen recetas versionadas con costo teórico por unidad de venta, costo de
-> referencia de materias primas y margen bruto teórico. Compras, stock, producción y ventas llegan
-> en fases siguientes (ver [docs/ROADMAP.md](docs/ROADMAP.md)).
+> depósitos) y las recetas versionadas con costo teórico de Fase 2, existen presentaciones de
+> compra por materia prima ("Bolsa 25 kg" de esta harina), compras con recepciones parciales,
+> stock por depósito derivado de un ledger de movimientos, stock inicial, ajustes, mermas, alertas
+> de stock mínimo y costo promedio ponderado móvil, que las recetas usan automáticamente.
+> Producción, ventas y finanzas llegan en fases siguientes (ver [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Requisitos
 
@@ -40,6 +42,22 @@ Ingresar en http://localhost:3000 con:
 
 Credenciales **solo de desarrollo** (configurables en `.env` con `SEED_ADMIN_EMAIL` /
 `SEED_ADMIN_PASSWORD`). El seed se niega a correr con `NODE_ENV=production`.
+
+### Actualizar una base existente
+
+Cada fase agrega migraciones y permisos nuevos (Fase 3: tablas de compras e inventario y los
+permisos `purchases.*`, `inventory.*` y `presentations.*`). Después de traer cambios, en una base
+que ya existía:
+
+```bash
+pnpm bootstrap                    # o, con la base ya levantada:
+pnpm db:migrate && pnpm db:seed   # migraciones + permisos y roles de sistema de la empresa demo
+```
+
+`pnpm dev` hace lo mismo al arrancar. Fuera de desarrollo, `pnpm db:migrate` seguido de
+`pnpm db:sync-reference` actualiza estructura, permisos y roles de sistema de todas las empresas,
+sin datos demo. Sin este paso, los roles existentes no reciben los permisos nuevos y los módulos
+de la fase no aparecen en el menú.
 
 ## Comandos
 
@@ -86,9 +104,9 @@ bakery-erp/
 │   └── web/            Aplicación web (Next.js, App Router)
 ├── packages/
 │   ├── shared/         Contratos compartidos: permisos, roles, esquemas zod, DTOs
-│   ├── domain/         Reglas puras de dominio (unidades, costos de recetas, códigos) con decimal.js
+│   ├── domain/         Reglas puras de dominio (unidades, costos, inventario, códigos) con decimal.js
 │   └── database/       Esquema Drizzle, migraciones SQL versionadas, datos de referencia
-├── e2e/                Tests Playwright (smoke, maestros, recetas y costo incompleto)
+├── e2e/                Tests Playwright (smoke, maestros, recetas, compras e inventario)
 ├── infra/              docker-compose de desarrollo
 ├── scripts/            Utilidades del repo
 └── docs/               Producto, arquitectura, dominio, base, roadmap, testing, decisiones
@@ -104,6 +122,7 @@ bakery-erp/
 - [TESTING](docs/TESTING.md) — estrategia y cómo correr los tests
 - [DECISIONS](docs/DECISIONS.md) — registro de decisiones de arquitectura
 - [PERMISSIONS](docs/PERMISSIONS.md) — matriz permiso → rol y endpoints por permiso
+- [UX_BACKLOG](docs/UX_BACKLOG.md) — hallazgos de diseño para el sprint UX/DESIGN OPTIMIZATION
 - Reportes de fase: [docs/reports/](docs/reports/)
 
 ## Puertos
