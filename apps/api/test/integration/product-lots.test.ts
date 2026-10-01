@@ -445,25 +445,25 @@ describe("merma de producto terminado (§55) y calidad", () => {
     await ok(configureConservation(api, w.panFrances, MEDIALUNA));
   });
 
-  it("merma 10 kg: sale al costo del lote, el promedio no cambia", async () => {
+  it("merma 20 kg de 100 (§55): sale al costo del lote, el promedio no cambia", async () => {
     const { lot: l } = await produce(api, w, "100");
     const before = await productStock(w.panFrances);
-    const res = await ok(waste(api, l.id, "10", "DAMAGED"), 201);
-    expect(dec(res.lot.quantity)).toBe("90");
-    expect(dec(res.lot.value)).toBe("61038");
+    const res = await ok(waste(api, l.id, "20", "DAMAGED"), 201);
+    expect(dec(res.lot.quantity)).toBe("80");
+    expect(dec(res.lot.value)).toBe("54256");
     const [mv] = res.movements;
     expect(mv.movementType).toBe("WASTE");
     expect(mv.reason).toBe("DAMAGED");
-    expect(dec(mv.totalValue)).toBe("-6782");
+    expect(dec(mv.totalValue)).toBe("-13564");
     expect(mv.productLot).toEqual({ id: l.id, code: l.code });
     const after = await productStock(w.panFrances);
-    expect(dec(after.quantity)).toBe("90");
+    expect(dec(after.quantity)).toBe("80");
     expect(after.movingAverageCost).toBe(before.movingAverageCost);
-    expect(dec(after.inventoryValue)).toBe("61038");
+    expect(dec(after.inventoryValue)).toBe("54256");
     expect(await lotAudit(l.id)).toContain("PRODUCT_LOT_WASTE_RECORDED");
     // Motivo de materia prima no vale para producto.
     expect((await waste(api, l.id, "1", "SPOILED")).statusCode).toBe(400);
-    expect(await errorCode(waste(api, l.id, "91"), 409)).toBe("INSUFFICIENT_LOT_QUANTITY");
+    expect(await errorCode(waste(api, l.id, "81"), 409)).toBe("INSUFFICIENT_LOT_QUANTITY");
     await expectReconciled();
   });
 

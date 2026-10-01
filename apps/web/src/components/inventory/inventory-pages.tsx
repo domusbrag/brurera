@@ -53,9 +53,13 @@ export const PRODUCT_STOCK_BASE = `${STOCK_BASE}/productos`;
 /** Pestañas de Inventario: Materias primas | Productos terminados | Movimientos | Bajo mínimo. */
 export function StockTabs() {
   const pathname = usePathname();
+  const can = useCan();
   const tabs = [
     { href: STOCK_BASE, label: "Materias primas" },
     { href: PRODUCT_STOCK_BASE, label: "Productos terminados" },
+    ...(can(P.INVENTORY_EXPIRY_READ)
+      ? [{ href: `${PRODUCT_STOCK_BASE}/por-vencer`, label: "Próximos a vencer" }]
+      : []),
     { href: `${STOCK_BASE}/movimientos`, label: "Movimientos" },
     { href: `${STOCK_BASE}/bajo-minimo`, label: "Bajo mínimo" },
   ];
@@ -220,11 +224,17 @@ export function ReferenceLink({
     return <Link href={`/compras/${reference.id}`}>{reference.label}</Link>;
   if (reference?.type === "PRODUCTION_ORDER")
     return <Link href={`/produccion/${reference.id}`}>Producción {reference.label}</Link>;
+  if (reference?.type === "PRODUCT_LOT_TRANSFORMATION")
+    return <Link href={`${STOCK_BASE}/lotes/${reference.id}`}>{reference.label}</Link>;
   return null;
 }
 
 function MovementReference({ m }: { m: StockMovementDto }) {
-  if (m.reference?.type === "PURCHASE" || m.reference?.type === "PRODUCTION_ORDER")
+  if (
+    m.reference?.type === "PURCHASE" ||
+    m.reference?.type === "PRODUCTION_ORDER" ||
+    m.reference?.type === "PRODUCT_LOT_TRANSFORMATION"
+  )
     return <ReferenceLink reference={m.reference} />;
   return <>{reasonLabel(m) ?? "—"}</>;
 }
@@ -262,7 +272,16 @@ export function movementColumns(
       : []),
     {
       header: "Tipo",
-      cell: (m: StockMovementDto) => STOCK_MOVEMENT_TYPE_LABELS[m.movementType],
+      cell: (m: StockMovementDto) => (
+        <>
+          {STOCK_MOVEMENT_TYPE_LABELS[m.movementType]}
+          {m.productLot && (
+            <span className="cost-source">
+              Lote <Link href={`${STOCK_BASE}/lotes/${m.productLot.id}`}>{m.productLot.code}</Link>
+            </span>
+          )}
+        </>
+      ),
     },
     { header: "Depósito", cell: (m: StockMovementDto) => m.warehouse.name, className: "hide-sm" },
     {

@@ -2,7 +2,7 @@
 
 Hallazgos de diseño que piden una revisión **transversal** de la aplicación. No es una lista de
 bugs: los defectos funcionales se corrigen en la fase en que aparecen. Estas mejoras se abordan en
-el sprint **UX/DESIGN OPTIMIZATION** previsto después de la Fase 5 (ver [ROADMAP](ROADMAP.md)).
+el sprint **UX/DESIGN OPTIMIZATION** previsto después de la Fase 5B (ver [ROADMAP](ROADMAP.md)).
 
 Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se registró entre corchetes.
 
@@ -19,6 +19,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4] Producción suma "Órdenes" antes de "Recetas" y Stock suma la pestaña "Productos
   terminados": ya son cuatro pestañas en Inventario. Revisar junto con la subnavegación por módulo.
 
+- [F4.5] Stock suma la pestaña "Próximos a vencer": ya son cinco pestañas en Inventario. Evaluar
+  una sección "Producto terminado" con sub-pestañas (stock, lotes, por vencer).
+
 ## INFORMATION_ARCHITECTURE
 
 - [F3] La ficha de la materia prima (Maestros) y la ficha de stock (Inventario) muestran parte de
@@ -33,6 +36,12 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   "Detalles" largo; en una orden en curso lo importante (consumo y salida) queda debajo del pliegue
   en 1366×768. Evaluar un encabezado compacto y la carga real arriba.
 
+- [F4.5] La ficha de stock de un producto ya tiene Existencias, Lotes, Disponibilidad a una fecha,
+  Precio y margen, Producciones, Movimientos e Historial de costo: es larga. Evaluar pestañas
+  (Resumen · Lotes · Movimientos · Costos).
+- [F4.5] La conservación se configura en la ficha del producto (Maestros) y se consulta en la ficha
+  de stock; un acceso directo desde el lote o la ficha de stock acortaría el recorrido.
+
 ## VISUAL_HIERARCHY
 
 - [F3] Los tres costos (promedio de inventario, referencia manual, usado por recetas) se
@@ -42,6 +51,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 
 - [F4] Costos de producción: esperado, estimado, real y diferencia se distinguen por rótulo y nota
   al pie. Falta una representación visual (p. ej. barra plan vs real) que destaque la diferencia.
+
+- [F4.5] El estado de un lote combina dos badges (conservación + estado operativo). Definir un
+  único indicador compacto (p. ej. ícono de copo para congelado + color por vencimiento).
 
 ## FORMS
 
@@ -59,6 +71,11 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4] Los campos de fecha (`input type=date`) muestran el formato del navegador (mm/dd/aaaa en un
   navegador en inglés) aunque la app muestre dd/mm/aaaa. Unificar con un selector propio.
 
+- [F4.5] La vida útil se carga como número + unidad (días / horas) en una tabla de 4 filas; en
+  tablet entra justo. Evaluar tarjetas por estado con interruptor.
+- [F4.5] "Disponibilidad a una fecha" usa `datetime-local` en la zona del navegador, mientras que
+  las fechas se muestran en la zona de la empresa. Unificar con el selector de fecha propio.
+
 ## TABLES
 
 - [F3] Movimientos de inventario: filtros por fecha y por referencia existen en la API pero no en
@@ -72,12 +89,18 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4] Los enlaces "Ver todas / Ver todos" de los paneles usan el color de enlace por defecto del
   navegador, no el de la marca (también en la ficha de stock de materias primas).
 
+- [F4.5] Productos terminados tiene 9 columnas con costos; en tablet se ocultan fresco /
+  refrigerado / congelado. Evaluar un mini gráfico apilado por estado en una sola columna.
+
 ## DASHBOARD
 
 - [F3] El inicio todavía no muestra alertas de stock bajo mínimo ni compras pendientes de
   recibir (previsto en Fase 8, pero conviene un primer indicador).
 
 - [F4] El inicio no muestra órdenes en curso ni planificadas con faltante de materia prima.
+
+- [F4.5] El inicio no avisa lotes vencidos o próximos a vencer; es la alerta diaria más útil para
+  producción y mostrador.
 
 ## RESPONSIVE
 
@@ -107,5 +130,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   faltantes conviene "Comprar todo lo que falta" agrupado por proveedor preferido.
 - [F4] "Revisar y completar" guarda el avance antes de abrir la revisión; si el usuario vuelve
   sin confirmar, lo cargado ya quedó guardado (es lo esperado, pero no se avisa).
+- [F4.5] Congelar se hace lote por lote; al cierre del día suele congelarse "todo lo fresco que
+  sobró". Evaluar una acción masiva con FEFO inverso.
+- [F4.5] Una merma de lote vencido exige entrar al lote; desde "Próximos a vencer" convendría
+  "Registrar merma" directo en la fila.
 - [F4] No hay reversa de una producción completada (deuda PRODUCTION_REVERSAL): un error de carga
   se corrige hoy con ajustes manuales de stock. Definir el flujo de reversa con negocio.

@@ -8,7 +8,7 @@ const tables: PgTable[] = Object.values(schema as Record<string, unknown>).filte
 );
 
 describe("reglas del esquema", () => {
-  it("expone las tablas de Fases 0 a 4", () => {
+  it("expone las tablas de Fases 0 a 4.5", () => {
     expect(tables.map((t) => getTableConfig(t).name).sort()).toEqual([
       "audit_logs",
       "categories",
@@ -20,8 +20,12 @@ describe("reglas del esquema", () => {
       "inventory_cost_history",
       "membership_roles",
       "permissions",
+      "product_conservation_profiles",
+      "product_conservation_settings",
       "product_inventory_cost_history",
       "product_inventory_costs",
+      "product_lot_balances",
+      "product_lots",
       "production_material_lines",
       "production_orders",
       "products",

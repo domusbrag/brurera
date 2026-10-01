@@ -991,3 +991,66 @@ h2 {
   min-width: 0;
   min-height: 42px;
 }
+
+/* ---------- Lotes y conservación (Fase 4.5) ---------- */
+
+.conservation-table input:not([type="checkbox"]),
+.conservation-table select {
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--color-surface);
+}
+
+.conservation-table input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.conservation-table input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.inline-fields {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.inline-fields input {
+  width: 5.5rem;
+}
+
+.inline-check {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.timeline {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.timeline li {
+  margin: 0.3rem 0;
+}
+
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}

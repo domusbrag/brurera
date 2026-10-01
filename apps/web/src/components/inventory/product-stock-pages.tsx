@@ -1,6 +1,8 @@
 "use client";
 
+import { D } from "@bakery/domain";
 import {
+  CONSERVATION_STATE_LABELS,
   PERMISSIONS as P,
   type Page,
   type ProductCostDto,
@@ -21,6 +23,8 @@ import {
 import { MasterList } from "../masters/master-list";
 import { Details, ErrorState, Loading, PageHeader, StatusBadge, useResource } from "../masters/ui";
 import { useCan, useCurrentUser } from "../user-context";
+import { AvailabilityAtDate, ProductLotsPanel, StateBreakdown } from "../lots/lot-pages";
+import { EXPIRING_PATH } from "../lots/lot-shared";
 import {
   ItemMovements,
   PRODUCT_STOCK_BASE,
@@ -30,8 +34,9 @@ import {
 } from "./inventory-pages";
 
 /*
- * Stock de productos terminados (Fase 4). Entra sólo al completar una orden de
- * producción; su costo promedio es el costo material de los lotes producidos.
+ * Stock de productos terminados (Fase 4 y 4.5). Entra sólo al completar una orden
+ * de producción, en un lote con su conservación y vencimiento; su costo promedio
+ * es el costo material de los lotes producidos.
  */
 
 export function ProductStockList() {
@@ -43,7 +48,7 @@ export function ProductStockList() {
   return (
     <MasterList<ProductStockItemDto>
       title="Stock de productos terminados"
-      subtitle="Existencias de lo que se produjo. Sólo cambian al completar una producción."
+      subtitle="Existencias de lo que se produjo, por lote y conservación. Entran al completar una producción; salen por merma."
       endpoint="/api/inventory/products"
       basePath={PRODUCT_STOCK_BASE}
       searchPlaceholder="Buscar producto"
@@ -83,8 +88,33 @@ export function ProductStockList() {
           className: "hide-sm",
         },
         {
-          header: "Stock actual",
+          header: "Físico",
           cell: (i) => <strong>{formatQuantity(i.quantity, i.saleUnit.symbol)}</strong>,
+          className: "num",
+        },
+        ...(["FRESH", "REFRIGERATED", "FROZEN"] as const).map((state) => ({
+          header: CONSERVATION_STATE_LABELS[state],
+          cell: (i: ProductStockItemDto) =>
+            new D(i.lots.byState[state]).isZero()
+              ? "—"
+              : formatQuantity(i.lots.byState[state], i.saleUnit.symbol),
+          className: "num hide-md",
+        })),
+        {
+          header: "Utilizable ahora",
+          cell: (i: ProductStockItemDto) => formatQuantity(i.lots.usableNow, i.saleUnit.symbol),
+          className: "num",
+        },
+        {
+          header: "Próximo a vencer",
+          cell: (i: ProductStockItemDto) =>
+            new D(i.lots.nearExpiry).isZero() ? (
+              "—"
+            ) : (
+              <span className="badge badge--warn">
+                {formatQuantity(i.lots.nearExpiry, i.saleUnit.symbol)}
+              </span>
+            ),
           className: "num",
         },
         ...(showCosts
@@ -96,7 +126,7 @@ export function ProductStockList() {
                 className: "num hide-sm",
               },
               {
-                header: "Valor estimado",
+                header: "Valor",
                 cell: (i: ProductStockItemDto) => formatMoney(i.inventoryValue, currency),
                 className: "num",
               },
@@ -158,11 +188,24 @@ export function ProductStockDetail({ id }: { id: string }) {
       />
 
       <section className="panel" aria-labelledby="stock-title">
-        <h2 id="stock-title">Existencias</h2>
+        <div className="panel__header">
+          <h2 id="stock-title">Existencias</h2>
+          {can(P.INVENTORY_EXPIRY_READ) && <Link href={EXPIRING_PATH}>Ver próximos a vencer</Link>}
+        </div>
         <dl className="cost-summary">
           <div>
-            <dt>Stock total</dt>
+            <dt>Stock físico</dt>
             <dd>{formatQuantity(data.quantity, unit)}</dd>
+          </div>
+          <div>
+            <dt>Utilizable ahora</dt>
+            <dd>{formatQuantity(data.lots.usableNow, unit)}</dd>
+          </div>
+          <div>
+            <dt>Próximo a vencer</dt>
+            <dd className={new D(data.lots.nearExpiry).gt(0) ? "text-negative" : undefined}>
+              {formatQuantity(data.lots.nearExpiry, unit)}
+            </dd>
           </div>
           {data.canSeeCosts && (
             <>
@@ -181,6 +224,15 @@ export function ProductStockDetail({ id }: { id: string }) {
             </>
           )}
         </dl>
+        <p className="muted small">
+          Por conservación: <StateBreakdown byState={data.lots.byState} unit={unit} />
+          {new D(data.lots.expired).gt(0) &&
+            ` · vencido ${formatQuantity(data.lots.expired, unit)}`}
+          {new D(data.lots.blocked).gt(0) &&
+            ` · bloqueado ${formatQuantity(data.lots.blocked, unit)}`}
+          {!data.conservationConfigured &&
+            " · Sin conservación configurada: los lotes no tienen vencimiento."}
+        </p>
         {data.byWarehouse.length > 0 && (
           <div className="table-wrap" style={{ marginTop: "1rem" }}>
             <table className="table">
@@ -212,6 +264,9 @@ export function ProductStockDetail({ id }: { id: string }) {
           </div>
         )}
       </section>
+
+      <ProductLotsPanel productId={id} unit={unit} />
+      <AvailabilityAtDate productId={id} unit={unit} />
 
       <section className="panel" aria-labelledby="price-title">
         <h2 id="price-title">Precio y margen</h2>

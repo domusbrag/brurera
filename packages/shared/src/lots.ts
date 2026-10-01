@@ -173,6 +173,13 @@ export const availabilityQuerySchema = z.object({
 });
 
 export const expiringQuerySchema = z.object({
+  /** Busca por código de lote o nombre / código de producto. */
+  search: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   /** Ventana en horas; si no se indica, el umbral configurado de cada producto. */
   withinHours: z.coerce.number().int().min(1).max(8784).optional(),
   status: z.enum(["all", "near_expiry", "expired"]).default("all"),

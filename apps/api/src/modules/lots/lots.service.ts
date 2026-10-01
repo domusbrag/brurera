@@ -44,7 +44,7 @@ import type { z } from "zod";
 import { auditBase, type OperationContext } from "../../lib/context.js";
 import { invalidReference, mapUniqueViolations, notFound } from "../../lib/db-errors.js";
 import { AppError } from "../../lib/errors.js";
-import { pageWindow, toPage } from "../../lib/listing.js";
+import { likePattern, pageWindow, toPage } from "../../lib/listing.js";
 import { recordAudit } from "../audit/audit.service.js";
 import { selectMovements } from "../inventory/inventory.service.js";
 import { fixedMoney, fixedQty, lockLotBalance, postLotMovement } from "../inventory/ledger.js";
@@ -830,6 +830,11 @@ export async function listExpiring(
     isNotNull(productLots.usableUntil),
     query.warehouseId ? eq(productLots.warehouseId, query.warehouseId) : undefined,
     query.productId ? eq(productLots.productId, query.productId) : undefined,
+    query.search
+      ? sql`(${productLots.lotCode} ilike ${likePattern(query.search)} or exists (
+          select 1 from products p where p.id = ${productLots.productId}
+            and (p.name ilike ${likePattern(query.search)} or p.internal_code ilike ${likePattern(query.search)})))`
+      : undefined,
     query.status === "expired"
       ? sql`${productLots.usableUntil} < ${nowSql}`
       : query.status === "near_expiry"

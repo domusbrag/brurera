@@ -247,7 +247,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   await row.getByRole("link", { name: pan }).click();
   await expect(page.getByRole("heading", { level: 1, name: new RegExp(pan) })).toBeVisible();
   const stock = section(page, "Existencias");
-  await expect(summaryValue(stock, "Stock total")).toHaveText("96 kg");
+  await expect(summaryValue(stock, "Stock físico")).toHaveText("96 kg");
   await expect(summaryValue(stock, "Costo promedio")).toHaveText("$800,00 / kg");
   await expect(summaryValue(stock, "Valor de inventario")).toHaveText("$76.800,00");
   const margin = summaryValue(section(page, "Precio y margen"), "Margen teórico");
