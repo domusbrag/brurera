@@ -4,8 +4,12 @@
 
 **FASE_1_STATUS = COMPLETE_PENDING_HUMAN_ACCEPTANCE**
 
+**Cierre (2026-10-01):** FASE_1_TECHNICAL_REVIEW = PASS · FASE_1_HUMAN_GATE = ACCEPTED (maxi) ·
+NEXT_ALLOWED_PHASE = FASE_2_RECETAS_Y_COSTO_TEORICO. Commit aceptado: `48a105e`.
+
 Rama `fase-1-maestros`, PR [domusbrag/brurera#1](https://github.com/domusbrag/brurera/pull/1)
-contra `main`. **CI_REMOTE_STATUS = **CI_STATUS****.
+contra `main`. **CI_REMOTE_STATUS = PASS** (GitHub Actions, job `verify`, run
+[36790720062](https://github.com/domusbrag/brurera/actions/runs/36790720062) sobre `48a105e`, 2026-09-30 23:24 UTC).
 
 No se empezó Fase 2 (recetas, costos), ni compras, inventario, producción o ventas.
 
@@ -228,7 +232,7 @@ Todos se corrieron en un **clon limpio** de la rama, con base vacía.
 | H — Static        | ✅ lint (ESLint + Prettier) y typecheck con 0 errores                                              |
 | I — Build         | ✅ `pnpm build` (web y api)                                                                        |
 | J — Worktree      | ✅ limpio                                                                                          |
-| CI remoto         | **CI_ROW**                                                                                         |
+| CI remoto         | ✅ job `verify` en verde sobre `48a105e` (run 36790720062)                                         |
 
 Hallazgo en los gates: el E2E en modo CI chocaba con el **rate limit de login** (10 por minuto,
 control de seguridad de Fase 0), porque la suite ahora inicia sesión muchas más veces. El límite
