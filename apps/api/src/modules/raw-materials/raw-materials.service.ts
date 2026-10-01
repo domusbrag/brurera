@@ -2,6 +2,7 @@ import {
   allocateCode,
   categories,
   companies,
+  rawMaterialInventoryCosts,
   rawMaterials,
   recipeIngredients,
   suppliers,
@@ -20,6 +21,7 @@ import { AppError } from "../../lib/errors.js";
 import { activeCondition, pageWindow, searchCondition, toPage } from "../../lib/listing.js";
 import { assertCategory, assertSupplier, assertUnit } from "../../lib/references.js";
 import { diffChanges, recordAudit } from "../audit/audit.service.js";
+import { withEffectiveCost } from "../recipes/recipes.data.js";
 
 type CreateInput = z.infer<typeof createRawMaterialSchema>;
 type UpdateInput = z.infer<typeof updateRawMaterialSchema>;
@@ -31,16 +33,29 @@ function selectRawMaterials(db: Database | Transaction) {
       category: { id: categories.id, name: categories.name },
       unit: { id: unitsOfMeasure.id, code: unitsOfMeasure.code, symbol: unitsOfMeasure.symbol },
       supplier: { id: suppliers.id, code: suppliers.internalCode, legalName: suppliers.legalName },
+      movingAverageCost: rawMaterialInventoryCosts.movingAverageCost,
     })
     .from(rawMaterials)
     .innerJoin(categories, eq(categories.id, rawMaterials.categoryId))
     .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, rawMaterials.baseUnitId))
-    .leftJoin(suppliers, eq(suppliers.id, rawMaterials.preferredSupplierId));
+    .leftJoin(suppliers, eq(suppliers.id, rawMaterials.preferredSupplierId))
+    .leftJoin(
+      rawMaterialInventoryCosts,
+      and(
+        eq(rawMaterialInventoryCosts.companyId, rawMaterials.companyId),
+        eq(rawMaterialInventoryCosts.rawMaterialId, rawMaterials.id),
+      ),
+    );
 }
 
 type SelectedRow = Awaited<ReturnType<ReturnType<typeof selectRawMaterials>["execute"]>>[number];
 
-function toDto({ m, category, unit, supplier }: SelectedRow): RawMaterialDto {
+function toDto({ m, category, unit, supplier, movingAverageCost }: SelectedRow): RawMaterialDto {
+  const effective = withEffectiveCost({
+    referenceCost: m.referenceCost,
+    referenceCostSource: m.referenceCostSource,
+    movingAverageCost,
+  });
   return {
     id: m.id,
     code: m.internalCode,
@@ -53,6 +68,9 @@ function toDto({ m, category, unit, supplier }: SelectedRow): RawMaterialDto {
     referenceCost: m.referenceCost,
     referenceCostSource: m.referenceCostSource,
     referenceCostUpdatedAt: m.referenceCostUpdatedAt?.toISOString() ?? null,
+    movingAverageCost,
+    effectiveCost: effective.effectiveCost,
+    effectiveCostSource: effective.effectiveCostSource,
     active: m.active,
     createdAt: m.createdAt.toISOString(),
     updatedAt: m.updatedAt.toISOString(),

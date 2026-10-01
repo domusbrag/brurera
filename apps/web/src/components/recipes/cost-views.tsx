@@ -2,7 +2,9 @@
 
 import type { CostingUnit } from "@bakery/domain";
 import {
+  COST_SOURCE_LABELS,
   RECIPE_VERSION_STATUS_LABELS,
+  type CostSourceDto,
   type CostSnapshotDto,
   type CostVariationDto,
   type RecipeVersionDiffDto,
@@ -66,7 +68,28 @@ export function IncompleteCostAlert({ missing }: { missing: { rawMaterialName: s
   );
 }
 
-/** Tabla Materia prima | Cantidad | Costo de referencia | Costo del ingrediente. */
+/** Costo por unidad base usado en el cálculo, con su procedencia (promedio de compras o referencia manual). */
+function UsedCost({
+  cost,
+  source,
+  currency,
+  unitSymbol,
+}: {
+  cost: string | null;
+  source: CostSourceDto | null;
+  currency: string;
+  unitSymbol: string;
+}) {
+  if (cost === null) return <span className="badge badge--warn">Sin costo</span>;
+  return (
+    <>
+      {formatReferenceCost(cost, currency, unitSymbol)}
+      {source && <span className="cost-source">{COST_SOURCE_LABELS[source]}</span>}
+    </>
+  );
+}
+
+/** Tabla Materia prima | Cantidad | Costo usado | Costo del ingrediente. */
 export function IngredientCostTable({ cost }: { cost: TheoreticalCostDto }) {
   return (
     <div className="table-wrap">
@@ -78,7 +101,7 @@ export function IngredientCostTable({ cost }: { cost: TheoreticalCostDto }) {
               Cantidad
             </th>
             <th scope="col" className="num">
-              Costo de referencia
+              Costo usado
             </th>
             <th scope="col" className="num">
               Costo del ingrediente
@@ -99,11 +122,12 @@ export function IngredientCostTable({ cost }: { cost: TheoreticalCostDto }) {
                 )}
               </td>
               <td className="num">
-                {line.referenceCost === null ? (
-                  <span className="badge badge--warn">Sin costo</span>
-                ) : (
-                  formatReferenceCost(line.referenceCost, cost.currency, line.baseUnit.symbol)
-                )}
+                <UsedCost
+                  cost={line.referenceCost}
+                  source={line.costSource}
+                  currency={cost.currency}
+                  unitSymbol={line.baseUnit.symbol}
+                />
               </td>
               <td className="num">
                 {line.cost === null ? "—" : formatMoney(line.cost, cost.currency)}
@@ -246,7 +270,7 @@ export function SnapshotTable({ snapshot }: { snapshot: CostSnapshotDto }) {
               Cantidad
             </th>
             <th scope="col" className="num">
-              Costo de referencia usado
+              Costo usado
             </th>
             <th scope="col" className="num">
               Costo del ingrediente
@@ -259,11 +283,12 @@ export function SnapshotTable({ snapshot }: { snapshot: CostSnapshotDto }) {
               <td>{line.rawMaterialName}</td>
               <td className="num">{formatQuantity(line.quantity, line.unit.symbol)}</td>
               <td className="num">
-                {line.referenceCost === null ? (
-                  <span className="badge badge--warn">Sin costo</span>
-                ) : (
-                  formatReferenceCost(line.referenceCost, snapshot.currency, line.baseUnit.symbol)
-                )}
+                <UsedCost
+                  cost={line.referenceCost}
+                  source={line.costSource}
+                  currency={snapshot.currency}
+                  unitSymbol={line.baseUnit.symbol}
+                />
               </td>
               <td className="num">
                 {line.ingredientCost === null

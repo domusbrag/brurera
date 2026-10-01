@@ -9,6 +9,8 @@ export const CODE_PREFIXES = {
   RAW_MATERIAL: "MP",
   PRODUCT: "PROD",
   WAREHOUSE: "DEP",
+  PURCHASE: "OC",
+  PURCHASE_RECEIPT: "REC",
 } as const;
 
 export type CodeEntity = keyof typeof CODE_PREFIXES;

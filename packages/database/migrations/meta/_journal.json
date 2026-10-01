@@ -43,6 +43,13 @@
       "when": 1790814808023,
       "tag": "0005_recipes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790827600597,
+      "tag": "0006_purchases_inventory",
+      "breakpoints": true
     }
   ]
 }

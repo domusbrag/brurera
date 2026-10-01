@@ -656,6 +656,8 @@ export async function getVersion(
           baseUnit: ref(unitOrThrow(units, m.baseUnitId)),
           referenceCost: m.referenceCost,
           referenceCostSource: m.referenceCostSource,
+          effectiveCost: m.effectiveCost,
+          effectiveCostSource: m.effectiveCostSource,
         },
         quantity: ing.quantity,
         unit: ref(unitOrThrow(units, ing.unitId)),

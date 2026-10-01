@@ -17,6 +17,9 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   products: "Productos",
   warehouses: "Depósitos",
   recipes: "Recetas",
+  purchases: "Compras",
+  inventory: "Inventario",
+  presentations: "Presentaciones de compra",
 };
 
 /**

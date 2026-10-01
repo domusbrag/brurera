@@ -1,5 +1,8 @@
 import {
+  COST_SCALE,
   calculateRecipeCost,
+  selectEffectiveCost,
+  toFixedString,
   type CostingUnit,
   type IngredientCostInput,
   type RecipeCostResult,
@@ -7,6 +10,7 @@ import {
 import {
   companies,
   products,
+  rawMaterialInventoryCosts,
   rawMaterials,
   recipeIngredients,
   type recipeVersions,
@@ -65,7 +69,30 @@ export interface RawMaterialRow {
   active: boolean;
   baseUnitId: string;
   referenceCost: string | null;
-  referenceCostSource: "MANUAL_REFERENCE" | "PURCHASE_MOVING_AVERAGE" | "SUPPLIER_QUOTE" | "OTHER";
+  referenceCostSource: CostSourceCode;
+  /** Promedio ponderado móvil del inventario (null si nunca hubo stock valorizado). */
+  movingAverageCost: string | null;
+  /** Costo que usan las recetas: promedio móvil → referencia manual → ninguno. */
+  effectiveCost: string | null;
+  effectiveCostSource: CostSourceCode | null;
+}
+
+type CostSourceCode = "MANUAL_REFERENCE" | "PURCHASE_MOVING_AVERAGE" | "SUPPLIER_QUOTE" | "OTHER";
+
+/** Aplica la prioridad de costo efectivo de @bakery/domain a una fila de materia prima. */
+export function withEffectiveCost<
+  T extends {
+    referenceCost: string | null;
+    referenceCostSource: CostSourceCode;
+    movingAverageCost: string | null;
+  },
+>(row: T): T & { effectiveCost: string | null; effectiveCostSource: CostSourceCode | null } {
+  const effective = selectEffectiveCost(row);
+  return {
+    ...row,
+    effectiveCost: effective.cost === null ? null : toFixedString(effective.cost, COST_SCALE),
+    effectiveCostSource: effective.source,
+  };
 }
 
 /** Materias primas de la empresa por id (las de otra empresa simplemente no aparecen). */
@@ -84,10 +111,18 @@ export async function loadRawMaterials(
       baseUnitId: rawMaterials.baseUnitId,
       referenceCost: rawMaterials.referenceCost,
       referenceCostSource: rawMaterials.referenceCostSource,
+      movingAverageCost: rawMaterialInventoryCosts.movingAverageCost,
     })
     .from(rawMaterials)
+    .leftJoin(
+      rawMaterialInventoryCosts,
+      and(
+        eq(rawMaterialInventoryCosts.companyId, rawMaterials.companyId),
+        eq(rawMaterialInventoryCosts.rawMaterialId, rawMaterials.id),
+      ),
+    )
     .where(and(eq(rawMaterials.companyId, ctx.companyId), inArray(rawMaterials.id, [...ids])));
-  return new Map(rows.map((r) => [r.id, r]));
+  return new Map(rows.map((r) => [r.id, withEffectiveCost(r)]));
 }
 
 export interface IngredientRow {
@@ -157,7 +192,10 @@ export async function loadProduct(
   return row;
 }
 
-/** Entrada del dominio a partir de ingredientes persistidos y costos de referencia ACTUALES. */
+/**
+ * Entrada del dominio a partir de ingredientes persistidos y el costo efectivo
+ * ACTUAL de cada materia prima (promedio móvil de inventario, o la referencia manual).
+ */
 export function toCostInputs(
   ingredients: readonly IngredientRow[],
   materials: Map<string, RawMaterialRow>,
@@ -173,8 +211,8 @@ export function toCostInputs(
       quantity: ing.quantity,
       unit: unitOrThrow(units, ing.unitId),
       baseUnit: unitOrThrow(units, material.baseUnitId),
-      referenceCost: material.referenceCost,
-      costSource: material.referenceCost === null ? null : material.referenceCostSource,
+      referenceCost: material.effectiveCost,
+      costSource: material.effectiveCostSource,
     };
   });
 }

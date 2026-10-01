@@ -58,6 +58,23 @@ export const AUDIT_ACTION_LABELS = {
   RECIPE_VERSION_PUBLISHED: "Versión publicada",
   RECIPE_VERSION_ARCHIVED: "Versión archivada",
   RECIPE_VERSION_DISCARDED: "Borrador descartado",
+
+  RAW_MATERIAL_PRESENTATION_CREATED: "Presentación de compra creada",
+  RAW_MATERIAL_PRESENTATION_UPDATED: "Presentación de compra modificada",
+
+  PURCHASE_CREATED: "Compra creada",
+  PURCHASE_UPDATED: "Compra modificada",
+  PURCHASE_ORDERED: "Pedido confirmado",
+  PURCHASE_CANCELLED: "Compra cancelada",
+  PURCHASE_RECEIPT_CREATED: "Recepción registrada (borrador)",
+  PURCHASE_RECEIPT_UPDATED: "Recepción modificada",
+  PURCHASE_RECEIPT_POSTED: "Recepción confirmada",
+  PURCHASE_RECEIPT_CANCELLED: "Recepción descartada",
+
+  INITIAL_STOCK_POSTED: "Stock inicial cargado",
+  INVENTORY_ADJUSTED: "Ajuste de stock",
+  INVENTORY_WASTE_RECORDED: "Merma registrada",
+  MOVING_AVERAGE_COST_CHANGED: "Costo promedio modificado",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;

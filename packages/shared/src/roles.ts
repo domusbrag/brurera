@@ -71,6 +71,12 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.PRODUCTS_UPDATE,
       P.WAREHOUSES_READ,
       P.RECIPES_READ,
+      // Lectura de compras y costos; el stock inicial es una decisión de valorización.
+      P.PURCHASES_READ,
+      P.INVENTORY_READ,
+      P.INVENTORY_COST_READ,
+      P.INVENTORY_INITIAL_STOCK,
+      P.PRESENTATIONS_READ,
     ],
   },
   {
@@ -101,6 +107,16 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.RAW_MATERIALS_UPDATE,
       P.RAW_MATERIALS_UPDATE_COST,
       P.WAREHOUSES_READ,
+      P.PURCHASES_READ,
+      P.PURCHASES_CREATE,
+      P.PURCHASES_UPDATE,
+      P.PURCHASES_ORDER,
+      P.PURCHASES_RECEIVE,
+      P.PURCHASES_CANCEL,
+      P.PRESENTATIONS_READ,
+      P.PRESENTATIONS_MANAGE,
+      P.INVENTORY_READ,
+      P.INVENTORY_COST_READ,
     ],
   },
   {
@@ -117,6 +133,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.RECIPES_READ,
       P.RECIPES_CREATE,
       P.RECIPES_UPDATE,
+      P.INVENTORY_READ,
     ],
   },
   {
@@ -129,6 +146,13 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.RAW_MATERIALS_READ,
       P.PRODUCTS_READ,
       P.WAREHOUSES_READ,
+      // Recibe mercadería contra compras; no ve la valorización del inventario.
+      P.PURCHASES_READ,
+      P.PURCHASES_RECEIVE,
+      P.PRESENTATIONS_READ,
+      P.INVENTORY_READ,
+      P.INVENTORY_ADJUST,
+      P.INVENTORY_WASTE,
     ],
   },
 ];
