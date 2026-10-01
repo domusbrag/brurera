@@ -161,6 +161,7 @@ ENDPOINTS.push(
   // Producción (Fase 4)
   ["GET", "/api/production-orders", [P.PRODUCTION_ORDERS_READ]],
   ["POST", "/api/production-orders", [P.PRODUCTION_ORDERS_CREATE]],
+  ["POST", "/api/production-orders/preview", [P.PRODUCTION_ORDERS_CREATE]],
   ["GET", `/api/production-orders/${ANY_ID}`, [P.PRODUCTION_ORDERS_READ]],
   ["PATCH", `/api/production-orders/${ANY_ID}`, [P.PRODUCTION_ORDERS_UPDATE]],
   ["POST", `/api/production-orders/${ANY_ID}/plan`, [P.PRODUCTION_ORDERS_PLAN]],

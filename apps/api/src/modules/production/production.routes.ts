@@ -55,6 +55,17 @@ export async function productionRoutes(app: FastifyInstance, { db }: { db: Datab
           ),
         ),
   );
+  app.post(
+    "/production-orders/preview",
+    { preHandler: requirePermission(P.PRODUCTION_ORDERS_CREATE) },
+    (req) =>
+      production.previewOrder(
+        db,
+        operationContext(req),
+        parseInput(createProductionOrderSchema, req.body),
+        canSeeCosts(req),
+      ),
+  );
   app.get(
     "/production-orders/:id",
     { preHandler: requirePermission(P.PRODUCTION_ORDERS_READ) },

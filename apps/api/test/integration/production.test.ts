@@ -188,6 +188,12 @@ describe("integración — flujo principal (§66)", () => {
     expect(dec(o.materials[1].actualNormalized)).toBe("0.8");
     expect(o.materials[1].actualUnit.code).toBe("g");
     expect(o.output).toMatchObject({ variancePercentage: "-4.0000", yieldPerformance: "96.0000" });
+    // Antes de completar: costo estimado con el consumo cargado y el promedio vigente.
+    expect(o.costs.estimated).toEqual({
+      status: "COMPLETE",
+      total: "77400.000000",
+      unit: "806.250000",
+    });
     expect(dec(o.output.variance)).toBe("-4");
   });
 
@@ -713,6 +719,36 @@ describe("integración — máquina de estados y reglas de alta", () => {
     w = await buildProductionWorld(api, " E");
     await stock(api, w, w.harina, "1000", "1000");
     await stock(api, w, w.sal, "100", "500");
+  });
+
+  it("la vista previa calcula receta, plan y disponibilidad sin guardar nada", async () => {
+    const [before] = await db().select({ n: count() }).from(productionOrders);
+    const res = await api.post("/api/production-orders/preview", {
+      productId: w.panFrances,
+      scheduledFor: TODAY,
+      plannedOutputQuantity: "200",
+      sourceWarehouseId: w.warehouseId,
+      outputWarehouseId: w.warehouseId,
+    });
+    expect(res.statusCode).toBe(200);
+    const preview = res.json();
+    expect(preview.recipeVersion).toMatchObject({ id: w.v1, versionNumber: 1 });
+    expect(
+      preview.materials.map((m: { plannedNormalized: string }) => dec(m.plannedNormalized)),
+    ).toEqual(["150", "1.6"]);
+    expect(preview.availability.sufficient).toBe(true);
+    expect(preview.costs.planned.total).toBe("150800.000000");
+    const [after] = await db().select({ n: count() }).from(productionOrders);
+    expect(after!.n).toBe(before!.n);
+    const bad = await api.post("/api/production-orders/preview", {
+      productId: w.panFrances,
+      scheduledFor: TODAY,
+      plannedOutputQuantity: "1",
+      plannedOutputUnitId: w.units.l,
+      sourceWarehouseId: w.warehouseId,
+      outputWarehouseId: w.warehouseId,
+    });
+    expect(bad.json().error.code).toBe("INCOMPATIBLE_OUTPUT_UNIT");
   });
 
   it("transiciones inválidas → 409 INVALID_PRODUCTION_TRANSITION", async () => {

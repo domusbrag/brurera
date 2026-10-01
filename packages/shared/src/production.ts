@@ -223,6 +223,11 @@ export interface ProductionCostsDto {
     missing: string[];
   } | null;
   actual: { total: string; unit: string } | null;
+  /**
+   * En curso: costo material ESTIMADO del consumo cargado al promedio vigente de
+   * cada materia prima (el real se fija al completar). unit: null sin salida real.
+   */
+  estimated: { status: CostStatusDto; total: string | null; unit: string | null } | null;
   /** real − esperado (sólo con ambos completos). */
   variance: { total: string; unit: string; percentage: string | null } | null;
 }

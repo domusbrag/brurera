@@ -30,6 +30,7 @@ import {
   type Page,
   type ProductionActualsInput,
   type ProductionCostComparisonDto,
+  type ProductionOrderDto,
   type ProductionOrderListItemDto,
   type ResponsibleOptionDto,
   type StockMovementDto,
@@ -382,7 +383,44 @@ export async function createOrder(
   input: CreateProductionOrderInput,
   canSeeCosts: boolean,
 ) {
-  return db.transaction(async (tx) => {
+  return db.transaction((tx) => insertOrder(tx, ctx, input, canSeeCosts));
+}
+
+class PreviewRollback extends Error {
+  constructor(readonly order: ProductionOrderDto) {
+    super("vista previa");
+  }
+}
+
+/**
+ * Vista previa de una orden nueva (receta sugerida, plan, disponibilidad y costo
+ * esperado) con EXACTAMENTE las mismas reglas que el alta: se crea dentro de una
+ * transacción que siempre se revierte. No deja rastro (ni código ni auditoría).
+ */
+export async function previewOrder(
+  db: Database,
+  ctx: OperationContext,
+  input: CreateProductionOrderInput,
+  canSeeCosts: boolean,
+): Promise<ProductionOrderDto> {
+  try {
+    await db.transaction(async (tx) => {
+      throw new PreviewRollback(await insertOrder(tx, ctx, input, canSeeCosts));
+    });
+  } catch (err) {
+    if (err instanceof PreviewRollback) return err.order;
+    throw err;
+  }
+  throw new Error("La vista previa debía revertirse");
+}
+
+async function insertOrder(
+  tx: Transaction,
+  ctx: OperationContext,
+  input: CreateProductionOrderInput,
+  canSeeCosts: boolean,
+) {
+  {
     const { product, recipe } = await resolveProduct(tx, ctx, input.productId);
     const version = await resolveVersion(
       tx,
@@ -446,7 +484,7 @@ export async function createOrder(
       },
     });
     return getOrder(tx, ctx, order.id, canSeeCosts);
-  });
+  }
 }
 
 const STRUCTURAL = [

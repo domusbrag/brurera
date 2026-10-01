@@ -425,6 +425,7 @@ export async function getOrder(
   const issues: ProductionIssueDto[] = [];
   const open = order.status === "DRAFT" || order.status === "PLANNED";
 
+  let estimated: ProductionCostsDto["estimated"] = null;
   let materials: ProductionMaterialLineDto[] = [];
   let preview: ProductionPlan | null = null;
   let requirements: Requirement[] = [];
@@ -492,6 +493,26 @@ export async function getOrder(
       return lineDto(l, { id: m.id, code: m.code, name: m.name, active: m.active }, units, live);
     });
     basis = order.status === "IN_PROGRESS" ? "ACTUAL" : "PLANNED";
+    if (order.status === "IN_PROGRESS") {
+      // Cada consumo saldrá al promedio vigente: estimación de lo que costará completar.
+      let total = new D(0);
+      let complete = true;
+      for (const l of lines) {
+        const average = mats.get(l.rawMaterialId)?.movingAverageCost ?? null;
+        if (l.actualNormalizedQuantity === null || new D(l.actualNormalizedQuantity).isZero())
+          continue;
+        if (average === null) complete = false;
+        else total = total.plus(money(new D(l.actualNormalizedQuantity).times(average)));
+      }
+      estimated = {
+        status: complete ? "COMPLETE" : "INCOMPLETE",
+        total: complete ? money(total) : null,
+        unit:
+          complete && order.actualOutputNormalized !== null
+            ? money(total.dividedBy(order.actualOutputNormalized))
+            : null,
+      };
+    }
     requirements = lines.flatMap((l) => {
       const required =
         basis === "ACTUAL" ? l.actualNormalizedQuantity : l.plannedNormalizedQuantity;
@@ -587,6 +608,7 @@ export async function getOrder(
       order.actualMaterialCost !== null && order.actualUnitMaterialCost !== null
         ? { total: order.actualMaterialCost, unit: order.actualUnitMaterialCost }
         : null,
+    estimated,
     variance:
       variance && unitVariance
         ? {
