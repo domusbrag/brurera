@@ -419,3 +419,64 @@ y cuenta del proveedor quedan para Fase 6.
 **Consecuencias.** Una compra que el proveedor nunca completa queda `PARTIALLY_RECEIVED`
 indefinidamente (deuda registrada). Las diferencias de mercadería ya recibida se corrigen con
 ajustes explícitos.
+
+## ADR-039 — La orden de producción es también el lote
+
+**Contexto.** Fase 4 necesita registrar qué se iba a producir, con qué receta, qué se consumió y
+qué salió. Un modelo separado de "lote" (con stock, vencimiento y FIFO) excede el MVP.
+**Decisión.** `production_orders` es a la vez el documento y el lote: guarda el plan (cantidad,
+versión de receta, depósitos), lo real (salida, consumos por línea en
+`production_material_lines`, con líneas `RECIPE` y `EXTRA`) y el snapshot de costos como columnas
+`planned_*` / `actual_*` (equivalente a un `ProductionCostSnapshot`). `batch_code` es opcional y
+se genera al planificar (`LOT-AAAAMMDD-NNN`, único por empresa) sólo como trazabilidad. Los
+consumos extra son líneas de la orden con motivo obligatorio: nunca modifican la receta.
+**Consecuencias.** Una sola entidad responde "qué, con qué receta, cuánto, cuánto costó". No hay
+stock por lote, vencimientos ni FIFO (roadmap); si se necesitan, el lote pasará a tabla propia y la
+orden lo referenciará.
+
+## ADR-040 — Versión de receta fijada al planificar
+
+**Contexto.** Las recetas se versionan (Fase 2) y una versión nueva puede publicarse mientras hay
+órdenes en curso.
+**Decisión.** Al crear la orden se sugiere la versión vigente para la fecha programada
+(`findEffectiveVersion`); en `DRAFT` puede cambiarse por otra versión publicada de la misma
+receta. Al pasar a `PLANNED` se guardan `recipe_version_id`, las cantidades escaladas y el costo
+esperado, y quedan inmutables (API `409 PRODUCTION_PLAN_LOCKED` y trigger
+`production_orders_guard`). Publicar una versión nueva no toca órdenes existentes.
+**Consecuencias.** El plan y su costo esperado son reproducibles; el "plan vs real" compara contra
+lo que efectivamente se planificó. Para producir con la receta nueva se crea otra orden.
+
+## ADR-041 — Movimientos productivos sólo al completar, valorizados al costo material real
+
+**Contexto.** Planificar e iniciar no deberían mover stock (una orden puede cancelarse), y el
+costo del producto terminado debe salir del inventario real, no de la receta.
+**Decisión.** `DRAFT`, `PLANNED` e `IN_PROGRESS` no generan movimientos: cancelar no deja nada que
+revertir. Al completar, en una transacción, cada línea genera `PRODUCTION_CONSUMPTION` al costo
+promedio vigente de la materia prima (sin tocar su promedio) y la orden genera un único
+`PRODUCTION_OUTPUT`. El costo material real es la suma de `total_value` de los consumos; el valor
+de la salida es exactamente ese total y su unitario es total / cantidad real. El promedio del
+producto usa `applyInbound` (el mismo cálculo que compras) y queda en `product_inventory_costs` con
+historial append-only. No se genera `WASTE` por rendimiento: un rendimiento menor sube el costo
+unitario. Iniciar revalida stock (`409 INSUFFICIENT_MATERIALS_FOR_PRODUCTION`) pero **no reserva**
+(deuda `INVENTORY_RESERVATIONS`); completar revalida todo (`409 INSUFFICIENT_STOCK`, nunca
+negativo, ADR-035). Una producción completada es inmutable y **no se revierte** (deuda
+`PRODUCTION_REVERSAL`).
+**Consecuencias.** El costo material del producto es el que Fase 5 usará como costo de venta. Es
+sólo costo de materias primas: no incluye mano de obra, energía ni indirectos. Entre iniciar y
+completar otra operación puede consumir el stock; el usuario lo ve como faltante al confirmar. Los
+errores de una producción completada se corrigen con ajustes explícitos.
+
+## ADR-042 — Orden global de locks e idempotencia de producción
+
+**Contexto.** Completar toca muchas filas (varias materias primas, el producto, sus saldos) y puede
+correr en paralelo con compras, mermas u otras órdenes; un doble click no puede duplicar nada.
+**Decisión.** Orden fijo de locks: orden de producción → sus líneas → costos de materias primas
+(por id) → saldos de materias primas (por id) → costo del producto → saldo del producto. Compras,
+ajustes y mermas toman el mismo prefijo costo → saldo (ADR-034), así no hay ciclos. La
+idempotencia tiene dos capas: el estado se verifica con la orden bloqueada (`409
+PRODUCTION_ALREADY_COMPLETED`) y el único `(company_id, source_line_id)` del ledger (la línea para
+cada consumo, la orden para la salida).
+**Consecuencias.** Dos órdenes que compiten por la misma harina se serializan y una recibe `409
+INSUFFICIENT_STOCK`; tres "Completar" simultáneos dan `[200, 409, 409]` con un único juego de
+movimientos; cuatro órdenes con las mismas materias primas completan sin deadlocks (tests de
+concurrencia).

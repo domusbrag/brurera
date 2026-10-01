@@ -29,7 +29,10 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   `PUT /api/raw-materials/:id/reference-cost`. Fase 3: `presentations` (presentaciones de compra por
   materia prima), `purchases` (compras y recepciones: `purchases.service.ts`,
   `receipts.service.ts`) e `inventory` (consultas y operaciones manuales en `inventory.service.ts`;
-  núcleo transaccional del stock en `ledger.ts`). Los módulos futuros siguen la lista de la
+  núcleo transaccional del stock en `ledger.ts`). Fase 4: `production` (órdenes de producción:
+  `production.service.ts` con las transiciones y el completado atómico, `production.data.ts` con
+  lecturas, plan en vivo, disponibilidad y DTOs) y, en `inventory`, `product-stock.service.ts`
+  (stock y costo de productos terminados). Los módulos futuros siguen la lista de la
   especificación (§30).
 - **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
   `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
@@ -51,6 +54,12 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   `PURCHASE_WITHOUT_LINES`, `VALUATION_COST_REQUIRED`, `INITIAL_STOCK_ALREADY_LOADED`,
   `INCOMPATIBLE_PRESENTATION_UNIT`, `INCOMPATIBLE_PURCHASE_UNIT`, `DISCOUNT_EXCEEDS_GROSS`,
   `PRESENTATION_NAME_TAKEN`, `RAW_MATERIAL_INACTIVE`.
+  Fase 4: `INVALID_PRODUCTION_TRANSITION`, `PRODUCTION_IMMUTABLE`, `PRODUCTION_ALREADY_COMPLETED`,
+  `PRODUCTION_PLAN_LOCKED`, `PRODUCTION_NOT_IN_PROGRESS`, `INSUFFICIENT_MATERIALS_FOR_PRODUCTION`
+  (409, con faltantes), `INSUFFICIENT_STOCK` (409, con materia prima, requerido, disponible y
+  faltante), `PRODUCT_NOT_STOCK_CONTROLLED`, `PRODUCT_WITHOUT_RECIPE`, `PRODUCT_INACTIVE`,
+  `NO_EFFECTIVE_VERSION`, `WAREHOUSE_INACTIVE`, `ACTUAL_OUTPUT_REQUIRED`,
+  `ACTUAL_CONSUMPTION_REQUIRED`, `NO_CONSUMPTION`, `QUANTITY_NOT_POSITIVE`, `BATCH_CODE_TAKEN`.
   Las violaciones de unicidad de la base se traducen por nombre de constraint
   (`mapUniqueViolations`).
 - **Regla de dependencias:** rutas → servicios → base de datos. Un módulo solo usa otro a través
@@ -89,11 +98,28 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   verificado con la recepción bloqueada) y, como segunda barrera, un índice único
   `(company_id, source_line_id)` en `stock_movements` impide que una línea de recepción genere dos
   movimientos.
+- **Producción (Fase 4, ADR-039 a 042):** la orden es documento y lote. `DRAFT`, `PLANNED` e
+  `IN_PROGRESS` no mueven stock; al planificar se fijan versión de receta, líneas escaladas y costo
+  esperado (trigger `production_orders_guard` bloquea los campos estructurales). Completar
+  (`completeOrder`) es UNA transacción de 22 pasos: bloquea la orden y sus líneas, normaliza lo
+  real, bloquea costos y saldos de las materias primas por id, revalida stock, genera un
+  `PRODUCTION_CONSUMPTION` por línea al promedio vigente, suma sus `total_value` como costo material
+  real, bloquea costo y saldo del producto, genera un `PRODUCTION_OUTPUT` valorizado exactamente
+  con ese total, actualiza el promedio del producto con `applyInbound` y su historial
+  (`product_inventory_cost_history`), congela costos reales, pasa a `COMPLETED` y audita. El ledger
+  tiene una segunda puerta para productos (`postProductMovement`) con las mismas garantías.
+  Orden global de locks: orden → líneas → costos de materias primas → saldos de materias primas →
+  costo del producto → saldo del producto. Idempotencia: estado con la orden bloqueada (`409
+PRODUCTION_ALREADY_COMPLETED`) + único `(company_id, source_line_id)` (línea para consumos, orden
+  para la salida). La vista previa del alta (`POST /api/production-orders/preview`) inserta la orden
+  dentro de una transacción y la revierte, así muestra exactamente lo que se guardaría.
 - **Visibilidad de costos:** las rutas de inventario calculan `canSeeCosts` con el permiso
   `inventory.cost.read`; sin él, promedio, valor de inventario, costo unitario y valor de los
   movimientos y costo de la última compra vienen en `null`, e `GET /api/inventory/costs/:id`
   (historial) responde 403. El costo efectivo por unidad que usan las recetas sigue visible donde
-  ya lo era en Fase 2.
+  ya lo era en Fase 2. En producción, `production.cost.read` controla todo importe de la orden
+  (costo esperado, estimado, real, por línea y valor de los movimientos): sin él vienen en `null`
+  (`withoutProductionCosts`) y `cost-comparison` responde 403; las cantidades no se ocultan.
 - **Validación:** toda entrada externa se valida con zod mediante `parseInput()`, que responde
   `400 VALIDATION_ERROR` con el detalle de campos.
 - **Errores:** `AppError(status, code, message)` para errores esperados. El error handler central
@@ -136,6 +162,15 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   (`presentations.tsx`), que aparece en la ficha de la materia prima y en la de stock (rutas bajo
   `/stock`). Navegación: **Operaciones → Compras** e **Inventario → Stock**, visibles con
   `purchases.read` e `inventory.read`.
+- **Producción (Fase 4):** `src/components/production/` — listado con filtros (estado, producto,
+  responsable, desde/hasta), alta y edición con resumen del plan en vivo desde la vista previa de
+  la API (`production-form.tsx`), detalle por estado con plan y disponibilidad, carga de consumo y
+  salida reales con consumos extra, diálogo "Revisar antes de completar" y plan contra real con
+  movimientos (`production-pages.tsx`), y piezas comunes (`production-shared.tsx`: disponibilidad y
+  los costos esperado / estimado / real / diferencia, siempre separados). Stock suma la pestaña
+  **Productos terminados** (`inventory/product-stock-pages.tsx`) y los movimientos muestran
+  materias primas y productos con enlace a la orden. Navegación: **Producción → Órdenes** (con
+  `production_orders.read`) antes de Recetas.
 - La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared
@@ -153,7 +188,10 @@ Reglas de negocio puras, sin base ni HTTP: conversión de unidades (`convertQuan
 `findEffectiveVersion`) e inventario (`inventory.ts`: `movementSign`, `baseQuantityPerPurchaseUnit`,
 `calculatePurchaseLineAmounts`, `calculatePurchaseTotals`, `acquisitionUnitCost`, `applyInbound`,
 `applyOutbound`, `positiveAdjustmentCost`, `nextBalance`, `stockStatus`, `shortage`,
-`selectEffectiveCost`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
+`selectEffectiveCost`) y producción (`production.ts`: máquina de estados `assertTransition`,
+`normalizeOutput`, `normalizeConsumption`, `scaleFactor`, `planProduction`, `consumptionVariance`,
+`outputPerformance`, `actualMaterialCost`, `actualUnitMaterialCost`, `aggregateRequirements`,
+`findShortages`, `formatBatchCode`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
 
 ### packages/database
 

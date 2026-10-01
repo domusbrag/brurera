@@ -75,6 +75,16 @@ export const PERMISSIONS = {
 
   PRESENTATIONS_READ: "presentations.read",
   PRESENTATIONS_MANAGE: "presentations.manage",
+
+  PRODUCTION_ORDERS_READ: "production_orders.read",
+  PRODUCTION_ORDERS_CREATE: "production_orders.create",
+  PRODUCTION_ORDERS_UPDATE: "production_orders.update",
+  PRODUCTION_ORDERS_PLAN: "production_orders.plan",
+  PRODUCTION_ORDERS_START: "production_orders.start",
+  PRODUCTION_ORDERS_COMPLETE: "production_orders.complete",
+  PRODUCTION_ORDERS_CANCEL: "production_orders.cancel",
+  PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL: "production_orders.add_extra_material",
+  PRODUCTION_COST_READ: "production.cost.read",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -243,6 +253,52 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     code: P.PRESENTATIONS_MANAGE,
     module: "presentations",
     description: "Crear, modificar y desactivar presentaciones de compra",
+  },
+
+  {
+    code: P.PRODUCTION_ORDERS_READ,
+    module: "production",
+    description: "Ver órdenes de producción, consumos y disponibilidad",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_CREATE,
+    module: "production",
+    description: "Crear órdenes de producción (borrador)",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_UPDATE,
+    module: "production",
+    description: "Editar órdenes en borrador y registrar consumos y salida reales",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_PLAN,
+    module: "production",
+    description: "Planificar una orden (fija receta, cantidades y costo esperado)",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_START,
+    module: "production",
+    description: "Iniciar la producción (revalida el stock de materias primas)",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_COMPLETE,
+    module: "production",
+    description: "Completar la producción (consume materias primas e ingresa producto terminado)",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_CANCEL,
+    module: "production",
+    description: "Cancelar órdenes de producción no completadas",
+  },
+  {
+    code: P.PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL,
+    module: "production",
+    description: "Agregar y quitar consumos extra durante la producción",
+  },
+  {
+    code: P.PRODUCTION_COST_READ,
+    module: "production",
+    description: "Ver costos esperados y reales de producción",
   },
 ];
 

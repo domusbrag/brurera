@@ -20,28 +20,27 @@ export const STOCK_MOVEMENT_TYPES = [
   "ADJUSTMENT_POSITIVE",
   "ADJUSTMENT_NEGATIVE",
   "WASTE",
+  "PRODUCTION_CONSUMPTION",
+  "PRODUCTION_OUTPUT",
 ] as const;
 export type StockMovementType = (typeof STOCK_MOVEMENT_TYPES)[number];
 
 /**
- * Reservados para fases siguientes (producción, ventas). No tienen flujo ni
- * valor en la base todavía: se agregarán al enum cuando exista la operación.
+ * Reservados para fases siguientes (ventas). No tienen flujo ni valor en la
+ * base todavía: se agregarán al enum cuando exista la operación.
  */
-export const RESERVED_STOCK_MOVEMENT_TYPES = [
-  "PRODUCTION_CONSUMPTION",
-  "PRODUCTION_OUTPUT",
-  "SALE",
-  "RETURN",
-] as const;
+export const RESERVED_STOCK_MOVEMENT_TYPES = ["SALE", "RETURN"] as const;
 
 export const INBOUND_MOVEMENT_TYPES: readonly StockMovementType[] = [
   "INITIAL_STOCK",
   "PURCHASE_RECEIPT",
   "ADJUSTMENT_POSITIVE",
+  "PRODUCTION_OUTPUT",
 ];
 export const OUTBOUND_MOVEMENT_TYPES: readonly StockMovementType[] = [
   "ADJUSTMENT_NEGATIVE",
   "WASTE",
+  "PRODUCTION_CONSUMPTION",
 ];
 
 /** +1 si el tipo ingresa stock, −1 si lo saca. */
@@ -232,17 +231,23 @@ function snapshotState(state: InventoryCostState) {
 }
 
 /**
- * Ingreso valorizado (stock inicial, recepción, ajuste positivo con costo):
+ * Ingreso valorizado (stock inicial, recepción, ajuste positivo con costo,
+ * salida de producción):
  *   OldValue = valor de inventario vigente (≈ OldQty × OldAverage)
  *   NewQty = OldQty + Qty
  *   NewAverage = (OldValue + Qty × UnitCost) / NewQty
  * Si OldQty = 0, NewAverage = UnitCost: no se arrastra un promedio sin existencia.
  * El promedio se redondea a 6 decimales (HALF_UP); el valor es la suma exacta.
+ *
+ * `opts.totalValue` (producción): el ingreso vale EXACTAMENTE ese importe (el
+ * costo material real del lote) en lugar de Qty × UnitCost redondeado; así el
+ * valor que sale de las materias primas es el que entra al producto.
  */
 export function applyInbound(
   state: InventoryCostState,
   quantity: Decimal.Value,
   unitCost: Decimal.Value,
+  opts: { totalValue?: Decimal.Value } = {},
 ): CostedMovement {
   const before = snapshotState(state);
   const qty = qty10(quantity);
@@ -250,11 +255,18 @@ export function applyInbound(
     throw new InventoryError("QUANTITY_NOT_POSITIVE", "La cantidad debe ser mayor que cero");
   const cost = money6(unitCost);
   if (cost.lt(0)) throw new InventoryError("NEGATIVE_COST", "El costo no puede ser negativo");
-  const incomingValue = money6(qty.times(cost));
+  const incomingValue =
+    opts.totalValue === undefined ? money6(qty.times(cost)) : money6(opts.totalValue);
+  if (incomingValue.lt(0))
+    throw new InventoryError("NEGATIVE_COST", "El valor no puede ser negativo");
   const newQty = before.quantity.plus(qty);
   const oldValue = before.quantity.isZero() ? new D(0) : before.inventoryValue;
   const newValue = oldValue.plus(incomingValue);
-  const newAverage = before.quantity.isZero() ? cost : money6(newValue.dividedBy(newQty));
+  const newAverage = before.quantity.isZero()
+    ? opts.totalValue === undefined
+      ? cost
+      : money6(incomingValue.dividedBy(qty))
+    : money6(newValue.dividedBy(newQty));
   return {
     quantity: qty,
     unitCost: cost,

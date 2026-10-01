@@ -77,6 +77,9 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.INVENTORY_COST_READ,
       P.INVENTORY_INITIAL_STOCK,
       P.PRESENTATIONS_READ,
+      // Seguimiento de producción con sus costos; no opera la planta.
+      P.PRODUCTION_ORDERS_READ,
+      P.PRODUCTION_COST_READ,
     ],
   },
   {
@@ -134,6 +137,15 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.RECIPES_CREATE,
       P.RECIPES_UPDATE,
       P.INVENTORY_READ,
+      // Opera las órdenes completas; los costos monetarios quedan para ADMIN/OWNER/ADMINISTRACIÓN.
+      P.PRODUCTION_ORDERS_READ,
+      P.PRODUCTION_ORDERS_CREATE,
+      P.PRODUCTION_ORDERS_UPDATE,
+      P.PRODUCTION_ORDERS_PLAN,
+      P.PRODUCTION_ORDERS_START,
+      P.PRODUCTION_ORDERS_COMPLETE,
+      P.PRODUCTION_ORDERS_CANCEL,
+      P.PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL,
     ],
   },
   {

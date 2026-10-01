@@ -8,6 +8,7 @@ import {
   inventoryListQuerySchema,
   lowStockQuerySchema,
   movementListQuerySchema,
+  productStockQuerySchema,
   wasteSchema,
 } from "@bakery/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -16,6 +17,7 @@ import { parseInput } from "../../lib/errors.js";
 import { idParam } from "../../lib/params.js";
 import { requirePermission } from "../auth/auth.plugin.js";
 import * as inventory from "./inventory.service.js";
+import * as productStock from "./product-stock.service.js";
 
 /**
  * Inventario de materias primas (Fase 3). El stock sólo cambia con movimientos;
@@ -24,6 +26,7 @@ import * as inventory from "./inventory.service.js";
 export async function inventoryRoutes(app: FastifyInstance, { db }: { db: Database }) {
   const P = PERMISSIONS;
   const materialId = (params: unknown) => idParam(params, "Materia prima");
+  const productId = (params: unknown) => idParam(params, "Producto");
   const canSeeCosts = (req: FastifyRequest) =>
     hasPermissions(req.auth?.permissions ?? [], [P.INVENTORY_COST_READ]);
 
@@ -68,6 +71,36 @@ export async function inventoryRoutes(app: FastifyInstance, { db }: { db: Databa
         parseInput(costHistoryQuerySchema, req.query),
       ),
   );
+
+  /* ---- Productos terminados (Fase 4) ---- */
+  app.get("/inventory/products", { preHandler: requirePermission(P.INVENTORY_READ) }, (req) =>
+    productStock.listProductStock(
+      db,
+      operationContext(req),
+      parseInput(productStockQuerySchema, req.query),
+      canSeeCosts(req),
+    ),
+  );
+  app.get("/inventory/products/:id", { preHandler: requirePermission(P.INVENTORY_READ) }, (req) =>
+    productStock.getProductStock(
+      db,
+      operationContext(req),
+      productId(req.params),
+      canSeeCosts(req),
+    ),
+  );
+  app.get(
+    "/inventory/products/:id/cost-history",
+    { preHandler: requirePermission(P.INVENTORY_READ, P.INVENTORY_COST_READ) },
+    (req) =>
+      productStock.getProductCost(
+        db,
+        operationContext(req),
+        productId(req.params),
+        parseInput(costHistoryQuerySchema, req.query),
+      ),
+  );
+
   app.post(
     "/inventory/initial-stock",
     { preHandler: requirePermission(P.INVENTORY_INITIAL_STOCK) },

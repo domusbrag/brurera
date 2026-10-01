@@ -18,6 +18,7 @@ import { healthRoutes } from "./modules/health/health.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { presentationRoutes } from "./modules/presentations/presentations.routes.js";
 import { productRoutes } from "./modules/products/products.routes.js";
+import { productionRoutes } from "./modules/production/production.routes.js";
 import { purchaseRoutes } from "./modules/purchases/purchases.routes.js";
 import { rawMaterialRoutes } from "./modules/raw-materials/raw-materials.routes.js";
 import { recipeRoutes } from "./modules/recipes/recipes.routes.js";
@@ -117,6 +118,7 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
         recipeRoutes,
         presentationRoutes,
         purchaseRoutes,
+        productionRoutes,
         inventoryRoutes,
       ]) {
         await api.register(routes, { db });

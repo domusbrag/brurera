@@ -353,6 +353,14 @@ h2 {
   color: inherit;
 }
 
+.filters__date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
 .filters input[type="search"] {
   flex: 1 1 260px;
   max-width: 420px;
@@ -891,4 +899,95 @@ h2 {
 
 .cost-summary + .details {
   margin-top: 1rem;
+}
+
+/* ---------- Producción (Fase 4) ---------- */
+
+.input-group {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.input-group input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.input-group select {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+}
+
+.production-actuals .col-qty {
+  width: 7.5rem;
+}
+
+.production-actuals .col-unit {
+  width: 5.5rem;
+}
+
+.extra-form {
+  display: grid;
+  grid-template-columns:
+    minmax(10rem, 2fr) minmax(6rem, 1fr) minmax(4.5rem, auto) minmax(10rem, 2fr)
+    auto;
+  gap: 0.6rem;
+  align-items: end;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+}
+
+.output-row {
+  display: grid;
+  grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+  gap: 0.9rem 1.25rem;
+  align-items: start;
+}
+
+.dialog--wide {
+  max-width: 52rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .extra-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .extra-form .form__field--full,
+  .extra-form .extra-form__actions {
+    grid-column: 1 / -1;
+  }
+
+  .output-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.costs-block {
+  margin-top: 1.25rem;
+}
+
+.costs-block h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+.section-title {
+  margin: 1.25rem 0 0.6rem;
+  font-size: 1rem;
+}
+
+.extra-form legend {
+  padding: 0;
+}
+
+.extra-form input,
+.extra-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
 }

@@ -75,6 +75,17 @@ export const AUDIT_ACTION_LABELS = {
   INVENTORY_ADJUSTED: "Ajuste de stock",
   INVENTORY_WASTE_RECORDED: "Merma registrada",
   MOVING_AVERAGE_COST_CHANGED: "Costo promedio modificado",
+
+  PRODUCTION_ORDER_CREATED: "Orden de producción creada",
+  PRODUCTION_ORDER_UPDATED: "Orden de producción modificada",
+  PRODUCTION_ORDER_PLANNED: "Producción planificada",
+  PRODUCTION_ORDER_STARTED: "Producción iniciada",
+  PRODUCTION_ORDER_CANCELLED: "Producción cancelada",
+  PRODUCTION_ORDER_ACTUALS_UPDATED: "Consumo y salida reales registrados",
+  PRODUCTION_EXTRA_MATERIAL_ADDED: "Consumo extra agregado",
+  PRODUCTION_EXTRA_MATERIAL_REMOVED: "Consumo extra quitado",
+  PRODUCTION_ORDER_COMPLETED: "Producción completada",
+  PRODUCT_MOVING_AVERAGE_COST_CHANGED: "Costo promedio del producto modificado",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;

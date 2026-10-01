@@ -55,6 +55,8 @@ export const recipes = pgTable(
   },
   (t) => [
     unique("recipes_company_id_uq").on(t.companyId, t.id),
+    // Destino de la FK compuesta de production_orders (producto ↔ receta coherentes).
+    unique("recipes_company_product_id_uq").on(t.companyId, t.productId, t.id),
     uniqueIndex("recipes_one_active_per_product_uq")
       .on(t.companyId, t.productId)
       .where(sql`${t.active}`),
@@ -99,6 +101,8 @@ export const recipeVersions = pgTable(
   },
   (t) => [
     unique("recipe_versions_company_id_uq").on(t.companyId, t.id),
+    // Destino de la FK compuesta de production_orders (receta ↔ versión coherentes).
+    unique("recipe_versions_company_recipe_id_uq").on(t.companyId, t.recipeId, t.id),
     unique("recipe_versions_recipe_number_uq").on(t.recipeId, t.versionNumber),
     uniqueIndex("recipe_versions_one_active_uq")
       .on(t.recipeId)

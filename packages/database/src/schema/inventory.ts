@@ -45,12 +45,17 @@ export const warehouses = pgTable(
   ],
 );
 
-/** Qué se mueve. Fase 3 sólo mueve materias primas; PRODUCT queda preparado para Fases 4/5. */
+/** Qué se mueve: materias primas (Fase 3) y productos terminados (Fase 4, producción). */
 export const stockItemType = pgEnum("stock_item_type", ["RAW_MATERIAL", "PRODUCT"]);
 
 /**
- * Tipos de movimiento de Fase 3. PRODUCTION_CONSUMPTION, PRODUCTION_OUTPUT, SALE y
- * RETURN están reservados: se agregan al enum cuando exista su flujo.
+ * Tipos de movimiento. Fase 4 agrega PRODUCTION_CONSUMPTION (salida de materia
+ * prima) y PRODUCTION_OUTPUT (ingreso de producto terminado). SALE y RETURN
+ * quedan reservados para ventas.
+ *
+ * Las restricciones comparan `movement_type::text`: el migrador aplica todo en
+ * una transacción y Postgres no permite usar como literal un valor de enum
+ * agregado en la misma transacción (migración 0007).
  */
 export const stockMovementType = pgEnum("stock_movement_type", [
   "INITIAL_STOCK",
@@ -58,6 +63,8 @@ export const stockMovementType = pgEnum("stock_movement_type", [
   "ADJUSTMENT_POSITIVE",
   "ADJUSTMENT_NEGATIVE",
   "WASTE",
+  "PRODUCTION_CONSUMPTION",
+  "PRODUCTION_OUTPUT",
 ]);
 
 /**
@@ -104,6 +111,8 @@ export const stockMovements = pgTable(
       .where(sql`${t.sourceLineId} is not null`),
     index("stock_movements_company_sequence_idx").on(t.companyId, t.sequence),
     index("stock_movements_company_material_idx").on(t.companyId, t.rawMaterialId, t.sequence),
+    index("stock_movements_company_product_idx").on(t.companyId, t.productId, t.sequence),
+    index("stock_movements_company_item_type_idx").on(t.companyId, t.itemType, t.sequence),
     index("stock_movements_company_material_occurred_idx").on(
       t.companyId,
       t.rawMaterialId,
@@ -148,20 +157,34 @@ export const stockMovements = pgTable(
     ),
     check(
       "stock_movements_sign",
-      sql`(${t.movementType} in ('INITIAL_STOCK', 'PURCHASE_RECEIPT', 'ADJUSTMENT_POSITIVE') and ${t.quantity} > 0 and ${t.totalValue} >= 0)
-        or (${t.movementType} in ('ADJUSTMENT_NEGATIVE', 'WASTE') and ${t.quantity} < 0 and ${t.totalValue} <= 0)`,
+      sql`(${t.movementType}::text in ('INITIAL_STOCK', 'PURCHASE_RECEIPT', 'ADJUSTMENT_POSITIVE', 'PRODUCTION_OUTPUT') and ${t.quantity} > 0 and ${t.totalValue} >= 0)
+        or (${t.movementType}::text in ('ADJUSTMENT_NEGATIVE', 'WASTE', 'PRODUCTION_CONSUMPTION') and ${t.quantity} < 0 and ${t.totalValue} <= 0)`,
     ),
     check("stock_movements_balance_nonneg", sql`${t.balanceAfter} >= 0`),
     check("stock_movements_unit_cost_nonneg", sql`${t.unitCost} >= 0`),
     check(
       "stock_movements_reason",
-      sql`(${t.movementType} in ('ADJUSTMENT_POSITIVE', 'ADJUSTMENT_NEGATIVE') and ${t.reason} in ('PHYSICAL_COUNT', 'DATA_CORRECTION', 'BREAKAGE', 'OTHER'))
-        or (${t.movementType} = 'WASTE' and ${t.reason} in ('EXPIRED', 'DAMAGED', 'PRODUCTION_LOSS', 'QUALITY', 'OTHER'))
-        or (${t.movementType} in ('INITIAL_STOCK', 'PURCHASE_RECEIPT') and ${t.reason} is null)`,
+      sql`(${t.movementType}::text in ('ADJUSTMENT_POSITIVE', 'ADJUSTMENT_NEGATIVE') and ${t.reason} in ('PHYSICAL_COUNT', 'DATA_CORRECTION', 'BREAKAGE', 'OTHER'))
+        or (${t.movementType}::text = 'WASTE' and ${t.reason} in ('EXPIRED', 'DAMAGED', 'PRODUCTION_LOSS', 'QUALITY', 'OTHER'))
+        or (${t.movementType}::text in ('INITIAL_STOCK', 'PURCHASE_RECEIPT', 'PRODUCTION_CONSUMPTION', 'PRODUCTION_OUTPUT') and ${t.reason} is null)`,
     ),
     check(
       "stock_movements_receipt_reference",
       sql`${t.movementType} <> 'PURCHASE_RECEIPT' or (${t.referenceType} = 'PURCHASE_RECEIPT' and ${t.referenceId} is not null and ${t.sourceLineId} is not null)`,
+    ),
+    // Producción: consumo = materia prima, salida = producto; siempre con la orden y
+    // su línea de origen (idempotencia por el único de source_line_id).
+    check(
+      "stock_movements_production",
+      sql`(${t.movementType}::text not in ('PRODUCTION_CONSUMPTION', 'PRODUCTION_OUTPUT'))
+        or (${t.referenceType} = 'PRODUCTION_ORDER' and ${t.referenceId} is not null and ${t.sourceLineId} is not null
+            and ((${t.movementType}::text = 'PRODUCTION_CONSUMPTION' and ${t.itemType} = 'RAW_MATERIAL')
+              or (${t.movementType}::text = 'PRODUCTION_OUTPUT' and ${t.itemType} = 'PRODUCT')))`,
+    ),
+    // Hoy un producto sólo entra por producción; ventas (Fase 5) ampliará esta lista.
+    check(
+      "stock_movements_product_types",
+      sql`${t.itemType} = 'RAW_MATERIAL' or ${t.movementType}::text = 'PRODUCTION_OUTPUT'`,
     ),
   ],
 );
@@ -195,6 +218,7 @@ export const stockBalances = pgTable(
       .on(t.companyId, t.warehouseId, t.productId)
       .where(sql`${t.productId} is not null`),
     index("stock_balances_company_material_idx").on(t.companyId, t.rawMaterialId),
+    index("stock_balances_company_product_idx").on(t.companyId, t.productId),
     foreignKey({
       name: "stock_balances_warehouse_fk",
       columns: [t.companyId, t.warehouseId],

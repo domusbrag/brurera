@@ -4,10 +4,17 @@ import { optionalPastInstant } from "./purchases";
 import { decimalString, optionalDecimalString, optionalText, uuid } from "./validation";
 
 /*
- * Inventario (Fase 3). El stock sólo cambia con movimientos: no hay ningún
+ * Inventario (Fases 3 y 4). El stock sólo cambia con movimientos: no hay ningún
  * esquema que permita escribir un saldo. Las cantidades se expresan en la unidad
- * base de la materia prima y viajan como string.
+ * base de la materia prima (o de venta del producto terminado) y viajan como string.
  */
+
+export const STOCK_ITEM_TYPES = ["RAW_MATERIAL", "PRODUCT"] as const;
+export type StockItemTypeDto = (typeof STOCK_ITEM_TYPES)[number];
+export const STOCK_ITEM_TYPE_LABELS: Record<StockItemTypeDto, string> = {
+  RAW_MATERIAL: "Materia prima",
+  PRODUCT: "Producto terminado",
+};
 
 export const STOCK_MOVEMENT_TYPE_LABELS = {
   INITIAL_STOCK: "Stock inicial",
@@ -15,6 +22,8 @@ export const STOCK_MOVEMENT_TYPE_LABELS = {
   ADJUSTMENT_POSITIVE: "Ajuste positivo",
   ADJUSTMENT_NEGATIVE: "Ajuste negativo",
   WASTE: "Merma",
+  PRODUCTION_CONSUMPTION: "Consumo de producción",
+  PRODUCTION_OUTPUT: "Producción terminada",
 } as const;
 export type StockMovementTypeDto = keyof typeof STOCK_MOVEMENT_TYPE_LABELS;
 export const STOCK_MOVEMENT_TYPES_DTO = Object.keys(
@@ -109,7 +118,9 @@ export const inventoryListQuerySchema = z.object({
 });
 
 export const movementListQuerySchema = z.object({
+  itemType: z.enum(STOCK_ITEM_TYPES).optional(),
   rawMaterialId: uuid().optional(),
+  productId: uuid().optional(),
   warehouseId: uuid().optional(),
   movementType: z.enum(STOCK_MOVEMENT_TYPES_DTO as [StockMovementTypeDto]).optional(),
   referenceId: uuid().optional(),
@@ -120,6 +131,13 @@ export const movementListQuerySchema = z.object({
 });
 
 export const lowStockQuerySchema = z.object({ search: searchField, ...pageFields });
+export const productStockQuerySchema = z.object({
+  search: searchField,
+  warehouseId: uuid().optional(),
+  /** "in_stock": sólo productos con existencia. */
+  stock: z.enum(["all", "in_stock"]).default("all"),
+  ...pageFields,
+});
 export const costHistoryQuerySchema = z.object({ ...pageFields });
 
 /* ---------- Respuestas ---------- */
@@ -152,7 +170,11 @@ export interface StockMovementDto {
   occurredAt: string;
   createdAt: string;
   movementType: StockMovementTypeDto;
-  rawMaterial: { id: string; code: string; name: string };
+  itemType: StockItemTypeDto;
+  /** Materia prima o producto movido (el que corresponda a itemType). */
+  item: { id: string; code: string; name: string };
+  rawMaterial: { id: string; code: string; name: string } | null;
+  product: { id: string; code: string; name: string } | null;
   warehouse: { id: string; code: string; name: string };
   /** Con signo, en unidad base. */
   quantity: string;
@@ -246,4 +268,80 @@ export interface StockOperationResultDto {
   warehouseQuantityBefore: string;
   warehouseQuantityAfter: string;
   companyQuantityAfter: string;
+}
+
+/* ---------- Producto terminado (Fase 4) ---------- */
+
+/** Fila del stock de productos terminados (valorización: null sin inventory.cost.read). */
+export interface ProductStockItemDto extends InventoryValuationDto {
+  /** Id del producto. */
+  id: string;
+  product: { id: string; code: string; name: string; active: boolean };
+  saleUnit: UnitRefDto;
+  /** Depósito filtrado, o null si la cantidad es el total de la empresa. */
+  warehouse: { id: string; code: string; name: string } | null;
+  quantity: string;
+  companyQuantity: string;
+  warehouseCount: number;
+  lastProduction: { id: string; code: string; completedAt: string } | null;
+}
+
+export interface ProductStockDetailDto extends InventoryValuationDto {
+  product: {
+    id: string;
+    code: string;
+    name: string;
+    active: boolean;
+    controlsStock: boolean;
+    salePrice: string;
+  };
+  saleUnit: UnitRefDto;
+  currency: string;
+  quantity: string;
+  byWarehouse: { warehouse: { id: string; code: string; name: string }; quantity: string }[];
+  /** Margen teórico actual: precio de venta − costo promedio material (con costos visibles). */
+  theoreticalMargin: { amount: string; percentage: string | null } | null;
+  recentProductions: {
+    id: string;
+    code: string;
+    batchCode: string | null;
+    completedAt: string;
+    quantity: string;
+    unitCost: string | null;
+  }[];
+  activeRecipe: {
+    recipeId: string;
+    name: string;
+    versionId: string | null;
+    versionNumber: number | null;
+  } | null;
+  canSeeCosts: boolean;
+}
+
+export interface ProductCostHistoryEntryDto {
+  id: number;
+  createdAt: string;
+  movementId: string;
+  productionOrder: { id: string; code: string } | null;
+  quantityBefore: string;
+  quantityAfter: string;
+  valueBefore: string;
+  valueAfter: string;
+  averageBefore: string | null;
+  averageAfter: string | null;
+  batchQuantity: string;
+  batchUnitCost: string;
+  batchValue: string;
+  averageChanged: boolean;
+  actor: PersonRefDto | null;
+}
+
+export interface ProductCostDto {
+  product: { id: string; code: string; name: string };
+  saleUnit: UnitRefDto;
+  currency: string;
+  quantity: string;
+  inventoryValue: string;
+  movingAverageCost: string | null;
+  lastUpdatedAt: string | null;
 }

@@ -50,6 +50,13 @@
       "when": 1790827600597,
       "tag": "0006_purchases_inventory",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790869269503,
+      "tag": "0007_production",
+      "breakpoints": true
     }
   ]
 }
