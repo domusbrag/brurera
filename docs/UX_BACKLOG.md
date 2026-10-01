@@ -92,6 +92,10 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4.5] Productos terminados tiene 9 columnas con costos; en tablet se ocultan fresco /
   refrigerado / congelado. Evaluar un mini gráfico apilado por estado en una sola columna.
 
+- [F4.5] La búsqueda de los listados aplica el filtro con 300 ms de demora (`router.replace`); si
+  se escribe y se navega enseguida, el reemplazo devuelve al listado. Cancelar el filtro pendiente
+  al navegar.
+
 ## DASHBOARD
 
 - [F3] El inicio todavía no muestra alertas de stock bajo mínimo ni compras pendientes de

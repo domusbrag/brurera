@@ -212,11 +212,14 @@ congelado masivo, merma directa desde Próximos a vencer.
 | X — typecheck                  | ✓                                                                |
 | Y — build                      | ✓                                                                |
 | Z — worktree                   | ✓ limpio                                                         |
-| AA — remote CI                 | ver PR #6                                                        |
+| AA — remote CI                 | ✓ run 36920323981 sobre 1556b53                                  |
 
 ## CI
 
-Ver el estado de los checks en el PR #6.
+CI remoto verde en el PR #6: run 36920323981 sobre `1556b53` (lint, typecheck, migrate, seed,
+tests, build y E2E 32/32). La corrida anterior falló en un E2E de Fase 3 en tablet por una carrera
+de los tests (la búsqueda de los listados se aplica con 300 ms de demora y el test navegaba antes);
+se corrigió haciendo que cada búsqueda de los E2E espere a que el filtro llegue a la URL.
 
 ## Riesgos
 
@@ -228,6 +231,9 @@ Ver el estado de los checks en el PR #6.
   Fase 5B debe decidir si la venta sale al costo del lote o al promedio.
 
 ## Deuda
+
+- La búsqueda de los listados aplica el filtro con 300 ms de demora; si alguien escribe y navega
+  enseguida, puede volver al listado (visto en E2E). Anotado en UX_BACKLOG.
 
 `INVENTORY_RESERVATIONS` (Fase 5A), consumo de lotes por ventas (5B), transferencias de lotes
 entre depósitos, fresco ↔ refrigerado, costo de congelado, `PRODUCTION_REVERSAL` (sigue), estado
