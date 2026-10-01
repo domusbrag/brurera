@@ -25,7 +25,8 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
 - **Módulos** en `src/modules/<módulo>/`: rutas (`*.routes.ts`), servicios de aplicación
   (`*.service.ts`) y plugins. Fase 0: `health`, `auth`, `audit`. Fase 1: `company-settings`,
   `employees`, `users`, `roles`, `customers`, `suppliers`, `units`, `categories`, `raw-materials`,
-  `products`, `warehouses`. Los módulos futuros siguen la lista de la especificación (§30).
+  `products`, `warehouses`. Fase 2: `recipes` (recetas, versiones, costo teórico, snapshots) y
+  `PUT /api/raw-materials/:id/reference-cost`. Los módulos futuros siguen la lista de la especificación (§30).
 - **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
   `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
   `POST /api/x/:id/deactivate` y `/activate`. No hay `DELETE`. Un id de otra empresa responde 404
@@ -36,14 +37,20 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
 - **Códigos de error estables** de Fase 1: `VALIDATION_ERROR`, `NOT_FOUND`, `CODE_TAKEN`,
   `EMAIL_TAKEN`, `DOCUMENT_TAKEN`, `INVALID_REFERENCE`, `INVALID_UNIT_DEFINITION`,
   `INCOMPATIBLE_UNITS`, `EMPLOYEE_ALREADY_LINKED`, `EMPLOYEE_INACTIVE`, `CANNOT_MODIFY_SELF`.
+  Fase 2: `RECIPE_ALREADY_EXISTS`, `DRAFT_ALREADY_EXISTS`, `RECIPE_VERSION_IMMUTABLE`,
+  `RECIPE_VERSION_NOT_ACTIVE`, `RECIPE_INACTIVE`, `RECIPE_INVALID` (422 con los problemas),
+  `COST_INCOMPLETE_CONFIRMATION_REQUIRED`, `PRODUCT_INACTIVE`, `NO_ACTIVE_VERSION`,
+  `NO_EFFECTIVE_VERSION`, `RAW_MATERIAL_IN_USE`, `SALE_UNIT_INCOMPATIBLE_WITH_RECIPE`.
   Las violaciones de unicidad de la base se traducen por nombre de constraint
   (`mapUniqueViolations`).
 - **Regla de dependencias:** rutas → servicios → base de datos. Un módulo solo usa otro a través
   de su servicio exportado; nunca importa sus rutas. `audit` es un módulo hoja que cualquiera
   puede usar. Sin dependencias circulares.
-- **Lógica de dominio** (costeo, conversiones, máquinas de estado) irá en funciones puras dentro
+- **Lógica de dominio** (costeo, conversiones, máquinas de estado) va en funciones puras dentro
   del módulo correspondiente (o en `packages/domain` cuando sea compartida), testeadas en unit
-  tests. Nunca en rutas ni en componentes visuales.
+  tests. Nunca en rutas ni en componentes visuales. El costo teórico de recetas vive en
+  `packages/domain/src/costing.ts`; la API lo usa para calcular y guardar snapshots y el editor
+  web lo usa para la vista previa en vivo, así que ambos dan exactamente el mismo resultado.
 - **Transacciones:** las operaciones de negocio reciben/abren una transacción Drizzle
   (`db.transaction`) y la auditoría se escribe con la misma transacción (ver `recordAudit`).
 - **Validación:** toda entrada externa se valida con zod mediante `parseInput()`, que responde
@@ -74,6 +81,9 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   define sus columnas, campos y detalle en su archivo; las rutas de `src/app/(app)/` solo los montan.
 - La validación real la hace la API con los esquemas zod de `@bakery/shared`; la web muestra los
   errores por campo que recibe. Los permisos del usuario (`useCan`) solo ocultan acciones.
+- **Recetas (Fase 2):** `src/components/recipes/` — listado, editor (`recipe-editor.tsx`, con
+  costo calculado en vivo por `@bakery/domain`), detalle, versión en sólo lectura y piezas de costo
+  (`cost-views.tsx`). Navegación: **Producción → Recetas**.
 - La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared
@@ -85,8 +95,10 @@ de permisos que genera `docs/PERMISSIONS.md`. Es la fuente de verdad de los cód
 ### packages/domain
 
 Reglas de negocio puras, sin base ni HTTP: conversión de unidades (`convertQuantity`,
-`validateDerivedUnit`, unidades estándar) y formato de códigos internos. Usa `decimal.js` para
-toda aritmética (ADR-017).
+`validateDerivedUnit`, unidades estándar), formato de códigos internos y costeo de recetas
+(`calculateIngredientCost`, `normalizeRecipeYield`, `calculateUnitCost`, `calculateGrossMargin`,
+`calculateCostVariation`, `calculateRecipeCost`, `validateRecipeVersion`, `diffRecipeVersions`,
+`findEffectiveVersion`). Usa `decimal.js` para toda aritmética (ADR-017, política en ADR-023).
 
 ### packages/database
 
@@ -122,9 +134,15 @@ inválida detiene el proceso con un mensaje claro. Ver `.env.example`.
 - Todas las marcas de tiempo son `timestamptz` (UTC). La zona horaria de presentación es la de la
   empresa (`companies.timezone`, por defecto `America/Argentina/Buenos_Aires`).
 - Fechas de calendario sin hora (p. ej. fecha de ingreso) usan `date`.
-- Dinero, costos y cantidades comerciales: `numeric(p, s)` en PostgreSQL; en TypeScript se
-  manejarán como string/decimal (librería decimal a elegir en Fase 2/3 junto con el primer cálculo
-  de costos). Hay un test que falla si aparece una columna `real`/`double precision`.
+- Dinero, costos y cantidades comerciales: `numeric(p, s)` en PostgreSQL; en TypeScript viajan como
+  strings decimales y se operan con `decimal.js` (nunca `number`). Hay un test que falla si
+  aparece una columna `real`/`double precision`.
+- **Política decimal (Fase 2, ADR-023):** el dominio calcula con precisión 40 y redondeo
+  `ROUND_HALF_UP`, **sin redondeos intermedios**. Sólo se redondea al persistir o enviar: dinero y
+  costos a 6 decimales (`numeric(20,6)`), cantidades de receta a 6 (`numeric(18,6)`), cantidades
+  normalizadas a 10 (`numeric(28,10)`), porcentajes a 4 (`numeric(7,4)`). La UI redondea a 2
+  decimales para mostrar dinero (HALF_UP), salvo costos por unidad menores a un centavo y costos de
+  referencia, que se muestran tal como se cargaron (hasta 6).
 
 ## Qué NO se hace (deliberadamente)
 

@@ -142,7 +142,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await selectByText(page, "Categoría", `Harinas ${run}`);
   await selectByText(page, "Unidad base", "Kilogramo");
   await selectByText(page, "Proveedor preferido", `Molino ${run}`);
-  await page.getByLabel("Costo de referencia por unidad base").fill("850,125");
+  await page.getByLabel("Costo de referencia (ARS por unidad base)").fill("850,125");
   await page.getByRole("button", { name: "Crear materia prima" }).click();
   await expect(page.getByRole("heading", { name: `Harina 0000 ${run}` })).toBeVisible();
   await expect(page.getByText("Materia prima", { exact: true })).toBeVisible();
@@ -158,7 +158,9 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   // 12. Producto
   await openSection(page, "Productos");
   await page.getByRole("link", { name: "Nuevo producto" }).click();
-  await expect(page.getByText("Costo disponible desde Fase 2")).toBeVisible();
+  await expect(
+    page.getByText("El costo no se carga a mano: se calcula desde la receta del producto."),
+  ).toBeVisible();
   await page.getByLabel("Nombre").fill(`Pan de campo ${run}`);
   await selectByText(page, "Categoría", `Panes ${run}`);
   await selectByText(page, "Unidad de venta", "Kilogramo");
@@ -245,6 +247,8 @@ test("la interfaz nunca muestra identificadores internos", async ({ page }) => {
     "/empleados",
     "/usuarios",
     "/configuracion/roles",
+    "/recetas",
+    "/recetas/nuevo",
   ]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
@@ -254,4 +258,20 @@ test("la interfaz nunca muestra identificadores internos", async ({ page }) => {
   await page.locator("table tbody a").first().click();
   await expect(page.getByRole("heading", { name: "Permisos efectivos" })).toBeVisible();
   expect(await page.locator("main").innerText()).not.toMatch(uuid);
+  // Detalle de receta y de una versión (si la base ya tiene recetas de otra corrida)
+  await page.goto("/recetas");
+  await page.waitForLoadState("networkidle");
+  const recipeLink = page.locator("table tbody a").first();
+  if (await recipeLink.count()) {
+    await recipeLink.click();
+    await expect(page.getByRole("heading", { name: "Historial de versiones" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(await page.locator("main").innerText()).not.toMatch(uuid);
+    await page
+      .getByRole("link", { name: /^v\d+$/ })
+      .first()
+      .click();
+    await page.waitForLoadState("networkidle");
+    expect(await page.locator("main").innerText()).not.toMatch(uuid);
+  }
 });

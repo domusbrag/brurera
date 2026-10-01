@@ -16,6 +16,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   raw_materials: "Materias primas",
   products: "Productos",
   warehouses: "Depósitos",
+  recipes: "Recetas",
 };
 
 /**

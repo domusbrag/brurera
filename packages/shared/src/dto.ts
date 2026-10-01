@@ -150,7 +150,10 @@ export interface RawMaterialDto {
   baseUnit: { id: string; code: string; symbol: string };
   minimumStock: string;
   preferredSupplier: { id: string; code: string; legalName: string } | null;
-  currentCost: string | null;
+  /** Dinero por unidad base (moneda de la empresa); null si no está cargado. */
+  referenceCost: string | null;
+  referenceCostSource: "MANUAL_REFERENCE" | "PURCHASE_MOVING_AVERAGE" | "SUPPLIER_QUOTE" | "OTHER";
+  referenceCostUpdatedAt: string | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;

@@ -1,17 +1,21 @@
+import { areUnitsCompatible } from "@bakery/domain";
 import {
   allocateCode,
   categories,
   products,
+  recipeVersions,
+  recipes,
   unitsOfMeasure,
   type Database,
   type Transaction,
 } from "@bakery/database";
 import type { ListQuery, Page, ProductDto } from "@bakery/shared";
 import { type createProductSchema, type updateProductSchema } from "@bakery/shared";
-import { and, asc, count, eq, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, inArray, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 import { auditBase, type OperationContext } from "../../lib/context.js";
 import { codeTaken, mapUniqueViolations, notFound } from "../../lib/db-errors.js";
+import { AppError } from "../../lib/errors.js";
 import { activeCondition, pageWindow, searchCondition, toPage } from "../../lib/listing.js";
 import { assertCategory, assertUnit } from "../../lib/references.js";
 import { diffChanges, recordAudit } from "../audit/audit.service.js";
@@ -33,7 +37,7 @@ function selectProducts(db: Database | Transaction) {
 
 type SelectedRow = Awaited<ReturnType<ReturnType<typeof selectProducts>["execute"]>>[number];
 
-/** Sin costo: el costo de un producto se calculará desde su receta (Fase 2). */
+/** Sin costo: el costo teórico de un producto se deriva de su receta (módulo recipes). */
 function toDto({ p, category, unit }: SelectedRow): ProductDto {
   return {
     id: p.id,
@@ -138,6 +142,9 @@ export async function updateProduct(
       categoryId: input.categoryId !== before.categoryId ? input.categoryId : undefined,
       saleUnitId: input.saleUnitId !== before.saleUnitId ? input.saleUnitId : undefined,
     });
+    if (input.saleUnitId && input.saleUnitId !== before.saleUnitId) {
+      await assertSaleUnitFitsRecipes(tx, ctx, id, input.saleUnitId);
+    }
     const [after] = await tx.update(products).set(input).where(owned(ctx, id)).returning();
     if (!after) throw notFound("Producto");
     const changes = diffChanges(before, after, Object.keys(input));
@@ -175,4 +182,54 @@ export async function setProductActive(
     }
     return getProduct(tx, ctx, id);
   });
+}
+
+/**
+ * La unidad de venta puede cambiar a otra de la misma dimensión (kg → g), pero no
+ * a una en la que el rendimiento de una receta vigente o en borrador no se pueda
+ * expresar (kg → unidad): el costo por unidad de venta dejaría de tener sentido.
+ */
+async function assertSaleUnitFitsRecipes(
+  tx: Transaction,
+  ctx: OperationContext,
+  productId: string,
+  saleUnitId: string,
+) {
+  const yieldUnits = await tx
+    .select({
+      id: unitsOfMeasure.id,
+      code: unitsOfMeasure.code,
+      dimension: unitsOfMeasure.dimension,
+      baseUnitId: unitsOfMeasure.baseUnitId,
+      conversionFactor: unitsOfMeasure.conversionFactor,
+    })
+    .from(recipeVersions)
+    .innerJoin(recipes, eq(recipes.id, recipeVersions.recipeId))
+    .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, recipeVersions.yieldUnitId))
+    .where(
+      and(
+        eq(recipes.companyId, ctx.companyId),
+        eq(recipes.productId, productId),
+        inArray(recipeVersions.status, ["DRAFT", "ACTIVE"]),
+      ),
+    );
+  if (yieldUnits.length === 0) return;
+  const [target] = await tx
+    .select({
+      id: unitsOfMeasure.id,
+      code: unitsOfMeasure.code,
+      dimension: unitsOfMeasure.dimension,
+      baseUnitId: unitsOfMeasure.baseUnitId,
+      conversionFactor: unitsOfMeasure.conversionFactor,
+    })
+    .from(unitsOfMeasure)
+    .where(and(eq(unitsOfMeasure.companyId, ctx.companyId), eq(unitsOfMeasure.id, saleUnitId)));
+  if (!target || yieldUnits.some((u) => !areUnitsCompatible(u, target))) {
+    throw new AppError(
+      409,
+      "SALE_UNIT_INCOMPATIBLE_WITH_RECIPE",
+      "El producto tiene una receta cuyo rendimiento no se puede expresar en esa unidad. Elegí una unidad de la misma magnitud.",
+      [{ path: "saleUnitId", message: "Incompatible con el rendimiento de la receta" }],
+    );
+  }
 }

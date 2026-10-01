@@ -38,6 +38,39 @@ niegan a correr si `DATABASE_URL_TEST` no apunta a una base terminada en `_test`
 Playwright usa el Chromium del sistema si `PLAYWRIGHT_CHROMIUM_EXECUTABLE` está definido; si no,
 el de `playwright install chromium`. Corre en dos viewports: desktop y tablet (820×1180).
 
+## Cobertura de Fase 2
+
+| Suite             | Archivo(s)                                  | Tests | Qué cubre                                                                                                                                                                                                                                                         |
+| ----------------- | ------------------------------------------- | ----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| domain (unit)     | `packages/domain/test/costing.test.ts`      |    36 | Ejemplos de la especificación (750 g → 0,750 kg; $8.200 / 10 kg = $820/kg; margen $380 = 31,666…%), costo incompleto sin cero implícito, merma no aplicada dos veces, sin redondeo por ingrediente, PACKAGING no convertible, validación, diff, vigencia, escalas |
+| shared (unit)     | `packages/shared/test/recipes.test.ts`      |     7 | Esquemas zod: cantidad > 0 con hasta 6 decimales, rendimiento > 0, merma 0 ≤ x < 100, confirmación de costo incompleto, costo de referencia                                                                                                                       |
+| shared (unit)     | `packages/shared/test/permissions.test.ts`  |    11 | Incluye la matriz de Fase 2 (quién publica, quién cambia costos)                                                                                                                                                                                                  |
+| web (unit)        | `apps/web/test/{format,navigation}.test.ts` |    17 | Formato de dinero HALF_UP, costo por unidad, costo de referencia sin redondear, porcentajes, cantidades; Producción → Recetas en el menú                                                                                                                          |
+| api (integración) | `recipes.test.ts`                           |    41 | Publicación con snapshot, cambio de costo sin tocar el snapshot, versionado (duplicar, un borrador, diff, archivar), rollback de la publicación, inmutabilidad por API y por triggers, unidades, costo incompleto, borradores, permisos de Producción             |
+| api (integración) | `recipes-invariants.test.ts`                |    10 | Cantidad > 0, rendimiento > 0 y merma válida, en la API (400) y en la base (CHECK)                                                                                                                                                                                |
+| api (integración) | `recipes-tenancy.test.ts`                   |     7 | Empresa A/B: materia prima, unidad o producto ajenos (422), lectura y modificación ajenas (404), copia de versión ajena, FKs compuestas en la base                                                                                                                |
+| api (integración) | `authorization.test.ts`, `masters.test.ts`  |       | Endpoints de recetas y `PUT /raw-materials/:id/reference-cost` en la matriz rol × endpoint; costo de referencia auditado                                                                                                                                          |
+| E2E               | `e2e/fase2-recetas.spec.ts`                 |     2 | Flujo de 23 pasos (materias primas y costos → producto → receta → costo → borrador → publicar → cambiar costo → snapshot intacto y costo actual → v2 → v1 archivada → auditoría) y costo incompleto (sin $0, sin margen, publicación con confirmación explícita)  |
+
+### Invariantes de Fase 2 → tests
+
+| #   | Invariante                                              | Dónde                                                                                 |
+| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1   | ACTIVE es inmutable                                     | `recipes.test.ts` › inmutabilidad por API y en la base (triggers)                     |
+| 2   | ARCHIVED es inmutable                                   | ídem                                                                                  |
+| 3   | Una sola versión ACTIVE por receta                      | `recipes.test.ts` › publicar v2 archiva v1; la base impide dos ACTIVE                 |
+| 4–6 | Ingrediente, materia prima y unidad de la misma empresa | `recipes-tenancy.test.ts` (API 422 y FKs compuestas en la base)                       |
+| 7   | Unidad compatible con la unidad base                    | `costing.test.ts`, `recipes.test.ts` › unidades y rendimiento                         |
+| 8   | Rendimiento compatible con unidad de venta              | ídem                                                                                  |
+| 9   | Cantidad > 0                                            | `recipes-invariants.test.ts`, `costing.test.ts`, `shared/recipes.test.ts`             |
+| 10  | Rendimiento > 0                                         | ídem                                                                                  |
+| 11  | Merma válida                                            | ídem                                                                                  |
+| 12  | El snapshot no cambia con el costo                      | `recipes.test.ts` › cambiar la harina a $1.000/kg; E2E pasos 15–17                    |
+| 13  | Publicar es transaccional                               | `recipes.test.ts` › rollback de la publicación                                        |
+| 14  | Costo incompleto sin cero implícito                     | `costing.test.ts`, `recipes.test.ts` › costo incompleto, E2E de costo incompleto      |
+| 15  | Dinero y cantidades sin float                           | `database/schema.test.ts` (sin `real`/`double`), `costing.test.ts` › política decimal |
+| 16  | Aislamiento por empresa                                 | `recipes-tenancy.test.ts`                                                             |
+
 ## Cobertura de Fase 1
 
 | Suite             | Archivo(s)                                     | Qué cubre                                                                                                                                                                                                                                                                                                          |

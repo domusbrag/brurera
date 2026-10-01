@@ -10,8 +10,8 @@ RESULTADOS, RIESGOS, DEUDA, SIGUIENTE PASO) → detenerse.
 | Fase | Nombre                        | Estado                        |
 | ---- | ----------------------------- | ----------------------------- |
 | 0    | Discovery + Foundation        | Completa — aceptada           |
-| 1    | Maestros                      | **Completa — esperando gate** |
-| 2    | Recetas + costo teórico       | Pendiente                     |
+| 1    | Maestros                      | Completa — aceptada           |
+| 2    | Recetas + costo teórico       | **Completa — esperando gate** |
 | 3    | Compras + inventario          | Pendiente                     |
 | 4    | Producción                    | Pendiente                     |
 | 5    | Ventas + clientes             | Pendiente                     |
@@ -53,6 +53,17 @@ lista de precios del cliente (Fase 5) y selector de empresa.
 Recetas, versiones, ingredientes, rendimiento, costo calculado.
 **Demostración:** crear producto A → receta v1 → ingredientes → calcular costo → crear v2 →
 confirmar que v1 no cambió.
+
+**Implementado:** receta por producto con versiones `DRAFT → ACTIVE → ARCHIVED` (una vigente y un
+borrador por receta; las publicadas son inmutables también en la base), ingredientes con unidad
+compatible con la unidad base de la materia prima, rendimiento en unidad compatible con la de
+venta, merma teórica informativa, costo de referencia manual por materia prima (permiso propio y
+auditado), costo teórico por lote y por unidad de venta con decimal.js, snapshot de costo al
+publicar, comparación snapshot vs. costo actual con variación, margen bruto teórico, costo
+incompleto explícito (nunca $0), duplicar versión, diff entre versiones y versión vigente a una
+fecha. Ver [reports/FASE_2_REPORTE.md](reports/FASE_2_REPORTE.md). Quedan para fases siguientes:
+costo promedio ponderado desde compras (Fase 3), consumo y costo real (Fase 4), packaging
+específico por artículo y costos indirectos.
 
 ## Fase 3 — Compras + inventario
 

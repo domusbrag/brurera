@@ -631,6 +631,163 @@ h2 {
   }
 }
 
+/* ---------- Recetas y costos (Fase 2) ---------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.prewrap {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.form__label {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.badge--warn {
+  background: #fdf0d5;
+  color: #8a5300;
+}
+
+.badge--draft {
+  background: #e7eef8;
+  color: #2c4f7c;
+}
+
+.small {
+  font-size: 0.85rem;
+  margin: 0.6rem 0 0;
+}
+
+.panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.panel__header h2 {
+  margin: 0;
+}
+
+.alert--warn {
+  border-color: color-mix(in srgb, #b26b00 40%, transparent);
+  background: #fff7e6;
+  color: #6b4300;
+}
+
+.alert ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.cost-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin: 0.9rem 0 0;
+}
+
+.cost-summary > div {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  min-width: 0;
+}
+
+.cost-summary dt {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.cost-summary dd {
+  margin: 0.2rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cost-summary .cost-summary__note {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.ingredients-editor td {
+  vertical-align: top;
+}
+
+.ingredients-editor input,
+.ingredients-editor select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--color-surface);
+}
+
+.ingredients-editor .col-material {
+  min-width: 11rem;
+}
+
+.ingredients-editor .col-qty {
+  width: 7rem;
+}
+
+.ingredients-editor .col-unit {
+  width: 8rem;
+}
+
+.ingredients-editor input[aria-invalid="true"],
+.ingredients-editor select[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.table tfoot td {
+  font-weight: 600;
+  border-top: 2px solid var(--color-border);
+}
+
+.diff-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.diff-list li {
+  margin: 0.2rem 0;
+}
+
+.text-positive {
+  color: #2f6b28;
+}
+
+.text-negative {
+  color: var(--color-danger);
+}
+
+@media (max-width: 1024px) {
+  .table .hide-md {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   .form-grid {
     grid-template-columns: minmax(0, 1fr);

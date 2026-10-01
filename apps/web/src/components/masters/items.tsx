@@ -1,24 +1,36 @@
 "use client";
 
 import {
+  COST_SOURCE_LABELS,
   PERMISSIONS as P,
   type CategoryDto,
+  type Page,
   type ProductDto,
   type RawMaterialDto,
+  type RecipeListItemDto,
+  type RecipeVersionCostDto,
   type SupplierDto,
   type UnitDto,
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, fetchOptions } from "@/lib/api-client";
-import { formatDecimal, formatMoney } from "@/lib/format";
+import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
+import {
+  formatDateTime,
+  formatDecimal,
+  formatMoney,
+  formatPercent,
+  formatReferenceCost,
+  formatUnitCost,
+} from "@/lib/format";
 import { useCan, useCurrentUser } from "../user-context";
 import { EntityForm, toFormValues, toPayload, type FieldDef } from "./entity-form";
 import { MasterList } from "./master-list";
 import {
   ActiveToggle,
   AuditHistory,
+  ConfirmAction,
   Details,
   ErrorState,
   Loading,
@@ -76,6 +88,7 @@ const MP_API = "/api/raw-materials";
 
 export function RawMaterialList() {
   const can = useCan();
+  const user = useCurrentUser();
   const categories = useCategoryOptions("RAW_MATERIAL");
   return (
     <MasterList<RawMaterialDto>
@@ -93,7 +106,17 @@ export function RawMaterialList() {
         { header: "Código", cell: (m) => <span className="code">{m.code}</span> },
         { header: "Materia prima", cell: (m) => <Link href={`${MP_BASE}/${m.id}`}>{m.name}</Link> },
         { header: "Categoría", cell: (m) => m.category.name, className: "hide-sm" },
-        { header: "Unidad base", cell: (m) => m.baseUnit.symbol },
+        { header: "Unidad base", cell: (m) => m.baseUnit.symbol, className: "hide-sm" },
+        {
+          header: "Costo de referencia",
+          cell: (m) =>
+            m.referenceCost === null ? (
+              <span className="badge badge--warn">Sin costo</span>
+            ) : (
+              formatReferenceCost(m.referenceCost, user.company.currencyCode, m.baseUnit.symbol)
+            ),
+          className: "num",
+        },
         {
           header: "Estado",
           cell: (m) => <StatusBadge active={m.active} on="Activa" off="Inactiva" />,
@@ -105,6 +128,8 @@ export function RawMaterialList() {
 
 export function RawMaterialForm({ id }: { id?: string }) {
   const router = useRouter();
+  const can = useCan();
+  const user = useCurrentUser();
   const { data, error } = useResource<RawMaterialDto>(id ? `${MP_API}/${id}` : null);
   const categories = useCategoryOptions("RAW_MATERIAL");
   const units = useUnitOptions(true);
@@ -169,13 +194,19 @@ export function RawMaterialForm({ id }: { id?: string }) {
           : null,
       ),
     },
-    {
-      name: "currentCost",
-      label: "Costo de referencia por unidad base",
-      kind: "decimal",
-      placeholder: "0,00",
-      hint: "Carga manual hasta que las compras (Fase 3) lo calculen por promedio ponderado.",
-    },
+    // El costo inicial sólo se carga al crear y con permiso de costos; después se
+    // cambia desde el detalle ("Cambiar costo"), con su propia auditoría.
+    ...(!id && can(P.RAW_MATERIALS_UPDATE_COST)
+      ? [
+          {
+            name: "referenceCost",
+            label: `Costo de referencia (${user.company.currencyCode} por unidad base)`,
+            kind: "decimal" as const,
+            placeholder: "Sin costo",
+            hint: "Precio por kg, litro o unidad (la unidad base), no por bolsa ni caja. Es una referencia manual hasta que las compras (Fase 3) lo calculen.",
+          },
+        ]
+      : []),
     { name: "description", label: "Descripción", kind: "textarea" },
   ];
   const initial = toFormValues(
@@ -264,22 +295,108 @@ export function RawMaterialDetail({ id }: { id: string }) {
             ["Unidad base", `${data.baseUnit.symbol}`],
             ["Stock mínimo", `${formatDecimal(data.minimumStock)} ${data.baseUnit.symbol}`],
             ["Proveedor preferido", data.preferredSupplier?.legalName],
-            [
-              "Costo de referencia",
-              data.currentCost
-                ? `${user.company.currencyCode === "ARS" ? "$" : `${user.company.currencyCode} `}${formatDecimal(data.currentCost, 2, 6)} / ${data.baseUnit.symbol}`
-                : "Sin cargar",
-            ],
             ["Descripción", data.description],
           ]}
         />
       </section>
-      <p className="notice">
-        El stock se calculará desde los movimientos de inventario (Fase 3). El costo de referencia
-        es manual hasta que las compras lo actualicen.
-      </p>
+      <section className="panel" aria-labelledby="cost-title">
+        <div className="panel__header">
+          <h2 id="cost-title">Costo de referencia</h2>
+          {can(P.RAW_MATERIALS_UPDATE_COST) && (
+            <ReferenceCostAction material={data} onChange={refresh} />
+          )}
+        </div>
+        <Details
+          items={[
+            [
+              "Costo de referencia",
+              data.referenceCost === null ? (
+                <span className="badge badge--warn">Sin costo cargado</span>
+              ) : (
+                <strong>
+                  {formatReferenceCost(
+                    data.referenceCost,
+                    user.company.currencyCode,
+                    data.baseUnit.symbol,
+                  )}
+                </strong>
+              ),
+            ],
+            ["Procedencia", COST_SOURCE_LABELS[data.referenceCostSource]],
+            [
+              "Actualizado",
+              data.referenceCostUpdatedAt
+                ? formatDateTime(data.referenceCostUpdatedAt, user.company.timezone)
+                : null,
+            ],
+          ]}
+        />
+        <p className="muted small">
+          Es el costo por {data.baseUnit.symbol} (la unidad base), no el precio de un envase ni la
+          última factura. Las recetas lo usan para calcular su costo teórico. Desde la Fase 3 las
+          compras lo actualizarán por promedio ponderado.
+        </p>
+      </section>
+      <p className="notice">El stock se calculará desde los movimientos de inventario (Fase 3).</p>
       <AuditHistory entityType="raw_material" entityId={id} version={version} />
     </div>
+  );
+}
+
+/** Diálogo para cargar o cambiar el costo de referencia (permiso raw_materials.update_cost). */
+function ReferenceCostAction({
+  material,
+  onChange,
+}: {
+  material: RawMaterialDto;
+  onChange: () => void;
+}) {
+  const user = useCurrentUser();
+  const [value, setValue] = useState(material.referenceCost ?? "");
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  return (
+    <ConfirmAction
+      label="Cambiar costo"
+      title="Costo de referencia"
+      confirmLabel="Guardar costo"
+      message={
+        <>
+          Costo en {user.company.currencyCode} por {material.baseUnit.symbol}. Las versiones de
+          recetas ya publicadas conservan el costo con que se calcularon; el costo teórico actual se
+          recalcula con este valor.
+        </>
+      }
+      onConfirm={async () => {
+        setFieldError(null);
+        try {
+          await apiFetch(`${MP_API}/${material.id}/reference-cost`, {
+            method: "PUT",
+            body: { referenceCost: value.trim() === "" ? null : value.trim() },
+          });
+          onChange();
+        } catch (err) {
+          if (err instanceof ApiError) setFieldError(err.fieldErrors.referenceCost ?? null);
+          throw err;
+        }
+      }}
+    >
+      <div className="form__field" style={{ marginTop: "0.8rem" }}>
+        <label htmlFor="reference-cost">
+          Costo por {material.baseUnit.symbol} ({user.company.currencyCode})
+        </label>
+        <input
+          id="reference-cost"
+          inputMode="decimal"
+          autoComplete="off"
+          placeholder="Sin costo"
+          value={value}
+          aria-invalid={fieldError ? true : undefined}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        {fieldError && <span className="form__error">{fieldError}</span>}
+        <span className="form__hint">Dejalo vacío para quitar el costo.</span>
+      </div>
+    </ConfirmAction>
   );
 }
 
@@ -395,7 +512,7 @@ export function ProductForm({ id }: { id?: string }) {
         cancelHref={id ? `${PR_BASE}/${id}` : PR_BASE}
         intro={
           <p className="notice" style={{ marginBottom: "0.9rem" }}>
-            Costo disponible desde Fase 2: se calculará desde la receta.
+            El costo no se carga a mano: se calcula desde la receta del producto.
           </p>
         }
         onSubmit={async (values) => {
@@ -457,13 +574,77 @@ export function ProductDetail({ id }: { id: string }) {
             ["Categoría", data.category.name],
             ["Unidad de venta", data.saleUnit.symbol],
             ["Precio de venta", formatMoney(data.salePrice, user.company.currencyCode)],
-            ["Costo", "Costo disponible desde Fase 2"],
             ["Controla stock", data.controlsStock ? "Sí" : "No"],
             ["Descripción", data.description],
           ]}
         />
       </section>
+      {can(P.RECIPES_READ) && <ProductTheoreticalCost product={data} />}
       <AuditHistory entityType="product" entityId={id} version={version} />
     </div>
+  );
+}
+
+/** Costo teórico derivado de la receta vigente (nunca una cifra manual del producto). */
+function ProductTheoreticalCost({ product }: { product: ProductDto }) {
+  const user = useCurrentUser();
+  const { data: recipes } = useResource<Page<RecipeListItemDto>>(
+    `/api/recipes?productId=${product.id}&status=active&pageSize=1`,
+  );
+  const recipe = recipes?.items[0];
+  const { data: cost } = useResource<RecipeVersionCostDto>(
+    recipe?.activeVersion ? `/api/recipes/${recipe.id}/current-cost` : null,
+  );
+  if (!recipes) return null;
+  const currency = user.company.currencyCode;
+  const unit = product.saleUnit.symbol;
+  return (
+    <section className="panel" aria-labelledby="theoretical-cost-title">
+      <h2 id="theoretical-cost-title">Costo teórico</h2>
+      {!recipe ? (
+        <p className="muted">
+          Sin receta. El costo teórico se calcula desde la receta del producto.{" "}
+          <Link href={`/recetas/nuevo?producto=${product.id}`}>Crear receta</Link>
+        </p>
+      ) : !recipe.activeVersion ? (
+        <p className="muted">
+          La receta todavía no tiene una versión vigente.{" "}
+          <Link href={`/recetas/${recipe.id}`}>Ver receta</Link>
+        </p>
+      ) : !cost ? (
+        <p className="muted">Calculando…</p>
+      ) : (
+        <>
+          <Details
+            items={[
+              [
+                `Costo por ${unit}`,
+                cost.current.unitCost === null ? (
+                  <span className="badge badge--warn">Costo incompleto</span>
+                ) : (
+                  formatUnitCost(cost.current.unitCost, currency, unit)
+                ),
+              ],
+              [
+                "Margen bruto teórico",
+                cost.current.grossMargin
+                  ? `${formatMoney(cost.current.grossMargin.amount, currency)} (${formatPercent(cost.current.grossMargin.percentage)})`
+                  : "—",
+              ],
+              [
+                "Receta",
+                <Link key="r" href={`/recetas/${recipe.id}`}>
+                  {recipe.name} · versión {recipe.activeVersion.versionNumber}
+                </Link>,
+              ],
+            ]}
+          />
+          <p className="muted small">
+            Margen bruto teórico = precio de venta − costo de ingredientes. No incluye mano de obra,
+            energía, alquiler, impuestos ni otros costos indirectos.
+          </p>
+        </>
+      )}
+    </section>
   );
 }

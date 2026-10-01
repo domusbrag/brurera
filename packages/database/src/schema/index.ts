@@ -7,3 +7,4 @@ export * from "./company.js";
 export * from "./inventory.js";
 export * from "./items.js";
 export * from "./people.js";
+export * from "./recipes.js";

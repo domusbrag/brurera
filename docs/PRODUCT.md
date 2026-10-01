@@ -41,7 +41,24 @@ costos, precios, reportes, auditoría y configuración empresarial.
 
 ## Estado
 
-Fases 0 (fundación) y 1 (maestros) implementadas. Ver [ROADMAP](ROADMAP.md).
+Fases 0 (fundación) y 1 (maestros) aceptadas; Fase 2 (recetas + costo teórico) implementada y
+esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+
+### Recetas y costo teórico (Fase 2)
+
+- **Receta**: qué lleva un producto, cuánto rinde un lote y cuánto cuesta. Una receta por
+  producto; cambia por **versiones**. Sólo una versión está **vigente**; las anteriores quedan
+  **archivadas** y se pueden consultar, pero no modificar.
+- **Costo del lote** = suma de (cantidad × costo de referencia) de cada ingrediente. **Costo por kg
+  / por unidad** = costo del lote ÷ rendimiento expresado en la unidad de venta.
+- **Margen bruto teórico** = precio de venta − costo de ingredientes por unidad de venta. No
+  incluye mano de obra, energía, alquiler, impuestos ni mermas reales: no es ganancia.
+- **Costo de referencia**: lo carga a mano quien tiene permiso para hacerlo. Es una referencia,
+  no el costo real de compra (que llega con Compras, Fase 3).
+- Al **publicar** una versión se guarda el costo de ese momento; después se ve junto al costo
+  actual y su variación.
+- Si a un ingrediente le falta el costo, la receta muestra **Costo incompleto**, nunca $0 ni un
+  margen inventado. Publicar así requiere confirmarlo explícitamente.
 
 ## Alcance del MVP (resumen)
 

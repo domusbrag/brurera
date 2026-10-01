@@ -44,6 +44,7 @@ export const PERMISSIONS = {
   RAW_MATERIALS_CREATE: "raw_materials.create",
   RAW_MATERIALS_UPDATE: "raw_materials.update",
   RAW_MATERIALS_DEACTIVATE: "raw_materials.deactivate",
+  RAW_MATERIALS_UPDATE_COST: "raw_materials.update_cost",
 
   PRODUCTS_READ: "products.read",
   PRODUCTS_CREATE: "products.create",
@@ -52,6 +53,12 @@ export const PERMISSIONS = {
 
   WAREHOUSES_READ: "warehouses.read",
   WAREHOUSES_MANAGE: "warehouses.manage",
+
+  RECIPES_READ: "recipes.read",
+  RECIPES_CREATE: "recipes.create",
+  RECIPES_UPDATE: "recipes.update",
+  RECIPES_PUBLISH: "recipes.publish",
+  RECIPES_ARCHIVE: "recipes.archive",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -126,6 +133,11 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     module: "raw_materials",
     description: "Desactivar y reactivar materias primas",
   },
+  {
+    code: P.RAW_MATERIALS_UPDATE_COST,
+    module: "raw_materials",
+    description: "Cargar y cambiar el costo de referencia de materias primas",
+  },
 
   { code: P.PRODUCTS_READ, module: "products", description: "Ver productos" },
   { code: P.PRODUCTS_CREATE, module: "products", description: "Dar de alta productos" },
@@ -141,6 +153,28 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     code: P.WAREHOUSES_MANAGE,
     module: "warehouses",
     description: "Crear, modificar y desactivar depósitos",
+  },
+
+  {
+    code: P.RECIPES_READ,
+    module: "recipes",
+    description: "Ver recetas, versiones y costo teórico",
+  },
+  { code: P.RECIPES_CREATE, module: "recipes", description: "Crear recetas y nuevas versiones" },
+  {
+    code: P.RECIPES_UPDATE,
+    module: "recipes",
+    description: "Editar recetas y borradores de versiones (y descartarlos)",
+  },
+  {
+    code: P.RECIPES_PUBLISH,
+    module: "recipes",
+    description: "Publicar una versión (la vuelve vigente y archiva la anterior)",
+  },
+  {
+    code: P.RECIPES_ARCHIVE,
+    module: "recipes",
+    description: "Archivar versiones vigentes y desactivar o reactivar recetas",
   },
 ];
 

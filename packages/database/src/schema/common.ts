@@ -23,3 +23,11 @@ export const unitCost = () => numeric({ precision: 18, scale: 6 });
 export const quantity = () => numeric({ precision: 18, scale: 4 });
 /** Factores de conversión entre unidades. */
 export const conversionFactor = () => numeric({ precision: 24, scale: 10 });
+/** Cantidades de receta y rendimientos: hasta 6 decimales (750 g, 0,000125 kg…). */
+export const recipeQuantity = () => numeric({ precision: 18, scale: 6 });
+/** Cantidades normalizadas a la unidad base/venta (resultado de una conversión). */
+export const normalizedQuantity = () => numeric({ precision: 28, scale: 10 });
+/** Importes de costo calculados (lote, ingrediente, unitario): 6 decimales, redondeo al final. */
+export const costAmount = () => numeric({ precision: 20, scale: 6 });
+/** Porcentajes (merma teórica): 0 ≤ x < 100, hasta 4 decimales. */
+export const percentage = () => numeric({ precision: 7, scale: 4 });

@@ -22,46 +22,65 @@ PostgreSQL 16. ORM **Drizzle** con migraciones SQL versionadas generadas por `dr
 - Códigos internos en mayúsculas con `UNIQUE (company_id, código)`; nombres y CUIT no son únicos.
 - Índices en claves de búsqueda y foráneas usadas en consultas.
 
-## Tablas (Fases 0 y 1)
+## Tablas (Fases 0, 1 y 2)
 
-| Tabla                 | Propósito                                   | Claves / índices relevantes                                                                                          |
-| --------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `companies`           | Empresa                                     | PK; `active`                                                                                                         |
-| `users`               | Identidad global de acceso                  | **único `lower(email)`**                                                                                             |
-| `company_memberships` | Usuario ↔ empresa (+ empleado opcional)     | único (`company_id`, `user_id`); único `employee_id`; FK compuesta a `employees`                                     |
-| `membership_roles`    | Roles de una membresía                      | PK (`membership_id`, `role_id`); FKs compuestas a membresía y rol con `company_id`                                   |
-| `roles`               | Roles por empresa                           | único (`company_id`, `code`)                                                                                         |
-| `permissions`         | Catálogo global de permisos                 | único `code`                                                                                                         |
-| `role_permissions`    | N:M rol ↔ permiso                           | PK (`role_id`, `permission_id`)                                                                                      |
-| `sessions`            | Sesiones de servidor (una empresa cada una) | único `token_hash`; `company_id`; índices `user_id`, `expires_at`                                                    |
-| `audit_logs`          | Auditoría solo-inserción                    | índices (`entity_type`, `entity_id`), `actor_user_id`, `created_at`; trigger anti UPDATE/DELETE                      |
-| `employees`           | Personas que trabajan en la empresa         | único (`company_id`, `employee_code`); único (`company_id`, `document_number`) si no es null; check egreso ≥ ingreso |
-| `code_sequences`      | Próximo número de código por empresa/tipo   | PK (`company_id`, `entity`)                                                                                          |
-| `customers`           | Clientes                                    | único (`company_id`, `internal_code`); índice (`company_id`, `active`, `legal_name`); check crédito ≥ 0              |
-| `suppliers`           | Proveedores                                 | único (`company_id`, `internal_code`)                                                                                |
-| `units_of_measure`    | Unidades por empresa                        | único (`company_id`, `lower(code)`); FK compuesta a su base; checks base+factor juntos, factor > 0                   |
-| `categories`          | Categorías de materias primas y productos   | único (`company_id`, `type`, `lower(name)`)                                                                          |
-| `raw_materials`       | Materias primas (sin stock)                 | único (`company_id`, `internal_code`); FKs compuestas a categoría, unidad y proveedor                                |
-| `products`            | Productos terminados (sin costo)            | único (`company_id`, `internal_code`); FKs compuestas a categoría y unidad; check precio ≥ 0                         |
-| `warehouses`          | Depósitos                                   | único (`company_id`, `code`)                                                                                         |
+| Tabla                        | Propósito                                   | Claves / índices relevantes                                                                                                                  |
+| ---------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `companies`                  | Empresa                                     | PK; `active`                                                                                                                                 |
+| `users`                      | Identidad global de acceso                  | **único `lower(email)`**                                                                                                                     |
+| `company_memberships`        | Usuario ↔ empresa (+ empleado opcional)     | único (`company_id`, `user_id`); único `employee_id`; FK compuesta a `employees`                                                             |
+| `membership_roles`           | Roles de una membresía                      | PK (`membership_id`, `role_id`); FKs compuestas a membresía y rol con `company_id`                                                           |
+| `roles`                      | Roles por empresa                           | único (`company_id`, `code`)                                                                                                                 |
+| `permissions`                | Catálogo global de permisos                 | único `code`                                                                                                                                 |
+| `role_permissions`           | N:M rol ↔ permiso                           | PK (`role_id`, `permission_id`)                                                                                                              |
+| `sessions`                   | Sesiones de servidor (una empresa cada una) | único `token_hash`; `company_id`; índices `user_id`, `expires_at`                                                                            |
+| `audit_logs`                 | Auditoría solo-inserción                    | índices (`entity_type`, `entity_id`), `actor_user_id`, `created_at`; trigger anti UPDATE/DELETE                                              |
+| `employees`                  | Personas que trabajan en la empresa         | único (`company_id`, `employee_code`); único (`company_id`, `document_number`) si no es null; check egreso ≥ ingreso                         |
+| `code_sequences`             | Próximo número de código por empresa/tipo   | PK (`company_id`, `entity`)                                                                                                                  |
+| `customers`                  | Clientes                                    | único (`company_id`, `internal_code`); índice (`company_id`, `active`, `legal_name`); check crédito ≥ 0                                      |
+| `suppliers`                  | Proveedores                                 | único (`company_id`, `internal_code`)                                                                                                        |
+| `units_of_measure`           | Unidades por empresa                        | único (`company_id`, `lower(code)`); FK compuesta a su base; checks base+factor juntos, factor > 0                                           |
+| `categories`                 | Categorías de materias primas y productos   | único (`company_id`, `type`, `lower(name)`)                                                                                                  |
+| `raw_materials`              | Materias primas (sin stock)                 | único (`company_id`, `internal_code`); FKs compuestas a categoría, unidad y proveedor                                                        |
+| `products`                   | Productos terminados (sin costo)            | único (`company_id`, `internal_code`); FKs compuestas a categoría y unidad; check precio ≥ 0                                                 |
+| `warehouses`                 | Depósitos                                   | único (`company_id`, `code`)                                                                                                                 |
+| `recipes`                    | Receta de un producto (Fase 2)              | único (`company_id`, `id`); FK compuesta a producto; único parcial: una receta activa por producto                                           |
+| `recipe_versions`            | Versiones de receta (Fase 2)                | único (`recipe_id`, `version_number`); únicos parciales: un ACTIVE y un DRAFT por receta; checks; trigger de inmutabilidad                   |
+| `recipe_ingredients`         | Ingredientes de una versión (Fase 2)        | único (`recipe_version_id`, `raw_material_id`); FKs compuestas a versión, materia prima y unidad; check cantidad > 0; trigger: sólo en DRAFT |
+| `recipe_cost_snapshots`      | Costo congelado al publicar (Fase 2)        | único por versión; check COMPLETE ⇔ totales presentes; trigger append-only                                                                   |
+| `recipe_cost_snapshot_lines` | Desglose del snapshot (Fase 2)              | FK al snapshot; trigger append-only                                                                                                          |
 
 Tipos numéricos: dinero `numeric(14,2)`, costo por unidad base `numeric(18,6)`, cantidades
-`numeric(18,4)`, factores de conversión `numeric(24,10)`.
+`numeric(18,4)`, factores de conversión `numeric(24,10)`. Fase 2: cantidades de receta
+`numeric(18,6)`, cantidades normalizadas `numeric(28,10)`, costos calculados `numeric(20,6)`,
+porcentajes `numeric(7,4)`.
 
 `sessions` no estaba en la lista mínima de la especificación: es la tabla de sesiones que requiere
 la solución de auth elegida (sesiones de servidor revocables). Ver DECISIONS (ADR-005).
 
 ## Migraciones
 
-| Archivo                             | Contenido                                                                                                                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0000_foundation.sql`               | Enums, las 9 tablas fundacionales, FKs e índices                                                                                                                                |
-| `0001_audit_logs_append_only.sql`   | Función y trigger que rechazan UPDATE/DELETE sobre `audit_logs`                                                                                                                 |
-| `0002_company_membership.sql`       | Fase 1: `company_memberships`, `membership_roles`, `sessions.company_id`; cierra las sesiones abiertas y traslada los datos (una membresía por usuario con su empleado y roles) |
-| `0003_drop_single_company_user.sql` | Fase 1: elimina `users.company_id`, `users.employee_id` y `user_roles`, ya trasladados                                                                                          |
-| `0004_masters.sql`                  | Fase 1: completa `companies` y `employees` (legajo con backfill `EMP-0001…`, estado `ON_LEAVE` → `ACTIVE`), crea `code_sequences` y los maestros                                |
+| Archivo                             | Contenido                                                                                                                                                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0000_foundation.sql`               | Enums, las 9 tablas fundacionales, FKs e índices                                                                                                                                                                                |
+| `0001_audit_logs_append_only.sql`   | Función y trigger que rechazan UPDATE/DELETE sobre `audit_logs`                                                                                                                                                                 |
+| `0002_company_membership.sql`       | Fase 1: `company_memberships`, `membership_roles`, `sessions.company_id`; cierra las sesiones abiertas y traslada los datos (una membresía por usuario con su empleado y roles)                                                 |
+| `0003_drop_single_company_user.sql` | Fase 1: elimina `users.company_id`, `users.employee_id` y `user_roles`, ya trasladados                                                                                                                                          |
+| `0004_masters.sql`                  | Fase 1: completa `companies` y `employees` (legajo con backfill `EMP-0001…`, estado `ON_LEAVE` → `ACTIVE`), crea `code_sequences` y los maestros                                                                                |
+| `0005_recipes.sql`                  | Fase 2: renombra `raw_materials.current_cost` → `reference_cost` (+ origen y fecha), agrega `UNIQUE (company_id, id)` a productos y materias primas, crea las 5 tablas de recetas y los triggers de inmutabilidad y append-only |
 
-0000 y 0001 no se modificaron. 0002 y 0003 están separadas porque drizzle-kit pide confirmación
+0000–0004 no se modificaron en Fase 2: todo cambio va en 0005.
+
+**Triggers de Fase 2** (la base no depende sólo del servicio):
+
+- `recipe_versions_guard`: un `DRAFT` se edita y se borra libremente; `ACTIVE` → `ARCHIVED` se
+  permite sólo si no cambia nada más que estado, `archived_at` y `updated_at`; cualquier otro
+  UPDATE o DELETE de una versión publicada falla con `recipe_version_immutable` (SQLSTATE 23001).
+- `recipe_ingredients_guard`: rechaza INSERT/UPDATE/DELETE de ingredientes cuya versión no sea
+  `DRAFT`.
+- `recipe_cost_snapshots_reject_mutation`: snapshots y líneas son append-only.
+
+0000 y 0001 no se modificaron en Fase 1. 0002 y 0003 están separadas porque drizzle-kit pide confirmación
 interactiva cuando un mismo paso agrega y quita columnas; además así el traslado de datos corre
 antes del borrado.
 
@@ -100,7 +119,6 @@ No se crean hasta su fase (cada una con su migración):
 
 | Fase | Tablas                                                                                                                           |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 2    | `recipes`, `recipe_versions`, `recipe_ingredients`                                                                               |
 | 3    | `purchases`, `purchase_items`, `stock_movements` (+ saldo cacheado opcional con reconciliación)                                  |
 | 4    | `production_orders`, `production_cost_snapshots`                                                                                 |
 | 5    | `price_lists`, `price_list_items` (+ `customers.price_list_id`), `sales`, `sale_items`, `customer_account_movements`, `payments` |

@@ -4,7 +4,7 @@ import { AUDIT_ACTION_LABELS, PERMISSIONS, type AuditLogItemDto, type Page } fro
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatReferenceCost } from "@/lib/format";
 import { useCan, useCurrentUser } from "../user-context";
 
 /** Carga un recurso de la API con estado de carga/error y recarga manual. */
@@ -244,7 +244,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: "Nombre",
   description: "Descripción",
   salePrice: "Precio de venta",
-  currentCost: "Costo de referencia",
+  referenceCost: "Costo de referencia",
   minimumStock: "Stock mínimo",
   categoryId: "Categoría",
   saleUnitId: "Unidad de venta",
@@ -274,7 +274,32 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 function describeChanges(metadata: Record<string, unknown>): string | null {
+  const version =
+    typeof metadata.versionNumber === "number" ? `Versión ${metadata.versionNumber}` : null;
+  if (version) {
+    const extra: string[] = [];
+    if (typeof metadata.copiedFromVersion === "number")
+      extra.push(`copia de la versión ${metadata.copiedFromVersion}`);
+    if (typeof metadata.replacedByVersion === "number")
+      extra.push(`reemplazada por la versión ${metadata.replacedByVersion}`);
+    if (metadata.costStatus === "INCOMPLETE") extra.push("costo incompleto");
+    for (const key of ["added", "removed", "changed"] as const) {
+      const names = metadata[key];
+      if (Array.isArray(names) && names.length > 0)
+        extra.push(
+          `${{ added: "agregó", removed: "quitó", changed: "cambió" }[key]} ${names.join(", ")}`,
+        );
+    }
+    return [version, ...extra].join(" · ");
+  }
   const changes = metadata.changes as Record<string, unknown> | undefined;
+  const cost = changes?.referenceCost as { from: string | null; to: string | null } | undefined;
+  if (cost && typeof metadata.perUnit === "string") {
+    const currency = typeof metadata.currency === "string" ? metadata.currency : "ARS";
+    const show = (v: string | null) =>
+      v === null ? "sin costo" : formatReferenceCost(v, currency, metadata.perUnit as string);
+    return `Costo de referencia: ${show(cost.from)} → ${show(cost.to)}`;
+  }
   if (changes && typeof changes === "object") {
     const fields = Object.keys(changes).map((k) => FIELD_LABELS[k] ?? k);
     return fields.length > 0 ? `Cambió: ${fields.join(", ")}` : null;

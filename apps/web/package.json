@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@bakery/domain": "workspace:*",
     "@bakery/shared": "workspace:*",
     "next": "^16.3.7",
     "react": "^19.3.0",

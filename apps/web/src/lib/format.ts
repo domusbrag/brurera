@@ -1,12 +1,60 @@
+import { DISPLAY_MONEY_SCALE, toFixedString } from "@bakery/domain";
+
 /*
  * Formato de datos para la UI (es-AR). Los decimales llegan como string desde
- * la API y se muestran sin pasar por aritmética de punto flotante.
+ * la API y se muestran sin pasar por aritmética de punto flotante. El redondeo
+ * de presentación (HALF_UP) usa la misma política decimal que @bakery/domain.
  */
 
-/** "1234567.5" → "1.234.567,50" (dinero, 2 decimales). */
+const currencyPrefix = (currency: string) => (currency === "ARS" ? "$" : `${currency} `);
+
+/** "1234567.5" → "$1.234.567,50" (dinero, redondeado a 2 decimales). */
 export function formatMoney(value: string | null | undefined, currency = "ARS"): string {
   if (value === null || value === undefined || value === "") return "—";
-  return `${currency === "ARS" ? "$" : `${currency} `}${formatDecimal(value, 2, 2)}`;
+  const rounded = toFixedString(value, DISPLAY_MONEY_SCALE);
+  return `${currencyPrefix(currency)}${formatDecimal(rounded, 2, 2)}`;
+}
+
+/**
+ * Costo por unidad: "$850,00 / kg". Si es menor a un centavo muestra hasta 6
+ * decimales ("$0,0005 / g") para no mostrar un engañoso "$0,00".
+ */
+export function formatUnitCost(
+  value: string | null | undefined,
+  currency: string,
+  unitSymbol: string,
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const small = value !== "0" && toFixedString(value, 2) === "0.00" && !/^0(\.0*)?$/.test(value);
+  const text = small
+    ? `${currencyPrefix(currency)}${formatDecimal(toFixedString(value, 6), 2, 6)}`
+    : formatMoney(value, currency);
+  return `${text} / ${unitSymbol}`;
+}
+
+/**
+ * Costo de referencia tal como se cargó (hasta 6 decimales, sin redondear):
+ * "850.125000" → "$850,125 / kg". Es un dato de entrada, no un resultado.
+ */
+export function formatReferenceCost(
+  value: string | null | undefined,
+  currency: string,
+  unitSymbol: string,
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  return `${currencyPrefix(currency)}${formatDecimal(value, 2, 6)} / ${unitSymbol}`;
+}
+
+/** Porcentaje redondeado a 2 decimales: "31.666…" → "31,67 %". */
+export function formatPercent(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  return `${formatDecimal(toFixedString(value, 2), 0, 2)} %`;
+}
+
+/** Cantidad con su unidad, sin ceros de más: "0.750000", "kg" → "0,75 kg". */
+export function formatQuantity(value: string | null | undefined, symbol: string): string {
+  if (value === null || value === undefined || value === "") return "—";
+  return `${formatDecimal(value, 0, 6)} ${symbol}`;
 }
 
 /** Formatea un decimal-string con separador de miles y coma decimal, sin float. */

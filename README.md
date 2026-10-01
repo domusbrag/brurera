@@ -3,11 +3,12 @@
 ERP vertical para panificadoras: proveedores → compras → materias primas → stock → recetas →
 producción → productos → ventas → clientes → cobros. Monolito modular en TypeScript.
 
-> Estado: **Fase 1 (maestros)**, pendiente de aceptación. Además de la fundación (autenticación,
-> roles y permisos, auditoría, shell), existen empresa, empleados, usuarios con membresía por
-> empresa, clientes, proveedores, unidades de medida, categorías, materias primas, productos y
-> depósitos. Recetas, compras, stock, producción y ventas llegan en fases siguientes (ver
-> [docs/ROADMAP.md](docs/ROADMAP.md)).
+> Estado: **Fase 2 (recetas + costo teórico)**, pendiente de aceptación. Sobre la fundación
+> (autenticación, roles y permisos, auditoría, shell) y los maestros de Fase 1 (empresa,
+> empleados, usuarios, clientes, proveedores, unidades, categorías, materias primas, productos y
+> depósitos) existen recetas versionadas con costo teórico por unidad de venta, costo de
+> referencia de materias primas y margen bruto teórico. Compras, stock, producción y ventas llegan
+> en fases siguientes (ver [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Requisitos
 
@@ -48,7 +49,7 @@ Credenciales **solo de desarrollo** (configurables en `.env` con `SEED_ADMIN_EMA
 | `pnpm dev`                                 | Setup completo + API y web en modo desarrollo                        |
 | `pnpm bootstrap`                           | Solo preparación: `.env`, base, migraciones y seed                   |
 | `pnpm test`                                | Tests unitarios e integración (crea y migra `bakery_erp_test`)       |
-| `pnpm test:e2e`                            | Build + smoke E2E con Playwright (requiere `pnpm bootstrap` previo)  |
+| `pnpm test:e2e`                            | Build + E2E con Playwright (requiere `pnpm bootstrap` previo)        |
 | `pnpm lint`                                | ESLint + Prettier (check)                                            |
 | `pnpm typecheck`                           | TypeScript estricto en todos los paquetes                            |
 | `pnpm build`                               | Build de producción de API y web                                     |
@@ -85,9 +86,9 @@ bakery-erp/
 │   └── web/            Aplicación web (Next.js, App Router)
 ├── packages/
 │   ├── shared/         Contratos compartidos: permisos, roles, esquemas zod, DTOs
-│   ├── domain/         Reglas puras de dominio (conversión de unidades, códigos) con decimal.js
+│   ├── domain/         Reglas puras de dominio (unidades, costos de recetas, códigos) con decimal.js
 │   └── database/       Esquema Drizzle, migraciones SQL versionadas, datos de referencia
-├── e2e/                Tests Playwright (smoke + flujo de maestros)
+├── e2e/                Tests Playwright (smoke, maestros, recetas y costo incompleto)
 ├── infra/              docker-compose de desarrollo
 ├── scripts/            Utilidades del repo
 └── docs/               Producto, arquitectura, dominio, base, roadmap, testing, decisiones

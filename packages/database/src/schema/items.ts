@@ -4,8 +4,11 @@ import {
   check,
   foreignKey,
   index,
+  pgEnum,
   pgTable,
   text,
+  timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
@@ -16,9 +19,22 @@ import { companies } from "./company.js";
 import { createdAt, id, money, quantity, unitCost, updatedAt } from "./common.js";
 
 /**
+ * Procedencia de un costo. En Fase 2 sólo existe MANUAL_REFERENCE; las compras
+ * (Fase 3) agregarán PURCHASE_MOVING_AVERAGE. Los valores coinciden con
+ * COST_SOURCES de @bakery/domain.
+ */
+export const costSource = pgEnum("cost_source", [
+  "MANUAL_REFERENCE",
+  "PURCHASE_MOVING_AVERAGE",
+  "SUPPLIER_QUOTE",
+  "OTHER",
+]);
+
+/**
  * Materia prima. NO tiene stock: el stock se derivará de movimientos de
- * inventario (Fase 3). `current_cost` es un costo de referencia por unidad base,
- * cargado a mano hasta que las compras lo recalculen por promedio ponderado.
+ * inventario (Fase 3). `reference_cost` es dinero (moneda de la empresa) por
+ * UNIDAD BASE ($850/kg), cargado a mano: no es el precio de una bolsa, ni la
+ * última factura, ni un promedio ponderado. Es el insumo del costo teórico.
  */
 export const rawMaterials = pgTable(
   "raw_materials",
@@ -34,12 +50,15 @@ export const rawMaterials = pgTable(
     baseUnitId: uuid().notNull(),
     minimumStock: quantity().notNull().default("0"),
     preferredSupplierId: uuid(),
-    currentCost: unitCost(),
+    referenceCost: unitCost(),
+    referenceCostSource: costSource().notNull().default("MANUAL_REFERENCE"),
+    referenceCostUpdatedAt: timestamp({ withTimezone: true }),
     active: boolean().notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    unique("raw_materials_company_id_uq").on(t.companyId, t.id),
     uniqueIndex("raw_materials_company_code_uq").on(t.companyId, t.internalCode),
     index("raw_materials_company_active_name_idx").on(t.companyId, t.active, t.name),
     index("raw_materials_category_idx").on(t.categoryId),
@@ -60,13 +79,13 @@ export const rawMaterials = pgTable(
       foreignColumns: [suppliers.companyId, suppliers.id],
     }).onDelete("restrict"),
     check("raw_materials_minimum_stock_nonneg", sql`${t.minimumStock} >= 0`),
-    check("raw_materials_cost_nonneg", sql`${t.currentCost} is null or ${t.currentCost} >= 0`),
+    check("raw_materials_cost_nonneg", sql`${t.referenceCost} is null or ${t.referenceCost} >= 0`),
   ],
 );
 
 /**
- * Producto terminado. El costo NO se guarda aquí: se calculará desde la receta
- * vigente (Fase 2). `controls_stock` indica si las ventas descontarán stock.
+ * Producto terminado. El costo NO se guarda aquí: se deriva de la receta activa
+ * (recipes → recipe_versions → recipe_cost_snapshots). `controls_stock` indica si las ventas descontarán stock.
  */
 export const products = pgTable(
   "products",
@@ -88,6 +107,7 @@ export const products = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    unique("products_company_id_uq").on(t.companyId, t.id),
     uniqueIndex("products_company_code_uq").on(t.companyId, t.internalCode),
     index("products_company_active_name_idx").on(t.companyId, t.active, t.name),
     index("products_category_idx").on(t.categoryId),

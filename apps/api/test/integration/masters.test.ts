@@ -247,14 +247,15 @@ describe("materias primas y productos", () => {
       categoryId: mpCategory,
       baseUnitId: await unitId("kg"),
       minimumStock: "12.5",
-      currentCost: "1234.567891",
+      referenceCost: "1234.567891",
     });
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body).toMatchObject({
       code: "MP-0001",
       minimumStock: "12.5000",
-      currentCost: "1234.567891",
+      referenceCost: "1234.567891",
+      referenceCostSource: "MANUAL_REFERENCE",
       baseUnit: { code: "kg" },
       category: { name: "Grasas" },
     });
@@ -295,11 +296,13 @@ describe("materias primas y productos", () => {
 
   it("materia prima: edita y desactiva con auditoría", async () => {
     const [mp] = (await api.get("/api/raw-materials?search=Margarina")).json().items;
-    await api.patch(`/api/raw-materials/${mp.id}`, { currentCost: "1300" });
+    await api.patch(`/api/raw-materials/${mp.id}`, { minimumStock: "15" });
+    await api.put(`/api/raw-materials/${mp.id}/reference-cost`, { referenceCost: "1300" });
     await api.post(`/api/raw-materials/${mp.id}/deactivate`);
     expect(await auditActions(mp.id)).toEqual([
       "RAW_MATERIAL_CREATED",
       "RAW_MATERIAL_UPDATED",
+      "RAW_MATERIAL_REFERENCE_COST_CHANGED",
       "RAW_MATERIAL_DEACTIVATED",
     ]);
   });

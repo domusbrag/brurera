@@ -17,6 +17,7 @@ import { employeeRoutes } from "./modules/employees/employees.routes.js";
 import { healthRoutes } from "./modules/health/health.routes.js";
 import { productRoutes } from "./modules/products/products.routes.js";
 import { rawMaterialRoutes } from "./modules/raw-materials/raw-materials.routes.js";
+import { recipeRoutes } from "./modules/recipes/recipes.routes.js";
 import { roleRoutes } from "./modules/roles/roles.routes.js";
 import { supplierRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { unitRoutes } from "./modules/units/units.routes.js";
@@ -110,6 +111,7 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
         rawMaterialRoutes,
         productRoutes,
         warehouseRoutes,
+        recipeRoutes,
       ]) {
         await api.register(routes, { db });
       }

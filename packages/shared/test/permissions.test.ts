@@ -56,3 +56,30 @@ describe("roles de sistema", () => {
     );
   });
 });
+
+describe("matriz de recetas y costos (Fase 2)", () => {
+  const can = (role: string, code: string) =>
+    SYSTEM_ROLES.find((r) => r.code === role)!.permissions.includes(code as never);
+
+  it("Producción formula y edita, pero no publica ni archiva", () => {
+    expect(can("PRODUCTION", PERMISSIONS.RECIPES_READ)).toBe(true);
+    expect(can("PRODUCTION", PERMISSIONS.RECIPES_CREATE)).toBe(true);
+    expect(can("PRODUCTION", PERMISSIONS.RECIPES_UPDATE)).toBe(true);
+    expect(can("PRODUCTION", PERMISSIONS.RECIPES_PUBLISH)).toBe(false);
+    expect(can("PRODUCTION", PERMISSIONS.RECIPES_ARCHIVE)).toBe(false);
+  });
+
+  it("sólo ADMIN y OWNER publican recetas", () => {
+    const publishers = SYSTEM_ROLES.filter((r) =>
+      r.permissions.includes(PERMISSIONS.RECIPES_PUBLISH),
+    ).map((r) => r.code);
+    expect(publishers.sort()).toEqual(["ADMIN", "OWNER"]);
+  });
+
+  it("el costo de referencia lo cambian Administración y Compras, no Producción ni Ventas", () => {
+    expect(can("ADMINISTRATION", PERMISSIONS.RAW_MATERIALS_UPDATE_COST)).toBe(true);
+    expect(can("PURCHASING", PERMISSIONS.RAW_MATERIALS_UPDATE_COST)).toBe(true);
+    expect(can("PRODUCTION", PERMISSIONS.RAW_MATERIALS_UPDATE_COST)).toBe(false);
+    expect(can("SALES", PERMISSIONS.RAW_MATERIALS_UPDATE_COST)).toBe(false);
+  });
+});

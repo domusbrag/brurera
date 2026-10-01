@@ -102,6 +102,26 @@ ENDPOINTS.push(
   ["GET", `/api/categories/${ANY_ID}`, [P.CATEGORIES_READ]],
   ["POST", "/api/categories", [P.CATEGORIES_MANAGE]],
   ["PATCH", `/api/categories/${ANY_ID}`, [P.CATEGORIES_MANAGE]],
+  ["PUT", `/api/raw-materials/${ANY_ID}/reference-cost`, [P.RAW_MATERIALS_UPDATE_COST]],
+  // Recetas (Fase 2)
+  ["GET", "/api/recipes", [P.RECIPES_READ]],
+  ["POST", "/api/recipes", [P.RECIPES_CREATE]],
+  ["GET", `/api/recipes/${ANY_ID}`, [P.RECIPES_READ]],
+  ["PATCH", `/api/recipes/${ANY_ID}`, [P.RECIPES_UPDATE]],
+  ["POST", `/api/recipes/${ANY_ID}/deactivate`, [P.RECIPES_ARCHIVE]],
+  ["POST", `/api/recipes/${ANY_ID}/activate`, [P.RECIPES_ARCHIVE]],
+  ["GET", `/api/recipes/${ANY_ID}/versions`, [P.RECIPES_READ]],
+  ["POST", `/api/recipes/${ANY_ID}/versions`, [P.RECIPES_CREATE]],
+  ["GET", `/api/recipes/${ANY_ID}/current-cost`, [P.RECIPES_READ]],
+  ["GET", `/api/recipes/${ANY_ID}/effective-version?at=2026-01-01T00:00:00Z`, [P.RECIPES_READ]],
+  ["GET", `/api/recipe-versions/${ANY_ID}`, [P.RECIPES_READ]],
+  ["PATCH", `/api/recipe-versions/${ANY_ID}`, [P.RECIPES_UPDATE]],
+  ["POST", `/api/recipe-versions/${ANY_ID}/publish`, [P.RECIPES_PUBLISH]],
+  ["POST", `/api/recipe-versions/${ANY_ID}/duplicate`, [P.RECIPES_CREATE]],
+  ["POST", `/api/recipe-versions/${ANY_ID}/discard`, [P.RECIPES_UPDATE]],
+  ["POST", `/api/recipe-versions/${ANY_ID}/archive`, [P.RECIPES_ARCHIVE]],
+  ["GET", `/api/recipe-versions/${ANY_ID}/cost`, [P.RECIPES_READ]],
+  ["GET", `/api/recipe-versions/${ANY_ID}/diff`, [P.RECIPES_READ]],
 );
 
 let ctx: TestContext;

@@ -187,3 +187,65 @@ no se crea en Fase 1: llega en Fase 5 junto con `price_lists`, con su FK real, e
 columna huérfana.
 **Consecuencias.** Menos código duplicado; la restricción de tipo vive en la aplicación (probada
 por tests).
+
+## ADR-021 — Versiones de receta inmutables, garantizadas por la base
+
+**Decisión.** Una receta cambia sólo por versiones `DRAFT → ACTIVE → ARCHIVED`. Un borrador se
+edita o descarta; una versión publicada no se modifica ni se borra. Además de la validación del
+servicio, la base lo impone: el trigger `recipe_versions_guard` sólo deja pasar `ACTIVE → ARCHIVED`
+(comparando la fila completa salvo estado, `archived_at` y `updated_at`) y falla con SQLSTATE
+23001 ante cualquier otro cambio; `recipe_ingredients_guard` rechaza tocar ingredientes de una
+versión no `DRAFT`; índices únicos parciales garantizan una `ACTIVE` y un `DRAFT` por receta. Los
+números de versión salen de `recipes.last_version_number` (no se reutilizan tras descartar).
+Publicar (validar, calcular costo, guardar snapshot, archivar la anterior, activar, auditar) es una
+sola transacción con la receta bloqueada.
+**Consecuencias.** Producción (Fase 4) puede referenciar una versión con la certeza de que no
+cambió. Corregir una versión publicada exige una nueva versión. Un script o una migración futura
+que quiera alterar versiones publicadas deberá deshabilitar el trigger explícitamente.
+
+## ADR-022 — Costo teórico calculado al pedirlo; snapshot congelado al publicar
+
+**Decisión.** El costo teórico de una versión no se guarda como columna: se calcula con los costos
+de referencia actuales cada vez que se pide (`currentTheoreticalCost`). Al publicar se guarda un
+snapshot append-only (`recipe_cost_snapshots` + líneas) con el costo de referencia usado, su origen,
+las unidades y nombres copiados y el precio de venta de ese momento (`snapshotCost`). La UI muestra
+ambos y la variación. Si falta un costo, el estado es `INCOMPLETE` y totales, unitario y margen son
+`null`: nunca 0. Publicar con costo incompleto se permite sólo con confirmación explícita
+(`acknowledgeIncompleteCost`), porque la receta sigue siendo válida como receta aunque falte un
+precio. La merma teórica es informativa: el rendimiento ya es producción útil.
+**Consecuencias.** El costo actual siempre refleja los costos de hoy sin jobs de recálculo; el
+histórico es reproducible sin depender de que la materia prima siga existiendo igual.
+
+## ADR-023 — Política decimal
+
+**Decisión.** Toda aritmética de costos usa `decimal.js` con precisión 40 y `ROUND_HALF_UP`, sin
+redondeos intermedios (ni por ingrediente ni por conversión). Se redondea una sola vez, al persistir
+o enviar: dinero/costos 6 decimales, cantidades de receta 6, cantidades normalizadas 10,
+porcentajes 4. La presentación redondea dinero a 2 decimales (HALF_UP); costos por unidad menores a
+un centavo y costos de referencia se muestran con hasta 6 decimales. Los valores viajan como string.
+**Consecuencias.** API y editor web (que usa las mismas funciones) dan exactamente el mismo número;
+`0,1 + 0,2 = 0,3`. Los totales mostrados pueden diferir en un centavo de la suma de los renglones
+mostrados, porque se suman los valores exactos.
+
+## ADR-024 — Costo de referencia manual con permiso y origen propios
+
+**Decisión.** `raw_materials.current_cost` pasa a `reference_cost` (por unidad base) con
+`reference_cost_source` (hoy siempre `MANUAL_REFERENCE`; el enum ya prevé
+`PURCHASE_MOVING_AVERAGE`, `SUPPLIER_QUOTE`, `OTHER`) y `reference_cost_updated_at`. Se cambia sólo
+con `PUT /raw-materials/:id/reference-cost` y el permiso `raw_materials.update_cost` (Administración,
+Compras, Admin, Dueño); cargarlo en el alta exige el mismo permiso. Cada cambio se audita
+(`RAW_MATERIAL_REFERENCE_COST_CHANGED`, valor anterior y nuevo). Mientras una materia prima esté en
+recetas no se cambia su unidad base, y la unidad de venta de un producto no puede pasar a una
+incompatible con sus recetas.
+**Consecuencias.** Queda claro que el costo es una referencia, no el costo real. En Fase 3 el
+promedio ponderado de compras (`futureMovingAverageCost`) podrá convivir o reemplazar la
+referencia indicando su origen, sin migrar el significado de la columna.
+
+## ADR-025 — Packaging específico por artículo, diferido
+
+**Decisión.** Una unidad de dimensión `PACKAGING` (bolsa, caja) no se convierte a masa ni volumen:
+no se puede usar como unidad de un ingrediente cuya materia prima está en kg. Lo que "bolsa"
+significa depende del artículo (25 kg de harina, 1 kg de azúcar) y eso no se modela todavía. Hoy,
+quien necesite "bolsa de 25 kg" la define como unidad derivada de masa (ADR-018).
+**Consecuencias.** Sin conversiones engañosas. Cuando compras lo requiera (Fase 3), se evaluará una
+conversión por artículo (`raw_material_units`) con su propia migración.
