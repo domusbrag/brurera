@@ -1,0 +1,3 @@
+# Forzar LF en el checkout (también en Windows con core.autocrlf=true):
+# Prettier exige LF y los SQL de migración deben quedar idénticos en todas las máquinas.
+* text=auto eol=lf
