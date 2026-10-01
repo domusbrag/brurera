@@ -20,6 +20,7 @@ const ENTITY_LABELS: Record<string, string> = {
   product: "Productos",
   warehouse: "Depósitos",
   recipe: "Recetas",
+  purchase: "Compras",
 };
 
 /** Registro de auditoría de la empresa (solo lectura, más reciente primero). */

@@ -21,10 +21,24 @@ export interface MasterListProps<T> {
   columns: Column<T>[];
   searchPlaceholder: string;
   createLabel?: string;
+  /** Ruta del alta (por defecto `${basePath}/nuevo`). */
+  createHref?: string;
   canCreate?: boolean;
   /** Filtros adicionales (select) sincronizados con la URL. */
-  extraFilters?: { name: string; label: string; options: { value: string; label: string }[] }[];
+  extraFilters?: {
+    name: string;
+    label: string;
+    allLabel?: string;
+    options: { value: string; label: string }[];
+  }[];
   statusLabels?: { active: string; inactive: string };
+  /** Opciones propias del filtro de estado (p. ej. estados de una compra). */
+  statusOptions?: { value: string; label: string }[];
+  defaultStatus?: string;
+  /** Nombre del parámetro de estado en la API (por defecto `status`). */
+  statusParam?: string;
+  /** Sin filtro de estado (el endpoint no lo admite). */
+  hideStatusFilter?: boolean;
   emptyText: string;
   headerExtra?: ReactNode;
 }
@@ -52,9 +66,14 @@ function MasterListInner<T extends { id: string }>({
   columns,
   searchPlaceholder,
   createLabel,
+  createHref,
   canCreate,
   extraFilters = [],
   statusLabels = { active: "Activos", inactive: "Inactivos" },
+  statusOptions,
+  defaultStatus = "active",
+  statusParam = "status",
+  hideStatusFilter = false,
   emptyText,
   headerExtra,
 }: MasterListProps<T>) {
@@ -62,7 +81,7 @@ function MasterListInner<T extends { id: string }>({
   const pathname = usePathname();
   const params = useSearchParams();
   const search = params.get("q") ?? "";
-  const status = params.get("estado") ?? "active";
+  const status = params.get("estado") ?? defaultStatus;
   const page = Math.max(1, Number(params.get("pagina") ?? "1") || 1);
   const [draft, setDraft] = useState(search);
 
@@ -91,7 +110,7 @@ function MasterListInner<T extends { id: string }>({
   const { data, error } = useResource<Page<T>>(
     listPath(endpoint, {
       search: search || undefined,
-      status,
+      ...(hideStatusFilter ? {} : { [statusParam]: status }),
       page,
       pageSize: PAGE_SIZE,
       ...extraValues,
@@ -106,7 +125,7 @@ function MasterListInner<T extends { id: string }>({
         subtitle={subtitle}
         actions={
           canCreate && createLabel ? (
-            <Link className="button button--primary" href={`${basePath}/nuevo`}>
+            <Link className="button button--primary" href={createHref ?? `${basePath}/nuevo`}>
               {createLabel}
             </Link>
           ) : undefined
@@ -122,15 +141,25 @@ function MasterListInner<T extends { id: string }>({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
-          <select
-            aria-label="Estado"
-            value={status}
-            onChange={(e) => setParams({ estado: e.target.value })}
-          >
-            <option value="active">{statusLabels.active}</option>
-            <option value="inactive">{statusLabels.inactive}</option>
-            <option value="all">Todos</option>
-          </select>
+          {!hideStatusFilter && (
+            <select
+              aria-label="Estado"
+              value={status}
+              onChange={(e) => setParams({ estado: e.target.value })}
+            >
+              {(
+                statusOptions ?? [
+                  { value: "active", label: statusLabels.active },
+                  { value: "inactive", label: statusLabels.inactive },
+                  { value: "all", label: "Todos" },
+                ]
+              ).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
           {extraFilters.map((f) => (
             <select
               key={f.name}
@@ -138,7 +167,7 @@ function MasterListInner<T extends { id: string }>({
               value={params.get(f.name) ?? ""}
               onChange={(e) => setParams({ [f.name]: e.target.value || null })}
             >
-              <option value="">{f.label}: todas</option>
+              <option value="">{f.allLabel ?? `${f.label}: todas`}</option>
               {f.options.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}

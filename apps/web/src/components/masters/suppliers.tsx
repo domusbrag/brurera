@@ -158,7 +158,12 @@ export function SupplierDetail({ id }: { id: string }) {
         />
       </section>
       <p className="notice">
-        Compras y cuenta corriente estarán disponibles en una fase posterior.
+        {can(P.PURCHASES_READ) && (
+          <>
+            <Link href={`/compras?supplierId=${id}`}>Ver las compras a este proveedor</Link>.{" "}
+          </>
+        )}
+        Cuenta corriente y pagos estarán disponibles en una fase posterior.
       </p>
       <AuditHistory entityType="supplier" entityId={id} version={version} />
     </div>

@@ -26,6 +26,7 @@ import {
 } from "@/lib/format";
 import { useCan, useCurrentUser } from "../user-context";
 import { EntityForm, toFormValues, toPayload, type FieldDef } from "./entity-form";
+import { PresentationsPanel } from "../inventory/presentations";
 import { MasterList } from "./master-list";
 import {
   ActiveToggle,
@@ -108,12 +109,19 @@ export function RawMaterialList() {
         { header: "Categoría", cell: (m) => m.category.name, className: "hide-sm" },
         { header: "Unidad base", cell: (m) => m.baseUnit.symbol, className: "hide-sm" },
         {
-          header: "Costo de referencia",
+          header: "Costo usado",
           cell: (m) =>
-            m.referenceCost === null ? (
+            m.effectiveCost === null ? (
               <span className="badge badge--warn">Sin costo</span>
             ) : (
-              formatReferenceCost(m.referenceCost, user.company.currencyCode, m.baseUnit.symbol)
+              <>
+                {formatReferenceCost(m.effectiveCost, user.company.currencyCode, m.baseUnit.symbol)}
+                <span className="cost-source">
+                  {m.effectiveCostSource === "PURCHASE_MOVING_AVERAGE"
+                    ? "Promedio de compras"
+                    : "Referencia manual"}
+                </span>
+              </>
             ),
           className: "num",
         },
@@ -333,11 +341,40 @@ export function RawMaterialDetail({ id }: { id: string }) {
         />
         <p className="muted small">
           Es el costo por {data.baseUnit.symbol} (la unidad base), no el precio de un envase ni la
-          última factura. Las recetas lo usan para calcular su costo teórico. Desde la Fase 3 las
-          compras lo actualizarán por promedio ponderado.
+          última factura. Las recetas usan el costo promedio de compras cuando existe; si no, este
+          costo de referencia, que se conserva igual.
         </p>
+        <Details
+          items={[
+            [
+              "Costo usado por recetas",
+              data.effectiveCost === null ? (
+                <span className="badge badge--warn">Sin costo</span>
+              ) : (
+                <>
+                  {formatReferenceCost(
+                    data.effectiveCost,
+                    user.company.currencyCode,
+                    data.baseUnit.symbol,
+                  )}
+                  <span className="cost-source">
+                    {data.effectiveCostSource === "PURCHASE_MOVING_AVERAGE"
+                      ? "Promedio ponderado de compras"
+                      : "Costo de referencia manual"}
+                  </span>
+                </>
+              ),
+            ],
+          ]}
+        />
       </section>
-      <p className="notice">El stock se calculará desde los movimientos de inventario (Fase 3).</p>
+      {can(P.INVENTORY_READ) && (
+        <p className="notice">
+          Existencias, movimientos y costo promedio en{" "}
+          <Link href={`/stock/${id}`}>Inventario → Stock</Link>.
+        </p>
+      )}
+      <PresentationsPanel rawMaterialId={id} baseUnit={data.baseUnit} />
       <AuditHistory entityType="raw_material" entityId={id} version={version} />
     </div>
   );
