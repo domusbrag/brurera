@@ -66,9 +66,11 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       ...CATALOG_READ,
       P.CATEGORIES_MANAGE,
       P.RAW_MATERIALS_READ,
+      P.RAW_MATERIALS_UPDATE_COST,
       P.PRODUCTS_READ,
       P.PRODUCTS_UPDATE,
       P.WAREHOUSES_READ,
+      P.RECIPES_READ,
     ],
   },
   {
@@ -97,6 +99,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.RAW_MATERIALS_READ,
       P.RAW_MATERIALS_CREATE,
       P.RAW_MATERIALS_UPDATE,
+      P.RAW_MATERIALS_UPDATE_COST,
       P.WAREHOUSES_READ,
     ],
   },
@@ -110,6 +113,10 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.RAW_MATERIALS_READ,
       P.PRODUCTS_READ,
       P.WAREHOUSES_READ,
+      // Formula y edita borradores; publicar (volver vigente) queda para ADMIN/OWNER.
+      P.RECIPES_READ,
+      P.RECIPES_CREATE,
+      P.RECIPES_UPDATE,
     ],
   },
   {

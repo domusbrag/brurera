@@ -43,10 +43,10 @@ describe("validaciones de maestros", () => {
 
   it("costo por unidad base admite 6 decimales; cantidades 4", () => {
     const base = { name: "Harina", categoryId: UUID, baseUnitId: UUID };
-    expect(createRawMaterialSchema.parse({ ...base, currentCost: "0.123456" }).currentCost).toBe(
-      "0.123456",
-    );
-    expect(createRawMaterialSchema.safeParse({ ...base, currentCost: "0.1234567" }).success).toBe(
+    expect(
+      createRawMaterialSchema.parse({ ...base, referenceCost: "0.123456" }).referenceCost,
+    ).toBe("0.123456");
+    expect(createRawMaterialSchema.safeParse({ ...base, referenceCost: "0.1234567" }).success).toBe(
       false,
     );
     expect(createRawMaterialSchema.safeParse({ ...base, minimumStock: "1.12345" }).success).toBe(

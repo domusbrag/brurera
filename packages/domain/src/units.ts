@@ -1,4 +1,5 @@
-import Decimal from "decimal.js";
+import type Decimal from "decimal.js";
+import { D } from "./decimal";
 
 /**
  * Conversión explícita entre unidades de medida.
@@ -42,11 +43,11 @@ export function rootUnitId(unit: UnitForConversion): string {
 
 /** Factor hacia la raíz: cuántas unidades raíz equivalen a 1 de esta unidad. */
 export function factorToRoot(unit: UnitForConversion): Decimal {
-  if (unit.baseUnitId === null) return new Decimal(1);
+  if (unit.baseUnitId === null) return new D(1);
   if (unit.conversionFactor === null) {
     throw new InvalidUnitDefinitionError(`La unidad ${unit.code} tiene base pero no factor`);
   }
-  const factor = new Decimal(unit.conversionFactor);
+  const factor = new D(unit.conversionFactor);
   if (factor.lte(0)) {
     throw new InvalidUnitDefinitionError(`El factor de ${unit.code} debe ser mayor que cero`);
   }
@@ -67,7 +68,7 @@ export function convertQuantity(
   to: UnitForConversion,
 ): Decimal {
   if (!areUnitsCompatible(from, to)) throw new IncompatibleUnitsError(from.code, to.code);
-  return new Decimal(quantity).times(factorToRoot(from)).dividedBy(factorToRoot(to));
+  return new D(quantity).times(factorToRoot(from)).dividedBy(factorToRoot(to));
 }
 
 /**
@@ -89,7 +90,7 @@ export function validateDerivedUnit(
       `La unidad base ${base.code} es de otra dimensión (${base.dimension})`,
     );
   }
-  if (!new Decimal(conversionFactor).gt(0)) {
+  if (!new D(conversionFactor).gt(0)) {
     throw new InvalidUnitDefinitionError("El factor de conversión debe ser mayor que cero");
   }
 }

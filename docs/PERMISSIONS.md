@@ -89,12 +89,18 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | Materias primas | `raw_materials.create` | Dar de alta materias primas | ✅ | ✅ | — | — | ✅ | — | — |
 | Materias primas | `raw_materials.update` | Modificar materias primas | ✅ | ✅ | — | — | ✅ | — | — |
 | Materias primas | `raw_materials.deactivate` | Desactivar y reactivar materias primas | ✅ | ✅ | — | — | — | — | — |
+| Materias primas | `raw_materials.update_cost` | Cargar y cambiar el costo de referencia de materias primas | ✅ | ✅ | ✅ | — | ✅ | — | — |
 | Productos | `products.read` | Ver productos | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | Productos | `products.create` | Dar de alta productos | ✅ | ✅ | — | — | — | — | — |
 | Productos | `products.update` | Modificar productos y precios | ✅ | ✅ | ✅ | — | — | — | — |
 | Productos | `products.deactivate` | Desactivar y reactivar productos | ✅ | ✅ | — | — | — | — | — |
 | Depósitos | `warehouses.read` | Ver depósitos | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
 | Depósitos | `warehouses.manage` | Crear, modificar y desactivar depósitos | ✅ | ✅ | — | — | — | — | — |
+| Recetas | `recipes.read` | Ver recetas, versiones y costo teórico | ✅ | ✅ | ✅ | — | — | ✅ | — |
+| Recetas | `recipes.create` | Crear recetas y nuevas versiones | ✅ | ✅ | — | — | — | ✅ | — |
+| Recetas | `recipes.update` | Editar recetas y borradores de versiones (y descartarlos) | ✅ | ✅ | — | — | — | ✅ | — |
+| Recetas | `recipes.publish` | Publicar una versión (la vuelve vigente y archiva la anterior) | ✅ | ✅ | — | — | — | — | — |
+| Recetas | `recipes.archive` | Archivar versiones vigentes y desactivar o reactivar recetas | ✅ | ✅ | — | — | — | — | — |
 
 - **ADMIN** — Administrador del sistema: Acceso global, incluida la administración técnica.
 - **OWNER** — Dueño: Acceso global al negocio.

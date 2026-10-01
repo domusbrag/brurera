@@ -258,15 +258,29 @@ const rawMaterialFields = {
   baseUnitId: uuid(),
   minimumStock: quantitySchema().default("0"),
   preferredSupplierId: optionalUuid(),
-  currentCost: optionalUnitCostSchema(),
 };
+/** El costo inicial es opcional y exige además raw_materials.update_cost. */
 export const createRawMaterialSchema = z.object({
   code: optionalCodeSchema(),
   ...rawMaterialFields,
+  referenceCost: optionalUnitCostSchema(),
 });
+/** El costo de referencia NO se edita aquí: tiene endpoint y permiso propios. */
 export const updateRawMaterialSchema = withChanges(
   z.object({ ...rawMaterialFields, minimumStock: quantitySchema() }).partial(),
 );
+/**
+ * Costo de referencia: dinero por UNIDAD BASE ($850/kg). `null` lo borra (las
+ * recetas que lo usan pasan a costo incompleto). La clave es obligatoria: un
+ * body sin `referenceCost` no debe borrar el costo por accidente.
+ */
+export const referenceCostSchema = z
+  .custom<{ referenceCost?: string | number | null }>(
+    (v) => typeof v === "object" && v !== null && "referenceCost" in v,
+    { message: "Indique referenceCost (número o null)" },
+  )
+  .pipe(z.object({ referenceCost: optionalUnitCostSchema() }));
+export type ReferenceCostInput = z.infer<typeof referenceCostSchema>;
 
 /* ---------- Productos ---------- */
 

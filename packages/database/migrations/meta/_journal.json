@@ -36,6 +36,13 @@
       "when": 1790806965928,
       "tag": "0004_masters",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790814808023,
+      "tag": "0005_recipes",
+      "breakpoints": true
     }
   ]
 }

@@ -37,6 +37,7 @@ export const AUDIT_ACTION_LABELS = {
   RAW_MATERIAL_UPDATED: "Materia prima modificada",
   RAW_MATERIAL_DEACTIVATED: "Materia prima desactivada",
   RAW_MATERIAL_REACTIVATED: "Materia prima reactivada",
+  RAW_MATERIAL_REFERENCE_COST_CHANGED: "Costo de referencia modificado",
 
   PRODUCT_CREATED: "Producto creado",
   PRODUCT_UPDATED: "Producto modificado",
@@ -47,6 +48,16 @@ export const AUDIT_ACTION_LABELS = {
   WAREHOUSE_UPDATED: "Depósito modificado",
   WAREHOUSE_DEACTIVATED: "Depósito desactivado",
   WAREHOUSE_REACTIVATED: "Depósito reactivado",
+
+  RECIPE_CREATED: "Receta creada",
+  RECIPE_UPDATED: "Receta modificada",
+  RECIPE_DEACTIVATED: "Receta desactivada",
+  RECIPE_REACTIVATED: "Receta reactivada",
+  RECIPE_VERSION_CREATED: "Versión creada",
+  RECIPE_VERSION_UPDATED: "Borrador modificado",
+  RECIPE_VERSION_PUBLISHED: "Versión publicada",
+  RECIPE_VERSION_ARCHIVED: "Versión archivada",
+  RECIPE_VERSION_DISCARDED: "Borrador descartado",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;
