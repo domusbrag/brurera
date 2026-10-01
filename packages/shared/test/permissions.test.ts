@@ -13,8 +13,10 @@ describe("catálogo de permisos", () => {
     expect(new Set(ALL_PERMISSION_CODES).size).toBe(PERMISSION_CATALOG.length);
   });
 
-  it("usa el formato modulo.accion", () => {
-    for (const code of ALL_PERMISSION_CODES) expect(code).toMatch(/^[a-z_-]+\.[a-z_-]+$/);
+  it("usa el formato modulo.accion (o modulo.recurso.accion, como inventory.cost.read)", () => {
+    for (const code of ALL_PERMISSION_CODES) {
+      expect(code).toMatch(/^[a-z_-]+(\.[a-z_-]+){1,2}$/);
+    }
   });
 
   it("reconoce códigos válidos e inválidos", () => {
