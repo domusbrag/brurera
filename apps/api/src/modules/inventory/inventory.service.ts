@@ -8,6 +8,8 @@ import {
 } from "@bakery/domain";
 import {
   inventoryCostHistory,
+  productionOrders,
+  products,
   purchaseReceipts,
   purchases,
   rawMaterialInventoryCosts,
@@ -315,8 +317,12 @@ function referenceLabel(
   id: string | null,
   receiptNumber: string | null,
   purchaseNumber: string | null,
+  productionCode: string | null = null,
 ): StockMovementDto["reference"] {
   if (!type || !id) return null;
+  if (type === "PRODUCTION_ORDER") {
+    return { type, id, label: productionCode ?? "Orden de producción" };
+  }
   if (type === "PURCHASE_RECEIPT") {
     return {
       type,
@@ -329,7 +335,7 @@ function referenceLabel(
   return { type, id, label: type };
 }
 
-async function selectMovements(
+export async function selectMovements(
   db: Db,
   ctx: OperationContext,
   where: SQL | undefined,
@@ -340,6 +346,8 @@ async function selectMovements(
     .select({
       mv: stockMovements,
       material: { id: rawMaterials.id, code: rawMaterials.internalCode, name: rawMaterials.name },
+      product: { id: products.id, code: products.internalCode, name: products.name },
+      productionCode: productionOrders.internalCode,
       warehouse: { id: warehouses.id, code: warehouses.code, name: warehouses.name },
       unit: { id: unitsOfMeasure.id, code: unitsOfMeasure.code, symbol: unitsOfMeasure.symbol },
       actor: { id: users.id, displayName: users.displayName },
@@ -348,7 +356,8 @@ async function selectMovements(
       purchaseId: purchases.id,
     })
     .from(stockMovements)
-    .innerJoin(rawMaterials, eq(rawMaterials.id, stockMovements.rawMaterialId))
+    .leftJoin(rawMaterials, eq(rawMaterials.id, stockMovements.rawMaterialId))
+    .leftJoin(products, eq(products.id, stockMovements.productId))
     .innerJoin(warehouses, eq(warehouses.id, stockMovements.warehouseId))
     .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, stockMovements.baseUnitId))
     .leftJoin(users, eq(users.id, stockMovements.actorUserId))
@@ -360,6 +369,13 @@ async function selectMovements(
       ),
     )
     .leftJoin(purchases, eq(purchases.id, purchaseReceipts.purchaseId))
+    .leftJoin(
+      productionOrders,
+      and(
+        eq(stockMovements.referenceType, "PRODUCTION_ORDER"),
+        eq(productionOrders.id, stockMovements.referenceId),
+      ),
+    )
     .where(and(eq(stockMovements.companyId, ctx.companyId), where))
     .orderBy(desc(stockMovements.sequence))
     .limit(window.limit)
@@ -370,14 +386,20 @@ async function selectMovements(
       r.mv.referenceId,
       r.receiptNumber,
       r.purchaseNumber,
+      r.productionCode,
     );
+    const rawMaterial = r.material?.id ? r.material : null;
+    const product = r.product?.id ? r.product : null;
     return {
       id: r.mv.id,
       sequence: r.mv.sequence,
       occurredAt: r.mv.occurredAt.toISOString(),
       createdAt: r.mv.createdAt.toISOString(),
       movementType: r.mv.movementType,
-      rawMaterial: r.material,
+      itemType: r.mv.itemType,
+      item: (rawMaterial ?? product)!,
+      rawMaterial,
+      product,
       warehouse: r.warehouse,
       quantity: r.mv.quantity,
       baseUnit: r.unit,
@@ -404,6 +426,8 @@ export async function listMovements(
 ): Promise<Page<StockMovementDto>> {
   const where = and(
     query.rawMaterialId ? eq(stockMovements.rawMaterialId, query.rawMaterialId) : undefined,
+    query.productId ? eq(stockMovements.productId, query.productId) : undefined,
+    query.itemType ? eq(stockMovements.itemType, query.itemType) : undefined,
     query.warehouseId ? eq(stockMovements.warehouseId, query.warehouseId) : undefined,
     query.movementType ? eq(stockMovements.movementType, query.movementType) : undefined,
     query.referenceId ? eq(stockMovements.referenceId, query.referenceId) : undefined,
@@ -415,6 +439,8 @@ export async function listMovements(
       ? or(
           ilike(rawMaterials.name, likePattern(query.search)),
           ilike(rawMaterials.internalCode, likePattern(query.search)),
+          ilike(products.name, likePattern(query.search)),
+          ilike(products.internalCode, likePattern(query.search)),
         )
       : undefined,
   );
@@ -423,7 +449,8 @@ export async function listMovements(
     db
       .select({ n: count() })
       .from(stockMovements)
-      .innerJoin(rawMaterials, eq(rawMaterials.id, stockMovements.rawMaterialId))
+      .leftJoin(rawMaterials, eq(rawMaterials.id, stockMovements.rawMaterialId))
+      .leftJoin(products, eq(products.id, stockMovements.productId))
       .where(and(eq(stockMovements.companyId, ctx.companyId), where)),
   ]);
   return toPage(items, total?.n ?? 0, query);
@@ -618,7 +645,7 @@ async function operationTargets(
 }
 
 interface ManualOperation {
-  type: StockMovementType;
+  type: Exclude<StockMovementType, "PRODUCTION_CONSUMPTION" | "PRODUCTION_OUTPUT">;
   rawMaterialId: string;
   warehouseId: string;
   quantity: string;

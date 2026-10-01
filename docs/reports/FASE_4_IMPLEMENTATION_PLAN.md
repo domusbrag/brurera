@@ -14,20 +14,20 @@ NEXT_ALLOWED_PHASE      = FASE_4_PRODUCCION
 
 ## Inspección (qué hay y qué se reutiliza)
 
-| Pieza                         | Estado en Fase 3                                                                                                                                                      | Uso en Fase 4                                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `Recipe` / `RecipeVersion`    | Versiones `DRAFT → ACTIVE → ARCHIVED`; publicadas inmutables por trigger; `effective_from` / `archived_at`.                                                           | La orden fija `recipe_version_id` (sólo versiones publicadas).                                    |
-| `effective-version?at=`       | `findEffectiveVersion` (dominio) + endpoint.                                                                                                                          | Sugerencia de versión según la fecha programada.                                                  |
-| Costeo                        | `calculateRecipeCost`, `normalizeRecipeYield`, `selectEffectiveCost` (promedio → referencia → incompleto).                                                            | Escalado y costo esperado reutilizan conversión y prioridad de costo.                             |
-| `StockMovement`               | Ledger append-only con `item_type`, `raw_material_id`, `product_id`, CHECK "exactamente uno", FKs compuestas; enum sin tipos productivos.                             | Se agregan `PRODUCTION_CONSUMPTION` y `PRODUCTION_OUTPUT`.                                        |
-| `StockBalance`                | **Ya generalizado** en 0006: `item_type`, `raw_material_id?`, `product_id?`, CHECK de coherencia, únicos parciales por ítem y trigger custodio que compara el ítem. | Se usa tal cual para productos; sólo se agrega un índice por producto. Sin migración de datos.    |
-| Promedio móvil                | `applyInbound` / `applyOutbound` (dominio) + `raw_material_inventory_costs` custodiada por trigger.                                                                   | `applyInbound` se reutiliza para el producto (con valor de lote exacto).                          |
-| Ledger (`ledger.ts`)          | Única puerta de escritura; locks costo → saldo.                                                                                                                       | Se generaliza a productos (`postProductMovement`).                                                |
-| Depósitos, productos          | `controls_stock`, `sale_unit_id`, `active`.                                                                                                                           | Validaciones de producto producible.                                                              |
-| Permisos / auditoría          | Catálogo en `@bakery/shared`, roles de sistema, `recordAudit` en la misma transacción.                                                                                | 9 permisos nuevos y 10 acciones de auditoría.                                                     |
-| Locks / idempotencia          | `SELECT … FOR UPDATE` en orden fijo (ADR-034); único `(company_id, source_line_id)` (ADR-033).                                                                        | Mismo patrón; la línea de material y la orden son `source_line_id`.                               |
-| Tests Fase 3                  | Integración real contra Postgres, concurrencia con `Promise.all`, rollback por trigger de prueba.                                                                     | Mismo estilo.                                                                                     |
-| UX backlog                    | `docs/UX_BACKLOG.md`.                                                                                                                                                 | Se agregan hallazgos `[F4]`; no se ejecuta el rediseño.                                           |
+| Pieza                      | Estado en Fase 3                                                                                                                                                    | Uso en Fase 4                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `Recipe` / `RecipeVersion` | Versiones `DRAFT → ACTIVE → ARCHIVED`; publicadas inmutables por trigger; `effective_from` / `archived_at`.                                                         | La orden fija `recipe_version_id` (sólo versiones publicadas).                                 |
+| `effective-version?at=`    | `findEffectiveVersion` (dominio) + endpoint.                                                                                                                        | Sugerencia de versión según la fecha programada.                                               |
+| Costeo                     | `calculateRecipeCost`, `normalizeRecipeYield`, `selectEffectiveCost` (promedio → referencia → incompleto).                                                          | Escalado y costo esperado reutilizan conversión y prioridad de costo.                          |
+| `StockMovement`            | Ledger append-only con `item_type`, `raw_material_id`, `product_id`, CHECK "exactamente uno", FKs compuestas; enum sin tipos productivos.                           | Se agregan `PRODUCTION_CONSUMPTION` y `PRODUCTION_OUTPUT`.                                     |
+| `StockBalance`             | **Ya generalizado** en 0006: `item_type`, `raw_material_id?`, `product_id?`, CHECK de coherencia, únicos parciales por ítem y trigger custodio que compara el ítem. | Se usa tal cual para productos; sólo se agrega un índice por producto. Sin migración de datos. |
+| Promedio móvil             | `applyInbound` / `applyOutbound` (dominio) + `raw_material_inventory_costs` custodiada por trigger.                                                                 | `applyInbound` se reutiliza para el producto (con valor de lote exacto).                       |
+| Ledger (`ledger.ts`)       | Única puerta de escritura; locks costo → saldo.                                                                                                                     | Se generaliza a productos (`postProductMovement`).                                             |
+| Depósitos, productos       | `controls_stock`, `sale_unit_id`, `active`.                                                                                                                         | Validaciones de producto producible.                                                           |
+| Permisos / auditoría       | Catálogo en `@bakery/shared`, roles de sistema, `recordAudit` en la misma transacción.                                                                              | 9 permisos nuevos y 10 acciones de auditoría.                                                  |
+| Locks / idempotencia       | `SELECT … FOR UPDATE` en orden fijo (ADR-034); único `(company_id, source_line_id)` (ADR-033).                                                                      | Mismo patrón; la línea de material y la orden son `source_line_id`.                            |
+| Tests Fase 3               | Integración real contra Postgres, concurrencia con `Promise.all`, rollback por trigger de prueba.                                                                   | Mismo estilo.                                                                                  |
+| UX backlog                 | `docs/UX_BACKLOG.md`.                                                                                                                                               | Se agregan hallazgos `[F4]`; no se ejecuta el rediseño.                                        |
 
 Problema técnico detectado: el migrador de Drizzle aplica todas las migraciones pendientes en **una
 transacción**, y Postgres no permite usar un valor de enum agregado con `ALTER TYPE … ADD VALUE` en
@@ -109,12 +109,12 @@ Ejemplo §65: receta 100 kg → 75 kg harina / 0,8 kg sal; orden 200 kg → 150 
 
 ## Costos (cuatro conceptos distintos)
 
-| Concepto                | Dónde                          | Cuándo                         | Fuente                                                     |
-| ----------------------- | ------------------------------ | ------------------------------ | ---------------------------------------------------------- |
-| Costo teórico           | Receta / snapshot de versión   | Al publicar o en vivo          | Costo efectivo (promedio → referencia)                     |
-| Costo esperado          | Orden PLANNED (congelado)      | DRAFT → PLANNED                | Costo efectivo de ese momento, por línea con su origen     |
-| Costo material real     | Orden COMPLETED (congelado)    | Al completar                   | Σ `total_value` de los movimientos `PRODUCTION_CONSUMPTION` |
-| Costo promedio material | Inventario del producto        | Cada producción completada     | Promedio ponderado móvil de los lotes                      |
+| Concepto                | Dónde                        | Cuándo                     | Fuente                                                      |
+| ----------------------- | ---------------------------- | -------------------------- | ----------------------------------------------------------- |
+| Costo teórico           | Receta / snapshot de versión | Al publicar o en vivo      | Costo efectivo (promedio → referencia)                      |
+| Costo esperado          | Orden PLANNED (congelado)    | DRAFT → PLANNED            | Costo efectivo de ese momento, por línea con su origen      |
+| Costo material real     | Orden COMPLETED (congelado)  | Al completar               | Σ `total_value` de los movimientos `PRODUCTION_CONSUMPTION` |
+| Costo promedio material | Inventario del producto      | Cada producción completada | Promedio ponderado móvil de los lotes                       |
 
 `ACTUAL_UNIT_MATERIAL_COST = costo material real / cantidad real normalizada`. En la UI se llama
 "Costo material real" / "Costo por unidad"; nunca "costo total" (no incluye mano de obra, energía ni
@@ -124,7 +124,7 @@ indirectos).
 
 - `PRODUCTION_OUTPUT` (+ cantidad, depósito de salida) valorizado con el costo material real del
   lote: el valor del movimiento es **exactamente** el costo real (no `cantidad × unitario
-  redondeado`), así el valor del inventario conserva lo consumido.
+redondeado`), así el valor del inventario conserva lo consumido.
 - Promedio del producto con `applyInbound` (100 kg @ $1.000 + 100 kg @ $1.200 → 200 kg @ $1.100).
 - `stock_balances` ya es genérico: el saldo del producto por depósito usa las mismas filas y el
   mismo trigger custodio. Migración de saldos existentes: no hace falta (todos son
@@ -193,9 +193,10 @@ GET    /api/inventory/movements?itemType=PRODUCT
 
 `production_orders.read|create|update|plan|start|complete|cancel|add_extra_material`,
 `production.cost.read`. ADMIN/OWNER: todos. PRODUCCIÓN: todos menos costos. ADMINISTRACIÓN: lectura
-+ costos. DEPÓSITO: sólo `inventory.read` (sin cambios). COMPRAS: nada de producción. Sin
-`production.cost.read` la API devuelve `null` en todo campo monetario de producción (cantidades
-intactas); la valorización del inventario de producto sigue `inventory.cost.read` (ADR-036).
+
+- costos. DEPÓSITO: sólo `inventory.read` (sin cambios). COMPRAS: nada de producción. Sin
+  `production.cost.read` la API devuelve `null` en todo campo monetario de producción (cantidades
+  intactas); la valorización del inventario de producto sigue `inventory.cost.read` (ADR-036).
 
 ## UI
 

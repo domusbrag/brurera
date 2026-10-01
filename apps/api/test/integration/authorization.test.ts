@@ -23,7 +23,7 @@ import {
 
 const ANY_ID = "00000000-0000-4000-8000-000000000000";
 
-type Method = "GET" | "POST" | "PATCH" | "PUT";
+type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 const ENDPOINTS: [Method, string, PermissionCode[]][] = [
   ["GET", "/api/audit-logs", [P.AUDIT_READ]],
   ["GET", "/api/company", [P.COMPANY_READ]],
@@ -150,6 +150,42 @@ ENDPOINTS.push(
   ["POST", "/api/inventory/initial-stock", [P.INVENTORY_INITIAL_STOCK]],
   ["POST", "/api/inventory/adjustments", [P.INVENTORY_ADJUST]],
   ["POST", "/api/inventory/waste", [P.INVENTORY_WASTE]],
+  // Producto terminado (Fase 4)
+  ["GET", "/api/inventory/products", [P.INVENTORY_READ]],
+  ["GET", `/api/inventory/products/${ANY_ID}`, [P.INVENTORY_READ]],
+  [
+    "GET",
+    `/api/inventory/products/${ANY_ID}/cost-history`,
+    [P.INVENTORY_READ, P.INVENTORY_COST_READ],
+  ],
+  // Producción (Fase 4)
+  ["GET", "/api/production-orders", [P.PRODUCTION_ORDERS_READ]],
+  ["POST", "/api/production-orders", [P.PRODUCTION_ORDERS_CREATE]],
+  ["GET", `/api/production-orders/${ANY_ID}`, [P.PRODUCTION_ORDERS_READ]],
+  ["PATCH", `/api/production-orders/${ANY_ID}`, [P.PRODUCTION_ORDERS_UPDATE]],
+  ["POST", `/api/production-orders/${ANY_ID}/plan`, [P.PRODUCTION_ORDERS_PLAN]],
+  ["POST", `/api/production-orders/${ANY_ID}/start`, [P.PRODUCTION_ORDERS_START]],
+  ["POST", `/api/production-orders/${ANY_ID}/cancel`, [P.PRODUCTION_ORDERS_CANCEL]],
+  ["PUT", `/api/production-orders/${ANY_ID}/actuals`, [P.PRODUCTION_ORDERS_UPDATE]],
+  [
+    "POST",
+    `/api/production-orders/${ANY_ID}/extra-materials`,
+    [P.PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL],
+  ],
+  [
+    "DELETE",
+    `/api/production-orders/${ANY_ID}/extra-materials/${ANY_ID}`,
+    [P.PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL],
+  ],
+  ["POST", `/api/production-orders/${ANY_ID}/complete`, [P.PRODUCTION_ORDERS_COMPLETE]],
+  ["GET", `/api/production-orders/${ANY_ID}/availability`, [P.PRODUCTION_ORDERS_READ]],
+  [
+    "GET",
+    `/api/production-orders/${ANY_ID}/cost-comparison`,
+    [P.PRODUCTION_ORDERS_READ, P.PRODUCTION_COST_READ],
+  ],
+  ["GET", `/api/production-orders/${ANY_ID}/movements`, [P.PRODUCTION_ORDERS_READ]],
+  ["GET", "/api/production/responsibles", [P.PRODUCTION_ORDERS_READ]],
 );
 
 let ctx: TestContext;
@@ -185,7 +221,9 @@ describe("matriz de autorización (rol × endpoint)", () => {
               ? await api.post(url, {})
               : method === "PATCH"
                 ? await api.patch(url, {})
-                : await api.put(url, {});
+                : method === "PUT"
+                  ? await api.put(url, {})
+                  : await api.delete(url);
         const allowed = hasPermissions(role.permissions, required);
         const denied = res.statusCode === 403;
         if (allowed === denied || res.statusCode === 401 || res.statusCode >= 500) {

@@ -114,6 +114,15 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | Inventario | `inventory.cost.read` | Ver costo promedio, valorización e historial de costos del inventario | ✅ | ✅ | ✅ | — | ✅ | — | — |
 | Presentaciones de compra | `presentations.read` | Ver presentaciones de compra de materias primas | ✅ | ✅ | ✅ | — | ✅ | — | ✅ |
 | Presentaciones de compra | `presentations.manage` | Crear, modificar y desactivar presentaciones de compra | ✅ | ✅ | — | — | ✅ | — | — |
+| production | `production_orders.read` | Ver órdenes de producción, consumos y disponibilidad | ✅ | ✅ | ✅ | — | — | ✅ | — |
+| production | `production_orders.create` | Crear órdenes de producción (borrador) | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production_orders.update` | Editar órdenes en borrador y registrar consumos y salida reales | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production_orders.plan` | Planificar una orden (fija receta, cantidades y costo esperado) | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production_orders.start` | Iniciar la producción (revalida el stock de materias primas) | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production_orders.complete` | Completar la producción (consume materias primas e ingresa producto terminado) | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production_orders.cancel` | Cancelar órdenes de producción no completadas | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production_orders.add_extra_material` | Agregar y quitar consumos extra durante la producción | ✅ | ✅ | — | — | — | ✅ | — |
+| production | `production.cost.read` | Ver costos esperados y reales de producción | ✅ | ✅ | ✅ | — | — | — | — |
 
 - **ADMIN** — Administrador del sistema: Acceso global, incluida la administración técnica.
 - **OWNER** — Dueño: Acceso global al negocio.
