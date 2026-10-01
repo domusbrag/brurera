@@ -522,6 +522,8 @@ describe("costo incompleto (§14, §22)", () => {
       totalCost: null,
       unitCost: null,
       grossMargin: null,
+      // el precio se informa igual: lo que falta es el costo, no el precio
+      salePrice: "900.000000",
     });
     expect(current.missingCosts.map((m: { rawMaterialName: string }) => m.rawMaterialName)).toEqual(
       ["Levadura fresca"],

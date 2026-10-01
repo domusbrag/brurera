@@ -129,6 +129,7 @@ function selectVersions(db: Db) {
         currency: recipeCostSnapshots.currencyCode,
         totalCost: recipeCostSnapshots.totalCost,
         unitCost: recipeCostSnapshots.unitCost,
+        saleUnitSymbol: recipeCostSnapshots.saleUnitSymbol,
       },
     })
     .from(recipeVersions)

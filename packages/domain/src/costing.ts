@@ -244,6 +244,8 @@ export interface RecipeCostResult {
   saleUnit: UnitRef;
   /** Costo por unidad de venta; null si el costo está incompleto. */
   unitCost: Decimal | null;
+  /** Precio de venta del producto (por unidad de venta), si se indicó. */
+  salePrice: Decimal | null;
   /** null si el costo está incompleto o no se indicó precio. */
   grossMargin: GrossMargin | null;
 }
@@ -284,6 +286,8 @@ export function calculateRecipeCost(input: RecipeCostInput): RecipeCostResult {
     normalizedYield,
     saleUnit: unitRef(input.saleUnit),
     unitCost,
+    salePrice:
+      input.salePrice === null || input.salePrice === undefined ? null : new D(input.salePrice),
     grossMargin:
       unitCost !== null && input.salePrice !== null && input.salePrice !== undefined
         ? calculateGrossMargin(input.salePrice, unitCost)
@@ -401,6 +405,7 @@ export interface RecipeCostWire {
   normalizedYield: string;
   saleUnit: UnitRef;
   unitCost: string | null;
+  salePrice: string | null;
   grossMargin: { salePrice: string; amount: string; percentage: string | null } | null;
 }
 
@@ -435,6 +440,7 @@ export function recipeCostToWire(result: RecipeCostResult): RecipeCostWire {
     normalizedYield: toFixedString(result.normalizedYield, NORMALIZED_QUANTITY_SCALE),
     saleUnit: result.saleUnit,
     unitCost: fixed(result.unitCost, COST_SCALE),
+    salePrice: fixed(result.salePrice, COST_SCALE),
     grossMargin: result.grossMargin
       ? {
           salePrice: toFixedString(result.grossMargin.salePrice, COST_SCALE),

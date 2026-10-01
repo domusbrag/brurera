@@ -160,6 +160,8 @@ export interface TheoreticalCostDto {
   normalizedYield: string;
   saleUnit: UnitRefDto;
   unitCost: string | null;
+  /** Precio de venta vigente del producto; se muestra aunque el costo esté incompleto. */
+  salePrice: string | null;
   grossMargin: { salePrice: string; amount: string; percentage: string | null } | null;
 }
 
@@ -215,6 +217,7 @@ export interface RecipeVersionSummaryDto {
     currency: string;
     totalCost: string | null;
     unitCost: string | null;
+    saleUnitSymbol: string;
   } | null;
 }
 

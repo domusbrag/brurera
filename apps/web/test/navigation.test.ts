@@ -41,6 +41,15 @@ describe("menú según permisos", () => {
     expect(slugs).not.toContain("configuracion");
   });
 
+  it("Producción → Recetas aparece sólo con recipes.read", async () => {
+    const { visibleNavigation } = await import("@/lib/navigation");
+    const withRecipes = visibleNavigation(["recipes.read"]);
+    const production = withRecipes.find((g) => g.label === "Producción");
+    expect(production?.items.map((i) => i.slug)).toContain("recetas");
+    const without = visibleNavigation(["products.read"]).flatMap((g) => g.items.map((i) => i.slug));
+    expect(without).not.toContain("recetas");
+  });
+
   it("configuración aparece con cualquiera de sus permisos de lectura", async () => {
     const { visibleNavigation } = await import("@/lib/navigation");
     const slugs = visibleNavigation(["units.read"]).flatMap((g) => g.items.map((i) => i.slug));

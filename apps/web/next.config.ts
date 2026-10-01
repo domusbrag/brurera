@@ -12,7 +12,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  transpilePackages: ["@bakery/shared"],
+  transpilePackages: ["@bakery/shared", "@bakery/domain"],
   // El navegador solo habla con el origen web; /api se reenvía a la API.
   // Así la cookie de sesión es same-origin (SameSite=Lax, httpOnly).
   async rewrites() {

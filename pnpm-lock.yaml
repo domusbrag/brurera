@@ -96,6 +96,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@bakery/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@bakery/shared':
         specifier: workspace:*
         version: link:../../packages/shared
