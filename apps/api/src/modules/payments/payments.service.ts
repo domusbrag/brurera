@@ -741,6 +741,7 @@ export async function listReceivables(
     rows.map((r) => {
       const view = accountBalanceView(r.balance);
       return {
+        id: r.customer.id,
         customer: {
           id: r.customer.id,
           code: r.customer.internalCode,

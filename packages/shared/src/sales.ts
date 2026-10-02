@@ -565,6 +565,8 @@ export interface CustomerAccountDto {
 }
 
 export interface ReceivableDto {
+  /** Id del cliente (clave de la fila). */
+  id: string;
   customer: Ref;
   balance: string;
   balanceKind: AccountBalanceKindDto;

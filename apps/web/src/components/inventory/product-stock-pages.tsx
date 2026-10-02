@@ -135,7 +135,7 @@ export function ProductStockList() {
         ...(showCosts
           ? [
               {
-                header: "Costo promedio",
+                header: "Costo material promedio",
                 cell: (i: ProductStockItemDto) =>
                   formatReferenceCost(i.averageMaterialCost, currency, i.saleUnit.symbol),
                 className: "num hide-sm",

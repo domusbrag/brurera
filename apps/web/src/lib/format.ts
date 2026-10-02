@@ -12,7 +12,9 @@ const currencyPrefix = (currency: string) => (currency === "ARS" ? "$" : `${curr
 export function formatMoney(value: string | null | undefined, currency = "ARS"): string {
   if (value === null || value === undefined || value === "") return "—";
   const rounded = toFixedString(value, DISPLAY_MONEY_SCALE);
-  return `${currencyPrefix(currency)}${formatDecimal(rounded, 2, 2)}`;
+  // El signo va antes de la moneda: "-$7.500,00".
+  const sign = rounded.startsWith("-") && !/^-0(\.0+)?$/.test(rounded) ? "-" : "";
+  return `${sign}${currencyPrefix(currency)}${formatDecimal(rounded.replace(/^-/, ""), 2, 2)}`;
 }
 
 /**
