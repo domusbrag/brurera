@@ -804,4 +804,3 @@ de un éxito.
 solo ajuste: $100.000 → $80.000), reuso con otro monto / tipo / motivo / venta / cliente, rollback
 con falla inyectada después de la fila y reintento posterior con el mismo id, mismo id en otra
 empresa sin interferencia. Las filas históricas quedan con `operation_id` nulo.
-
