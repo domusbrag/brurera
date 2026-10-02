@@ -12,3 +12,4 @@ export * from "./people.js";
 export * from "./production.js";
 export * from "./purchasing.js";
 export * from "./recipes.js";
+export * from "./sales.js";

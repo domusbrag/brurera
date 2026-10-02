@@ -52,8 +52,9 @@ export const stockItemType = pgEnum("stock_item_type", ["RAW_MATERIAL", "PRODUCT
  * Tipos de movimiento. Fase 4 agrega PRODUCTION_CONSUMPTION (salida de materia
  * prima) y PRODUCTION_OUTPUT (ingreso de producto terminado). Fase 4.5 agrega
  * LOT_TRANSFORMATION_OUT / LOT_TRANSFORMATION_IN (cambio de conservación de un
- * lote: neto 0 en el producto) y habilita WASTE sobre lotes de producto. SALE y
- * RETURN quedan reservados para ventas.
+ * lote: neto 0 en el producto) y habilita WASTE sobre lotes de producto. Fase 5B
+ * agrega SALE (salida de producto terminado por lote al postear una venta);
+ * RETURN / SALE_REVERSAL quedan reservados hasta modelar devoluciones.
  *
  * Las restricciones comparan `movement_type::text`: el migrador aplica todo en
  * una transacción y Postgres no permite usar como literal un valor de enum
@@ -69,6 +70,7 @@ export const stockMovementType = pgEnum("stock_movement_type", [
   "PRODUCTION_OUTPUT",
   "LOT_TRANSFORMATION_OUT",
   "LOT_TRANSFORMATION_IN",
+  "SALE",
 ]);
 
 /**
@@ -169,7 +171,7 @@ export const stockMovements = pgTable(
     check(
       "stock_movements_sign",
       sql`(${t.movementType}::text in ('INITIAL_STOCK', 'PURCHASE_RECEIPT', 'ADJUSTMENT_POSITIVE', 'PRODUCTION_OUTPUT', 'LOT_TRANSFORMATION_IN') and ${t.quantity} > 0 and ${t.totalValue} >= 0)
-        or (${t.movementType}::text in ('ADJUSTMENT_NEGATIVE', 'WASTE', 'PRODUCTION_CONSUMPTION', 'LOT_TRANSFORMATION_OUT') and ${t.quantity} < 0 and ${t.totalValue} <= 0)`,
+        or (${t.movementType}::text in ('ADJUSTMENT_NEGATIVE', 'WASTE', 'PRODUCTION_CONSUMPTION', 'LOT_TRANSFORMATION_OUT', 'SALE') and ${t.quantity} < 0 and ${t.totalValue} <= 0)`,
     ),
     check("stock_movements_balance_nonneg", sql`${t.balanceAfter} >= 0`),
     check("stock_movements_unit_cost_nonneg", sql`${t.unitCost} >= 0`),
@@ -177,7 +179,7 @@ export const stockMovements = pgTable(
       "stock_movements_reason",
       sql`(${t.movementType}::text in ('ADJUSTMENT_POSITIVE', 'ADJUSTMENT_NEGATIVE') and ${t.reason} in ('PHYSICAL_COUNT', 'DATA_CORRECTION', 'BREAKAGE', 'OTHER'))
         or (${t.movementType}::text = 'WASTE' and ${t.reason} in ('EXPIRED', 'DAMAGED', 'PRODUCTION_LOSS', 'QUALITY', 'OTHER'))
-        or (${t.movementType}::text in ('INITIAL_STOCK', 'PURCHASE_RECEIPT', 'PRODUCTION_CONSUMPTION', 'PRODUCTION_OUTPUT', 'LOT_TRANSFORMATION_OUT', 'LOT_TRANSFORMATION_IN') and ${t.reason} is null)`,
+        or (${t.movementType}::text in ('INITIAL_STOCK', 'PURCHASE_RECEIPT', 'PRODUCTION_CONSUMPTION', 'PRODUCTION_OUTPUT', 'LOT_TRANSFORMATION_OUT', 'LOT_TRANSFORMATION_IN', 'SALE') and ${t.reason} is null)`,
     ),
     check(
       "stock_movements_receipt_reference",
@@ -193,10 +195,17 @@ export const stockMovements = pgTable(
               or (${t.movementType}::text = 'PRODUCTION_OUTPUT' and ${t.itemType} = 'PRODUCT')))`,
     ),
     // Producto terminado: entra por producción, cambia de conservación por lote y
-    // sale por merma de lote. Ventas (Fase 5B) ampliará esta lista.
+    // sale por merma de lote o por venta (Fase 5B).
     check(
       "stock_movements_product_types",
-      sql`${t.itemType} = 'RAW_MATERIAL' or ${t.movementType}::text in ('PRODUCTION_OUTPUT', 'LOT_TRANSFORMATION_OUT', 'LOT_TRANSFORMATION_IN', 'WASTE')`,
+      sql`${t.itemType} = 'RAW_MATERIAL' or ${t.movementType}::text in ('PRODUCTION_OUTPUT', 'LOT_TRANSFORMATION_OUT', 'LOT_TRANSFORMATION_IN', 'WASTE', 'SALE')`,
+    ),
+    // Venta: siempre de producto, con la venta como referencia y la asignación de lote
+    // como línea de origen (una sola vez por el único de source_line_id).
+    check(
+      "stock_movements_sale",
+      sql`${t.movementType}::text <> 'SALE'
+        or (${t.itemType} = 'PRODUCT' and ${t.referenceType} = 'SALE' and ${t.referenceId} is not null and ${t.sourceLineId} is not null)`,
     ),
     // Fase 4.5: todo movimiento de producto pertenece a un lote; materias primas, nunca.
     check(

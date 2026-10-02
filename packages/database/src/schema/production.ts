@@ -307,9 +307,13 @@ export const productionMaterialLines = pgTable(
 );
 
 /**
- * Costo de inventario por producto terminado a nivel EMPRESA: cantidad, valor y
- * promedio ponderado móvil de COSTO MATERIAL (sin mano de obra ni indirectos).
- * Proyección del ledger con el mismo trigger de coherencia que las materias primas.
+ * Costo de inventario por producto terminado a nivel EMPRESA: cantidad y valor
+ * de COSTO MATERIAL (sin mano de obra ni indirectos), proyección del ledger con
+ * el mismo trigger de coherencia que las materias primas. Desde Fase 5B el
+ * producto se valoriza por LOTE ESPECÍFICO (ADR-057): inventory_value = Σ valores
+ * de sus lotes y `average_material_cost` = valor / cantidad es una métrica
+ * DERIVADA (6 decimales, redondeo half-up; null sin stock), nunca el costo de una
+ * venta. Reemplaza a `moving_average_cost` (Fases 4–5A).
  */
 export const productInventoryCosts = pgTable(
   "product_inventory_costs",
@@ -320,7 +324,7 @@ export const productInventoryCosts = pgTable(
     productId: uuid().notNull(),
     quantity: normalizedQuantity().notNull().default("0"),
     inventoryValue: costAmount().notNull().default("0"),
-    movingAverageCost: costAmount(),
+    averageMaterialCost: costAmount(),
     lastMovementId: uuid(),
     lastUpdatedAt: timestamp({ withTimezone: true }),
   },
@@ -338,7 +342,7 @@ export const productInventoryCosts = pgTable(
     }).onDelete("restrict"),
     check(
       "product_inventory_costs_nonneg",
-      sql`${t.quantity} >= 0 and ${t.inventoryValue} >= 0 and (${t.movingAverageCost} is null or ${t.movingAverageCost} >= 0)`,
+      sql`${t.quantity} >= 0 and ${t.inventoryValue} >= 0 and (${t.averageMaterialCost} is null or ${t.averageMaterialCost} >= 0)`,
     ),
     check("product_inventory_costs_empty_value", sql`${t.quantity} > 0 or ${t.inventoryValue} = 0`),
   ],

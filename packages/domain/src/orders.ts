@@ -32,24 +32,36 @@ export const ORDER_STATUSES = [
   "CONFIRMED",
   "IN_PREPARATION",
   "READY",
+  "PARTIALLY_DELIVERED",
+  "DELIVERED",
   "CANCELLED",
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 /**
- * Transiciones permitidas. DELIVERED no existe todavía: la entrega se integra
- * con la venta en Fase 5B. CANCELLED es terminal.
+ * Transiciones permitidas. La entrega se registra con la venta (Fase 5B):
+ * READY → PARTIALLY_DELIVERED → DELIVERED. DELIVERED y CANCELLED son terminales.
  */
 export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
   DRAFT: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["IN_PREPARATION", "READY", "CANCELLED"],
   IN_PREPARATION: ["READY", "CANCELLED"],
-  READY: ["IN_PREPARATION", "CANCELLED"],
+  READY: ["IN_PREPARATION", "PARTIALLY_DELIVERED", "DELIVERED", "CANCELLED"],
+  PARTIALLY_DELIVERED: ["DELIVERED", "CANCELLED"],
+  DELIVERED: [],
   CANCELLED: [],
 };
 
 /** Estados que comprometen stock y generan demanda (DRAFT y CANCELLED no). */
-export const DEMAND_STATUSES = ["CONFIRMED", "IN_PREPARATION", "READY"] as const;
+export const DEMAND_STATUSES = [
+  "CONFIRMED",
+  "IN_PREPARATION",
+  "READY",
+  "PARTIALLY_DELIVERED",
+] as const;
+
+/** Estados desde los que se puede registrar una entrega (venta desde pedido). */
+export const DELIVERABLE_STATUSES = ["READY", "PARTIALLY_DELIVERED"] as const;
 
 export function isDemandStatus(status: OrderStatus): boolean {
   return (DEMAND_STATUSES as readonly string[]).includes(status);
@@ -84,6 +96,8 @@ const STATUS_WORDS: Record<OrderStatus, string> = {
   CONFIRMED: "confirmado",
   IN_PREPARATION: "en preparación",
   READY: "listo",
+  PARTIALLY_DELIVERED: "entregado parcialmente",
+  DELIVERED: "entregado",
   CANCELLED: "cancelado",
 };
 

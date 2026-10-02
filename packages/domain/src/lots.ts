@@ -228,10 +228,10 @@ export function lotOutflow(args: {
 }
 
 /**
- * Aplica al costo agregado del producto un movimiento de lote (transformación o
- * merma) con valor dado: cambia cantidad y valor, NUNCA el promedio móvil (igual
- * criterio que el resto de las salidas). El promedio sólo se recalcula al
- * ingresar producción nueva.
+ * Aplica al costo agregado del producto un movimiento de lote (transformación,
+ * merma o venta) con valor dado: cambia cantidad y valor, y el promedio se
+ * recalcula como métrica derivada valor / cantidad (ADR-057; null sin stock).
+ * El valor del producto es Σ valor de sus lotes (identificación específica).
  */
 export function applyLotMovement(
   state: InventoryCostState,
@@ -254,6 +254,7 @@ export function applyLotMovement(
     );
   }
   const unitCost = quantity.isZero() ? new D(0) : value.abs().dividedBy(quantity.abs());
+  const derived = afterQty.gt(0) ? money6(afterValue.dividedBy(afterQty)) : null;
   return {
     quantity,
     unitCost: money6(unitCost),
@@ -262,9 +263,11 @@ export function applyLotMovement(
     after: {
       quantity: afterQty,
       inventoryValue: afterValue,
-      movingAverageCost: before.movingAverageCost,
+      movingAverageCost: derived,
     },
-    averageChanged: false,
+    averageChanged:
+      (before.movingAverageCost === null) !== (derived === null) ||
+      (derived !== null && before.movingAverageCost !== null && !derived.eq(before.movingAverageCost)),
   };
 }
 

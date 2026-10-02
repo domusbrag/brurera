@@ -76,7 +76,11 @@ async function fase4Database(url: string) {
   try {
     companyId = (
       await handle.db.transaction((tx) =>
-        provisionCompany(tx, { legalName: "Fase 4 S.A.", tradeName: "Panadería Fase 4" }),
+        provisionCompany(
+          tx,
+          { legalName: "Fase 4 S.A.", tradeName: "Panadería Fase 4" },
+          { walkInCustomer: false },
+        ),
       )
     ).id;
   } finally {

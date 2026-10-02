@@ -144,7 +144,11 @@ beforeAll(async () => {
   try {
     companyId = (
       await handle.db.transaction((tx) =>
-        provisionCompany(tx, { legalName: "Fase 3 S.A.", tradeName: "Panadería Fase 3" }),
+        provisionCompany(
+          tx,
+          { legalName: "Fase 3 S.A.", tradeName: "Panadería Fase 3" },
+          { walkInCustomer: false },
+        ),
       )
     ).id;
   } finally {

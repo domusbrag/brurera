@@ -16,7 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { unitsOfMeasure } from "./catalog.js";
 import { customers } from "./commercial.js";
-import { createdAt, id, normalizedQuantity, recipeQuantity, updatedAt } from "./common.js";
+import { createdAt, id, money, normalizedQuantity, recipeQuantity, updatedAt } from "./common.js";
 import { companies } from "./company.js";
 import { products, rawMaterials } from "./items.js";
 import { productLots } from "./lots.js";
@@ -41,6 +41,23 @@ export const customerOrderStatus = pgEnum("customer_order_status", [
   "IN_PREPARATION",
   "READY",
   "CANCELLED",
+  // Fase 5B: entrega (una o varias ventas desde el pedido).
+  "PARTIALLY_DELIVERED",
+  "DELIVERED",
+]);
+/**
+ * Cotización del pedido (Fase 5B, ADR-060): UNPRICED = sin precio (pedidos de
+ * Fase 5A; no se inventa); QUOTED = borrador con el precio vigente;
+ * AGREED = congelado al confirmar (o al cotizar explícitamente un pedido sin precio).
+ */
+export const orderPricingStatus = pgEnum("order_pricing_status", ["UNPRICED", "QUOTED", "AGREED"]);
+/** De dónde salió un precio (cotización del pedido, listas, precio del producto o manual). */
+export const priceSource = pgEnum("price_source", [
+  "ORDER_QUOTE",
+  "CUSTOMER_PRICE_LIST",
+  "DEFAULT_PRICE_LIST",
+  "PRODUCT_PRICE",
+  "MANUAL",
 ]);
 export const orderCoverageStatus = pgEnum("order_coverage_status", [
   "FULLY_COVERED",
@@ -119,9 +136,24 @@ export const customerOrders = pgTable(
     cancelledByUserId: uuid().references(() => users.id, { onDelete: "restrict" }),
     cancelledAt: timestamp({ withTimezone: true }),
     cancelReason: text(),
+    /* Fase 5B: cotización y entrega. */
+    pricingStatus: orderPricingStatus().notNull().default("QUOTED"),
+    /**
+     * Lista con que se cotizó (informativa: el precio de cada línea queda congelado).
+     * FK compuesta declarada sólo en la migración 0010 (evita el ciclo orders ↔ sales).
+     */
+    priceListId: uuid(),
+    quotedSubtotal: money(),
+    quotedDiscountTotal: money(),
+    quotedTotal: money(),
+    firstDeliveredAt: timestamp({ withTimezone: true }),
+    deliveredAt: timestamp({ withTimezone: true }),
+    deliveredByUserId: uuid().references(() => users.id, { onDelete: "restrict" }),
   },
   (t) => [
     unique("customer_orders_company_id_uq").on(t.companyId, t.id),
+    // Destino de FKs que exigen el mismo cliente (ventas y señas del pedido).
+    unique("customer_orders_company_id_customer_uq").on(t.companyId, t.id, t.customerId),
     uniqueIndex("customer_orders_company_code_uq").on(t.companyId, t.internalCode),
     index("customer_orders_company_requested_idx").on(t.companyId, t.requestedAt),
     index("customer_orders_company_status_requested_idx").on(t.companyId, t.status, t.requestedAt),
@@ -132,11 +164,31 @@ export const customerOrders = pgTable(
       columns: [t.companyId, t.customerId],
       foreignColumns: [customers.companyId, customers.id],
     }).onDelete("restrict"),
+    // Estados comparados como texto: PARTIALLY_DELIVERED / DELIVERED se agregan en la
+    // misma transacción de la migración 0010.
     check(
       "customer_orders_status_data",
-      sql`(${t.status} = 'DRAFT' and ${t.planRevision} = 0 and ${t.coverageStatus} is null and ${t.confirmedAt} is null and ${t.cancelledAt} is null)
-        or (${t.status} in ('CONFIRMED', 'IN_PREPARATION', 'READY') and ${t.planRevision} >= 1 and ${t.coverageStatus} is not null and ${t.confirmedAt} is not null and ${t.cancelledAt} is null)
-        or (${t.status} = 'CANCELLED' and ${t.cancelledAt} is not null)`,
+      sql`(${t.status}::text = 'DRAFT' and ${t.planRevision} = 0 and ${t.coverageStatus} is null and ${t.confirmedAt} is null and ${t.cancelledAt} is null)
+        or (${t.status}::text in ('CONFIRMED', 'IN_PREPARATION', 'READY', 'PARTIALLY_DELIVERED', 'DELIVERED') and ${t.planRevision} >= 1 and ${t.coverageStatus} is not null and ${t.confirmedAt} is not null and ${t.cancelledAt} is null)
+        or (${t.status}::text = 'CANCELLED' and ${t.cancelledAt} is not null)`,
+    ),
+    check(
+      "customer_orders_delivery",
+      sql`(${t.status}::text in ('PARTIALLY_DELIVERED', 'DELIVERED')) = (${t.firstDeliveredAt} is not null) or ${t.status}::text = 'CANCELLED'`,
+    ),
+    check(
+      "customer_orders_delivered",
+      sql`(${t.status}::text = 'DELIVERED') = (${t.deliveredAt} is not null)`,
+    ),
+    check(
+      "customer_orders_pricing",
+      sql`(${t.pricingStatus} = 'UNPRICED' and ${t.quotedTotal} is null and ${t.quotedSubtotal} is null and ${t.quotedDiscountTotal} is null)
+        or (${t.pricingStatus} in ('QUOTED', 'AGREED') and ${t.quotedTotal} is not null and ${t.quotedSubtotal} is not null and ${t.quotedDiscountTotal} is not null
+            and ${t.quotedTotal} = ${t.quotedSubtotal} - ${t.quotedDiscountTotal} and ${t.quotedTotal} >= 0)`,
+    ),
+    check(
+      "customer_orders_agreed_when_confirmed",
+      sql`${t.pricingStatus} <> 'QUOTED' or ${t.status}::text in ('DRAFT', 'CANCELLED')`,
     ),
     check(
       "customer_orders_ready_covered",
@@ -170,6 +222,12 @@ export const customerOrderLines = pgTable(
     removedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /* Fase 5B: precio cotizado por unidad de venta (null si el pedido no tiene precio). */
+    quotedUnitPrice: money(),
+    quotedDiscountAmount: money(),
+    quotedNetAmount: money(),
+    priceSource: priceSource(),
+    priceOverrideReason: text(),
   },
   (t) => [
     unique("customer_order_lines_company_id_uq").on(t.companyId, t.id),
@@ -202,14 +260,25 @@ export const customerOrderLines = pgTable(
       "customer_order_lines_quantities",
       sql`${t.requestedQuantity} > 0 and ${t.normalizedQuantity} > 0`,
     ),
+    check(
+      "customer_order_lines_quote",
+      sql`(${t.quotedUnitPrice} is null and ${t.quotedDiscountAmount} is null and ${t.quotedNetAmount} is null and ${t.priceSource} is null)
+        or (${t.quotedUnitPrice} >= 0 and ${t.quotedDiscountAmount} >= 0 and ${t.quotedNetAmount} >= 0 and ${t.priceSource} is not null)`,
+    ),
+    check(
+      "customer_order_lines_override_reason",
+      sql`${t.priceSource} is distinct from 'MANUAL' or (${t.priceOverrideReason} is not null and length(trim(${t.priceOverrideReason})) > 0)`,
+    ),
   ],
 );
 
 /**
  * Reserva DURA de producto terminado sobre un LOTE (no sobre el producto): este
  * stock está comprometido comercialmente con el pedido. No es un movimiento de
- * stock. Σ reservas ACTIVE de un lote ≤ saldo del lote (trigger). Inmutable
- * salvo el paso ACTIVE → RELEASED / INVALIDATED / FULFILLED.
+ * stock. Comprometido = quantity − fulfilled_quantity de las ACTIVE; Σ por lote ≤
+ * saldo del lote (trigger). Inmutable salvo el cumplimiento por ventas (Fase 5B:
+ * fulfilled_quantity sólo crece) y el paso ACTIVE → RELEASED / INVALIDATED /
+ * FULFILLED (FULFILLED ⇔ cumplida por completo).
  */
 export const productLotReservations = pgTable(
   "product_lot_reservations",
@@ -233,6 +302,8 @@ export const productLotReservations = pgTable(
     /** Reserva reducida por una merma: la nueva reemplaza (por menos) a la invalidada. */
     replacesReservationId: uuid(),
     createdByUserId: uuid().references(() => users.id, { onDelete: "restrict" }),
+    /** Cantidad ya entregada por ventas desde esta reserva (Fase 5B). */
+    fulfilledQuantity: normalizedQuantity().notNull().default("0"),
   },
   (t) => [
     unique("product_lot_reservations_company_id_uq").on(t.companyId, t.id),
@@ -283,6 +354,12 @@ export const productLotReservations = pgTable(
       foreignColumns: [t.companyId, t.id],
     }).onDelete("restrict"),
     check("product_lot_reservations_quantity", sql`${t.quantity} > 0 and ${t.planRevision} >= 1`),
+    check(
+      "product_lot_reservations_fulfilled",
+      sql`${t.fulfilledQuantity} >= 0 and ${t.fulfilledQuantity} <= ${t.quantity}
+        and (${t.status} <> 'FULFILLED' or ${t.fulfilledQuantity} = ${t.quantity})
+        and (${t.status} <> 'ACTIVE' or ${t.fulfilledQuantity} < ${t.quantity})`,
+    ),
     check(
       "product_lot_reservations_release",
       sql`(${t.status} = 'ACTIVE' and ${t.releasedAt} is null and ${t.releaseReason} is null)
