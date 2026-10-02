@@ -13009,7 +13009,8 @@
         "ORDER_CANCELLED",
         "ORDER_REPLANNED",
         "LOT_BLOCKED",
-        "LOT_WASTE"
+        "LOT_WASTE",
+        "ORDER_DELIVERED"
       ]
     },
     "public.document_type": {

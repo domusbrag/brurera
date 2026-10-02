@@ -18,13 +18,16 @@ import { healthRoutes } from "./modules/health/health.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { lotRoutes } from "./modules/lots/lots.routes.js";
 import { orderRoutes } from "./modules/orders/orders.routes.js";
+import { priceListRoutes } from "./modules/price-lists/price-lists.routes.js";
 import { presentationRoutes } from "./modules/presentations/presentations.routes.js";
 import { productRoutes } from "./modules/products/products.routes.js";
 import { productionRoutes } from "./modules/production/production.routes.js";
 import { purchaseRoutes } from "./modules/purchases/purchases.routes.js";
+import { paymentRoutes } from "./modules/payments/payments.routes.js";
 import { rawMaterialRoutes } from "./modules/raw-materials/raw-materials.routes.js";
 import { recipeRoutes } from "./modules/recipes/recipes.routes.js";
 import { roleRoutes } from "./modules/roles/roles.routes.js";
+import { saleRoutes } from "./modules/sales/sales.routes.js";
 import { supplierRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { unitRoutes } from "./modules/units/units.routes.js";
 import { userRoutes } from "./modules/users/users.routes.js";
@@ -124,6 +127,9 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
         inventoryRoutes,
         lotRoutes,
         orderRoutes,
+        priceListRoutes,
+        saleRoutes,
+        paymentRoutes,
       ]) {
         await api.register(routes, { db });
       }

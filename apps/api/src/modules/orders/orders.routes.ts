@@ -8,6 +8,7 @@ import {
   materialDemandQuerySchema,
   orderListQuerySchema,
   planningQuerySchema,
+  quoteOrderSchema,
   replanOrderSchema,
   replanPreviewSchema,
   updateOrderSchema,
@@ -108,6 +109,18 @@ export async function orderRoutes(app: FastifyInstance, { db }: { db: Database }
   );
   app.post("/orders/:id/mark-ready", { preHandler: requirePermission(P.ORDERS_READY) }, (req) =>
     orders.markReady(db, operationContext(req), orderId(req.params), viewer(req)),
+  );
+  app.post(
+    "/orders/:id/quote",
+    { preHandler: requirePermission(P.ORDERS_UPDATE, P.PRICE_LISTS_READ) },
+    (req) =>
+      orders.quoteOrder(
+        db,
+        operationContext(req),
+        orderId(req.params),
+        parseInput(quoteOrderSchema, req.body ?? {}),
+        viewer(req),
+      ),
   );
 
   /* ---- Planificación ---- */

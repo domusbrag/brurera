@@ -30,6 +30,8 @@ const STATUS_CLASS: Record<OrderStatusDto, string> = {
   CONFIRMED: "badge--info",
   IN_PREPARATION: "badge--warn",
   READY: "",
+  PARTIALLY_DELIVERED: "badge--info",
+  DELIVERED: "",
   CANCELLED: "badge--off",
 };
 

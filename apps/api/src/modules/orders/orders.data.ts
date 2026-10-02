@@ -2,14 +2,18 @@ import { D, findEffectiveVersion, availabilityForOrder, type CoverageStatus } fr
 import {
   customerOrderLines,
   customerOrders,
+  customerPayments,
   customers,
   orderMaterialRequirements,
+  priceLists,
   orderProductionRequirements,
   productLotReservations,
   productLots,
   productionOrders,
   products,
   rawMaterials,
+  saleLines,
+  sales,
   stockBalances,
   suppliers,
   type Database,
@@ -37,7 +41,8 @@ import { forAvailability, selectLots } from "../lots/lots.data.js";
 import { loadVersions } from "../production/production.data.js";
 import { companyCurrency, loadUnits, unitOrThrow, type UnitRow } from "../recipes/recipes.data.js";
 import { fixedQty } from "../inventory/ledger.js";
-import { committedByLot } from "./reservations.js";
+import { resolvePrices } from "../price-lists/pricing.js";
+import { committedByLot, reservationRemaining } from "./reservations.js";
 
 /*
  * Lecturas de pedidos (Fase 5A). Ninguna escribe: la cobertura que se muestra
@@ -51,7 +56,11 @@ export type OrderRow = typeof customerOrders.$inferSelect;
 export type LineRow = typeof customerOrderLines.$inferSelect;
 type Dec = InstanceType<typeof D>;
 
-export const DEMAND = ["CONFIRMED", "IN_PREPARATION", "READY"] as const;
+export const DEMAND = ["CONFIRMED", "IN_PREPARATION", "READY", "PARTIALLY_DELIVERED"] as const;
+/** Estados desde los que se registra una entrega (venta desde pedido). */
+export const DELIVERABLE = ["READY", "PARTIALLY_DELIVERED"] as const;
+export const isDeliverable = (status: OrderRow["status"]) =>
+  (DELIVERABLE as readonly string[]).includes(status);
 export const isDemand = (status: OrderRow["status"]) =>
   (DEMAND as readonly string[]).includes(status);
 export const OPEN_REQUIREMENT = ["OPEN", "PRODUCTION_CREATED"] as const;
@@ -72,7 +81,7 @@ const show = (v: Dec | string) => new D(v).toDecimalPlaces(6).toString();
 // Columnas calificadas a mano: en un select de una sola tabla Drizzle las
 // emite sin tabla y dentro del subquery se resolverían contra `r`.
 export const effectiveCoverage = sql<CoverageStatus | null>`case
-  when "customer_orders"."status" in ('CONFIRMED', 'IN_PREPARATION', 'READY') and exists (
+  when "customer_orders"."status" in ('CONFIRMED', 'IN_PREPARATION', 'READY', 'PARTIALLY_DELIVERED') and exists (
     select 1 from product_lot_reservations r
     where r.company_id = "customer_orders"."company_id"
       and r.customer_order_id = "customer_orders"."id"
@@ -134,6 +143,58 @@ export async function activeReservations(
     )
     .orderBy(asc(productLotReservations.id));
   return lock ? query.for("update") : query;
+}
+
+/**
+ * Entregado por línea del pedido: Σ cantidades (unidad de venta) de las líneas
+ * de ventas CONFIRMADAS que la referencian.
+ */
+export async function deliveredByLine(
+  db: Db,
+  ctx: OperationContext,
+  orderId: string,
+): Promise<Map<string, Dec>> {
+  const rows = await db
+    .select({
+      lineId: saleLines.sourceOrderLineId,
+      quantity: sql<string>`sum(${saleLines.normalizedQuantity})`,
+    })
+    .from(saleLines)
+    .innerJoin(sales, and(eq(sales.companyId, saleLines.companyId), eq(sales.id, saleLines.saleId)))
+    .where(
+      and(
+        eq(saleLines.companyId, ctx.companyId),
+        eq(sales.sourceOrderId, orderId),
+        eq(sales.status, "POSTED"),
+      ),
+    )
+    .groupBy(saleLines.sourceOrderLineId);
+  return new Map(rows.filter((r) => r.lineId).map((r) => [r.lineId!, new D(r.quantity)]));
+}
+
+/** Señas de un pedido: total cobrado, ya aplicado a ventas y disponible. */
+export async function orderAdvances(db: Db, ctx: OperationContext, orderId: string) {
+  const rows = await db
+    .select({
+      id: customerPayments.id,
+      code: customerPayments.internalCode,
+      paymentDate: customerPayments.paymentDate,
+      amount: customerPayments.amount,
+      method: customerPayments.paymentMethod,
+      applied: sql<string>`(select coalesce(sum(a.amount), 0) from customer_payment_applications a where a.company_id = ${customerPayments.companyId} and a.payment_id = ${customerPayments.id})`,
+    })
+    .from(customerPayments)
+    .where(
+      and(
+        eq(customerPayments.companyId, ctx.companyId),
+        eq(customerPayments.sourceOrderId, orderId),
+        eq(customerPayments.kind, "ORDER_ADVANCE"),
+      ),
+    )
+    .orderBy(asc(customerPayments.paymentDate), asc(customerPayments.internalCode));
+  const total = rows.reduce((s, r) => s.plus(r.amount), new D(0));
+  const applied = rows.reduce((s, r) => s.plus(r.applied), new D(0));
+  return { rows, total, applied, available: total.minus(applied) };
 }
 
 /** Necesidades que todavía son demanda (pendientes o con orden de producción en curso). */
@@ -432,17 +493,27 @@ export async function getOrderDetail(
   const active = reservations.filter((r) => r.status === "ACTIVE");
   const ownByLot = new Map<string, Dec>();
   for (const r of active) {
-    ownByLot.set(r.productLotId, (ownByLot.get(r.productLotId) ?? new D(0)).plus(r.quantity));
+    ownByLot.set(
+      r.productLotId,
+      (ownByLot.get(r.productLotId) ?? new D(0)).plus(reservationRemaining(r)),
+    );
   }
 
   const openReqs = requirements.filter((r) =>
     (OPEN_REQUIREMENT as readonly string[]).includes(r.r.status),
   );
+  const delivered = await deliveredByLine(db, ctx, order.id);
+  const seePrices = can(P.PRICE_LISTS_READ);
+  const currentPrices = seePrices
+    ? await resolvePrices(db, ctx, order.customerId, productIds)
+    : new Map<string, { unitPrice: string }>();
   const lineDtos: OrderLineDto[] = lines.map((line) => {
     const saleUnit = unitOrThrow(units, line.saleUnitId);
     const reserved = active
       .filter((r) => r.orderLineId === line.id)
-      .reduce((s, r) => s.plus(r.quantity), new D(0));
+      .reduce((s, r) => s.plus(reservationRemaining(r)), new D(0));
+    const lineDelivered = delivered.get(line.id) ?? new D(0);
+    const pendingDelivery = D.max(new D(line.normalizedQuantity).minus(lineDelivered), 0);
     const mine = openReqs.filter((r) => r.r.orderLineId === line.id);
     const toProduce = mine
       .filter((r) => r.r.problem === null)
@@ -467,7 +538,7 @@ export async function getOrderDetail(
       committedByOthers = qty(view.committedQuantity);
       // Libre HOY además de lo que ya reservó este pedido: sólo se usa si se recalcula.
       const freeNow = D.max(view.availableQuantity.minus(reserved), 0);
-      const pending = D.max(new D(line.normalizedQuantity).minus(reserved), 0);
+      const pending = D.max(pendingDelivery.minus(reserved), 0);
       newlyAvailable = D.min(freeNow, pending);
     }
     const product = productById.get(line.productId)!;
@@ -481,7 +552,21 @@ export async function getOrderDetail(
       saleUnit: unitRef(saleUnit),
       requestedConservation: line.requestedConservation,
       notes: line.notes,
-      informativePrice: product.salePrice,
+      informativePrice: seePrices
+        ? (currentPrices.get(line.productId)?.unitPrice ?? product.salePrice)
+        : null,
+      price:
+        seePrices && line.quotedUnitPrice !== null && line.priceSource !== null
+          ? {
+              unitPrice: line.quotedUnitPrice,
+              discountAmount: line.quotedDiscountAmount ?? "0.00",
+              netAmount: line.quotedNetAmount ?? "0.00",
+              priceSource: line.priceSource,
+              overrideReason: line.priceOverrideReason,
+            }
+          : null,
+      delivered: qty(lineDelivered),
+      pendingDelivery: qty(pendingDelivery),
       physical,
       eligible,
       committedByOthers,
@@ -506,6 +591,7 @@ export async function getOrderDetail(
         warehouse: lot.warehouse,
       },
       quantity: r.quantity,
+      fulfilledQuantity: r.fulfilledQuantity,
       unit: unitRef(unitOrThrow(units, r.unitId)),
       planRevision: r.planRevision,
       status: r.status,
@@ -692,6 +778,41 @@ export async function getOrderDetail(
       : null;
   const local = instantToZonedLocal(order.requestedAt, ctx.timezone);
 
+  /* Comercial (Fase 5B): precio acordado, señas, ventas y entregas. */
+  const [priceList] = order.priceListId
+    ? await db
+        .select({ id: priceLists.id, code: priceLists.code, name: priceLists.name })
+        .from(priceLists)
+        .where(and(eq(priceLists.companyId, ctx.companyId), eq(priceLists.id, order.priceListId)))
+    : [];
+  const advances = can(P.PAYMENTS_READ) ? await orderAdvances(db, ctx, order.id) : null;
+  const orderSales = can(P.SALES_READ)
+    ? await db
+        .select({
+          id: sales.id,
+          code: sales.internalCode,
+          status: sales.status,
+          paymentStatus: sales.paymentStatus,
+          date: sql<Date>`coalesce(${sales.saleDate}, ${sales.createdAt})`,
+          total: sales.total,
+        })
+        .from(sales)
+        .where(and(eq(sales.companyId, ctx.companyId), eq(sales.sourceOrderId, order.id)))
+        .orderBy(asc(sales.createdAt))
+    : null;
+  const deliverable = isDeliverable(order.status);
+  const unpriced = order.pricingStatus === "UNPRICED";
+  const deliverBlockedReason = !deliverable
+    ? order.status === "DELIVERED"
+      ? "El pedido ya se entregó por completo."
+      : order.status === "CANCELLED"
+        ? null
+        : "Sólo se entrega un pedido listo (con todo el producto reservado)."
+    : unpriced
+      ? "El pedido no tiene precio acordado: cotizalo antes de entregar."
+      : null;
+  const open = order.status !== "CANCELLED" && order.status !== "DELIVERED";
+
   return {
     id: order.id,
     code: order.internalCode,
@@ -731,11 +852,44 @@ export async function getOrderDetail(
     productionRequirements: requirementDtos,
     materials,
     issues,
+    commercial: {
+      pricingStatus: order.pricingStatus,
+      priceList: priceList ?? null,
+      quotedSubtotal: seePrices ? order.quotedSubtotal : null,
+      quotedDiscountTotal: seePrices ? order.quotedDiscountTotal : null,
+      quotedTotal: seePrices ? order.quotedTotal : null,
+      firstDeliveredAt: order.firstDeliveredAt?.toISOString() ?? null,
+      deliveredAt: order.deliveredAt?.toISOString() ?? null,
+      advances: advances
+        ? {
+            total: advances.total.toFixed(2),
+            applied: advances.applied.toFixed(2),
+            available: advances.available.toFixed(2),
+            payments: advances.rows.map((r) => ({
+              id: r.id,
+              code: r.code,
+              paymentDate: r.paymentDate.toISOString(),
+              amount: r.amount,
+              method: r.method,
+            })),
+          }
+        : null,
+      sales: orderSales
+        ? orderSales.map((x) => ({
+            id: x.id,
+            code: x.code,
+            status: x.status,
+            paymentStatus: x.paymentStatus,
+            date: new Date(x.date).toISOString(),
+            total: seePrices ? x.total : null,
+          }))
+        : null,
+    },
     actions: {
-      canEdit: order.status !== "CANCELLED" && can(P.ORDERS_UPDATE),
+      canEdit: open && can(P.ORDERS_UPDATE),
       canConfirm: order.status === "DRAFT" && can(P.ORDERS_CONFIRM),
-      canReplan: demand && can(P.ORDERS_REPLAN),
-      canCancel: order.status !== "CANCELLED" && can(P.ORDERS_CANCEL),
+      canReplan: demand && order.status !== "PARTIALLY_DELIVERED" && can(P.ORDERS_REPLAN),
+      canCancel: open && can(P.ORDERS_CANCEL),
       canStartPreparation:
         (order.status === "CONFIRMED" || order.status === "READY") && can(P.ORDERS_PREPARE),
       canMarkReady:
@@ -743,6 +897,10 @@ export async function getOrderDetail(
         can(P.ORDERS_READY) &&
         fullyCovered,
       readyBlockedReason,
+      canDeliver: deliverable && !unpriced && can(P.SALES_CREATE) && can(P.SALES_POST),
+      deliverBlockedReason,
+      canQuote: unpriced && demand && can(P.ORDERS_UPDATE) && seePrices,
+      canRegisterAdvance: open && can(P.ORDER_ADVANCES_CREATE),
     },
   };
 }

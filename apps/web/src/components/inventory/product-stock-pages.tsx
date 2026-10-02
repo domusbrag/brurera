@@ -137,7 +137,7 @@ export function ProductStockList() {
               {
                 header: "Costo promedio",
                 cell: (i: ProductStockItemDto) =>
-                  formatReferenceCost(i.movingAverageCost, currency, i.saleUnit.symbol),
+                  formatReferenceCost(i.averageMaterialCost, currency, i.saleUnit.symbol),
                 className: "num hide-sm",
               },
               {
@@ -237,9 +237,9 @@ export function ProductStockDetail({ id }: { id: string }) {
               <div>
                 <dt>Costo promedio de inventario</dt>
                 <dd>
-                  {data.movingAverageCost === null
+                  {data.averageMaterialCost === null
                     ? "Sin producciones"
-                    : formatReferenceCost(data.movingAverageCost, currency, unit)}
+                    : formatReferenceCost(data.averageMaterialCost, currency, unit)}
                 </dd>
               </div>
               <div>

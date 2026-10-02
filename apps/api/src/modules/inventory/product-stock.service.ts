@@ -2,6 +2,7 @@ import { D } from "@bakery/domain";
 import {
   productInventoryCostHistory,
   productInventoryCosts,
+  productLotBalances,
   productionOrders,
   products,
   recipeVersions,
@@ -94,8 +95,10 @@ export async function listProductStock(
         unit: { id: unitsOfMeasure.id, code: unitsOfMeasure.code, symbol: unitsOfMeasure.symbol },
         companyQuantity: companyQty,
         warehouseQuantity: sql<string>`coalesce(${stockBalances.quantity}, 0)`,
-        movingAverageCost: productInventoryCosts.movingAverageCost,
+        averageMaterialCost: productInventoryCosts.averageMaterialCost,
         inventoryValue: sql<string>`coalesce(${productInventoryCosts.inventoryValue}, 0)`,
+        // Valor del depósito = Σ valor de sus lotes (identificación específica, ADR-057).
+        warehouseValue: sql<string>`(select coalesce(sum(plb.inventory_value), 0) from ${productLotBalances} plb where plb.company_id = ${products.companyId} and plb.product_id = ${products.id} and plb.warehouse_id = ${query.warehouseId ?? sql`null`})`,
         warehouseCount: sql<number>`(select count(*)::int from ${stockBalances} sb where sb.company_id = ${products.companyId} and sb.product_id = ${products.id} and sb.quantity > 0)`,
         lastProduction: sql<{
           id: string;
@@ -126,12 +129,7 @@ export async function listProductStock(
   );
   const items = rows.map((r): ProductStockItemDto => {
     const quantity = warehouse ? r.warehouseQuantity : r.companyQuantity;
-    const value =
-      r.movingAverageCost === null
-        ? null
-        : warehouse
-          ? fixedMoney(new D(quantity).times(r.movingAverageCost))
-          : fixedMoney(r.inventoryValue);
+    const value = warehouse ? fixedMoney(r.warehouseValue) : fixedMoney(r.inventoryValue);
     return {
       id: r.id,
       product: { id: r.id, code: r.code, name: r.name, active: r.active },
@@ -147,7 +145,7 @@ export async function listProductStock(
             completedAt: new Date(r.lastProduction.completedAt).toISOString(),
           }
         : null,
-      movingAverageCost: canSeeCosts ? r.movingAverageCost : null,
+      averageMaterialCost: canSeeCosts ? r.averageMaterialCost : null,
       inventoryValue: canSeeCosts ? value : null,
       lots: summaries.get(r.id)!,
     };
@@ -234,7 +232,7 @@ export async function getProductStock(
         .from(recipeVersions)
         .where(and(eq(recipeVersions.recipeId, recipe.id), eq(recipeVersions.status, "ACTIVE")))
     : [];
-  const average = cost?.movingAverageCost ?? null;
+  const average = cost?.averageMaterialCost ?? null;
   const summary = (await lotSummaries(db, ctx, [productId], null)).get(productId)!;
   const profile = await loadProfile(db, ctx, productId);
   const margin =
@@ -265,7 +263,7 @@ export async function getProductStock(
       warehouse: b.warehouse,
       quantity: fixedQty(b.quantity),
     })),
-    movingAverageCost: canSeeCosts ? average : null,
+    averageMaterialCost: canSeeCosts ? average : null,
     inventoryValue: canSeeCosts ? fixedMoney(cost?.inventoryValue ?? 0) : null,
     theoreticalMargin: margin,
     recentProductions: recent.map((r) => ({
@@ -333,7 +331,7 @@ export async function getProductCost(
       currency: await companyCurrency(db, ctx),
       quantity: fixedQty(cost?.quantity ?? 0),
       inventoryValue: fixedMoney(cost?.inventoryValue ?? 0),
-      movingAverageCost: cost?.movingAverageCost ?? null,
+      averageMaterialCost: cost?.averageMaterialCost ?? null,
       lastUpdatedAt: cost?.lastUpdatedAt?.toISOString() ?? null,
     },
     history: toPage(

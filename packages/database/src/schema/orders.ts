@@ -85,6 +85,8 @@ export const reservationReleaseReason = pgEnum("reservation_release_reason", [
   "ORDER_REPLANNED",
   "LOT_BLOCKED",
   "LOT_WASTE",
+  /** Fase 5B: el pedido se entregó por completo con otros lotes; lo reservado sobrante se libera. */
+  "ORDER_DELIVERED",
 ]);
 export const orderRequirementStatus = pgEnum("order_requirement_status", [
   "OPEN",

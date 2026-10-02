@@ -18,6 +18,7 @@ CREATE TYPE "public"."sale_status" AS ENUM('DRAFT', 'POSTED', 'CANCELLED');--> s
 ALTER TYPE "public"."stock_movement_type" ADD VALUE 'SALE';--> statement-breakpoint
 ALTER TYPE "public"."customer_order_status" ADD VALUE 'PARTIALLY_DELIVERED';--> statement-breakpoint
 ALTER TYPE "public"."customer_order_status" ADD VALUE 'DELIVERED';--> statement-breakpoint
+ALTER TYPE "public"."reservation_release_reason" ADD VALUE 'ORDER_DELIVERED';--> statement-breakpoint
 CREATE TABLE "customer_account_balances" (
 	"company_id" uuid NOT NULL,
 	"customer_id" uuid NOT NULL,
