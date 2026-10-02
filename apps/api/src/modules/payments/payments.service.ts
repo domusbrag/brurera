@@ -187,7 +187,8 @@ async function insertPayment(
   });
   await recordAudit(tx, {
     ...auditBase(ctx),
-    action: args.kind === "ORDER_ADVANCE" ? "ORDER_ADVANCE_PAYMENT_POSTED" : "CUSTOMER_PAYMENT_POSTED",
+    action:
+      args.kind === "ORDER_ADVANCE" ? "ORDER_ADVANCE_PAYMENT_POSTED" : "CUSTOMER_PAYMENT_POSTED",
     entityType: "customer_payment",
     entityId: payment!.id,
     metadata,
@@ -206,7 +207,10 @@ export async function registerSalePayment(
   const result = await db.transaction(async (tx) => {
     const sale = await findSale(tx, ctx, saleId, true);
     const existing = await byOperation(tx, ctx, input.operationId);
-    if (existing && sameOperation(existing, { kind: "SALE_PAYMENT", sourceSaleId: sale.id }, input)) {
+    if (
+      existing &&
+      sameOperation(existing, { kind: "SALE_PAYMENT", sourceSaleId: sale.id }, input)
+    ) {
       return { id: existing.id, replayed: true };
     }
     if (sale.status !== "POSTED") {
@@ -230,7 +234,12 @@ export async function registerSalePayment(
       input,
     });
     await applyToSale(tx, ctx, {
-      sale: { id: sale.id, customerId: sale.customerId, total: sale.total, paidAmount: sale.paidAmount },
+      sale: {
+        id: sale.id,
+        customerId: sale.customerId,
+        total: sale.total,
+        paidAmount: sale.paidAmount,
+      },
       paymentId: payment.id,
       amount,
       origin: "SALE_PAYMENT",
@@ -269,7 +278,10 @@ export async function registerOrderAdvance(
       .for("share");
     if (!order) throw notFound("Pedido");
     const existing = await byOperation(tx, ctx, input.operationId);
-    if (existing && sameOperation(existing, { kind: "ORDER_ADVANCE", sourceOrderId: order.id }, input)) {
+    if (
+      existing &&
+      sameOperation(existing, { kind: "ORDER_ADVANCE", sourceOrderId: order.id }, input)
+    ) {
       return { id: existing.id, replayed: true };
     }
     if (order.status === "CANCELLED" || order.status === "DELIVERED") {
@@ -314,7 +326,9 @@ export async function registerOnAccountPayment(
     replayed: result.replayed,
     warnings: result.replayed
       ? []
-      : ["El cobro queda como crédito a favor: imputalo a las ventas pendientes desde la cuenta corriente."],
+      : [
+          "El cobro queda como crédito a favor: imputalo a las ventas pendientes desde la cuenta corriente.",
+        ],
   };
 }
 
@@ -358,7 +372,12 @@ export async function applyPayment(
       );
     }
     await applyToSale(tx, ctx, {
-      sale: { id: sale.id, customerId: sale.customerId, total: sale.total, paidAmount: sale.paidAmount },
+      sale: {
+        id: sale.id,
+        customerId: sale.customerId,
+        total: sale.total,
+        paidAmount: sale.paidAmount,
+      },
       paymentId: payment.id,
       amount,
       origin: "MANUAL",
@@ -419,7 +438,11 @@ export async function adjustAccount(
 
 /* ---------- Lecturas ---------- */
 
-export async function getPayment(db: Db, ctx: OperationContext, id: string): Promise<CustomerPaymentDto> {
+export async function getPayment(
+  db: Db,
+  ctx: OperationContext,
+  id: string,
+): Promise<CustomerPaymentDto> {
   const p = await findPayment(db, ctx, id);
   const [customer] = await db.select().from(customers).where(eq(customers.id, p.customerId));
   const [order] = p.sourceOrderId
@@ -499,7 +522,10 @@ export async function listPayments(
       .orderBy(desc(customerPayments.paymentDate), desc(customerPayments.internalCode))
       .limit(limit)
       .offset(offset),
-    db.select({ n: sql<number>`count(*)::int` }).from(customerPayments).where(where),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(customerPayments)
+      .where(where),
   ]);
   const items: CustomerPaymentDto[] = [];
   for (const r of rows) items.push(await getPayment(db, ctx, r.id));
@@ -562,7 +588,10 @@ export async function getCustomerAccount(
       .orderBy(desc(customerAccountMovements.sequence))
       .limit(limit)
       .offset(offset),
-    db.select({ n: sql<number>`count(*)::int` }).from(customerAccountMovements).where(where),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(customerAccountMovements)
+      .where(where),
   ]);
   const people = await loadPeople(
     db,
@@ -598,7 +627,8 @@ export async function getCustomerAccount(
     )
     .orderBy(asc(customerPayments.paymentDate));
   const unappliedCredit = unapplied.reduce((s, p) => s.plus(p.amount).minus(p.applied), new D(0));
-  const can = (code: (typeof PERMISSIONS)[keyof typeof PERMISSIONS]) => hasPermissions(permissions, [code]);
+  const can = (code: (typeof PERMISSIONS)[keyof typeof PERMISSIONS]) =>
+    hasPermissions(permissions, [code]);
   return {
     customer: {
       id: customer.id,
@@ -711,7 +741,11 @@ export async function listReceivables(
     rows.map((r) => {
       const view = accountBalanceView(r.balance);
       return {
-        customer: { id: r.customer.id, code: r.customer.internalCode, name: customerName(r.customer) },
+        customer: {
+          id: r.customer.id,
+          code: r.customer.internalCode,
+          name: customerName(r.customer),
+        },
         balance: r.balance,
         balanceKind: view.kind,
         balanceAmount: view.amount.toFixed(2),

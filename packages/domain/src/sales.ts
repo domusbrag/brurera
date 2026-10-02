@@ -278,7 +278,9 @@ export function assertDeliverable(args: {
 export function orderDeliveryStatus(
   lines: readonly { ordered: Decimal.Value; delivered: Decimal.Value }[],
 ): "PARTIALLY_DELIVERED" | "DELIVERED" {
-  return lines.every((l) => !new D(l.delivered).lt(l.ordered)) ? "DELIVERED" : "PARTIALLY_DELIVERED";
+  return lines.every((l) => !new D(l.delivered).lt(l.ordered))
+    ? "DELIVERED"
+    : "PARTIALLY_DELIVERED";
 }
 
 /* ---------- Cobros ---------- */

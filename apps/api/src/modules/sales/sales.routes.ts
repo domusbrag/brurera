@@ -58,7 +58,10 @@ export async function saleRoutes(app: FastifyInstance, { db }: { db: Database })
   app.post("/sales/:id/post", { preHandler: requirePermission(P.SALES_POST) }, (req) => {
     const input = parseInput(postSaleSchema, req.body ?? {});
     // Cobrar en el momento exige además poder registrar cobros.
-    if (input.initialPayment && !hasPermissions(viewer(req).permissions, [P.PAYMENTS_CREATE, P.PAYMENTS_POST])) {
+    if (
+      input.initialPayment &&
+      !hasPermissions(viewer(req).permissions, [P.PAYMENTS_CREATE, P.PAYMENTS_POST])
+    ) {
       throw forbidden();
     }
     return sales.postSale(db, operationContext(req), saleId(req.params), input, viewer(req));

@@ -246,7 +246,12 @@ describe("precios: prioridad, override y margen negativo (§95)", () => {
 
   it("producto → lista general → lista del cliente", async () => {
     expect(await resolve(w.customerId)).toMatchObject({ source: "PRODUCT_PRICE", priceList: null });
-    const general = await priceList(api, "General L", { [w.panFrances]: "1400" }, { isDefault: true });
+    const general = await priceList(
+      api,
+      "General L",
+      { [w.panFrances]: "1400" },
+      { isDefault: true },
+    );
     expect(general.code).toMatch(/^LP-\d{4}$/);
     expect(await resolve(w.customerId)).toMatchObject({ source: "DEFAULT_PRICE_LIST" });
     const wholesale = await priceList(api, "Mayorista L", { [w.panFrances]: "1200" });
@@ -284,7 +289,14 @@ describe("precios: prioridad, override y margen negativo (§95)", () => {
       draftSale(
         api,
         w,
-        [{ productId: w.panFrances, quantity: "1", unitPrice: "1000", priceOverrideReason: "Promo" }],
+        [
+          {
+            productId: w.panFrances,
+            quantity: "1",
+            unitPrice: "1000",
+            priceOverrideReason: "Promo",
+          },
+        ],
         { customerId: w.customerId },
       ),
       201,
@@ -340,7 +352,9 @@ describe("pedido: precio congelado, seña, entrega parcial y total (§96–§97)
     expect(order.commercial).toMatchObject({ pricingStatus: "AGREED" });
     expect(dec(order.commercial.quotedTotal)).toBe("180000");
     expect(order.lines[0].price).toMatchObject({ priceSource: "CUSTOMER_PRICE_LIST" });
-    await ok(api.put(`/api/price-lists/${wholesaleId}/items/${w.panFrances}`, { unitPrice: "1300" }));
+    await ok(
+      api.put(`/api/price-lists/${wholesaleId}/items/${w.panFrances}`, { unitPrice: "1300" }),
+    );
     const again = await orderOf(api, order.id);
     expect(dec(again.commercial.quotedTotal)).toBe("180000");
     expect(again.actions.canDeliver).toBe(true);
@@ -438,8 +452,12 @@ describe("pedido: precio congelado, seña, entrega parcial y total (§96–§97)
     });
     expect(tooMuch.statusCode).toBe(422);
     expect(tooMuch.json().error.code).toBe("PAYMENT_EXCEEDS_SALE_BALANCE");
-    await ok(api.post(`/api/payments/${paymentId}/applications`, { saleId: sales[0], amount: "70000" }));
-    await ok(api.post(`/api/payments/${paymentId}/applications`, { saleId: sales[1], amount: "60000" }));
+    await ok(
+      api.post(`/api/payments/${paymentId}/applications`, { saleId: sales[0], amount: "70000" }),
+    );
+    await ok(
+      api.post(`/api/payments/${paymentId}/applications`, { saleId: sales[1], amount: "60000" }),
+    );
     for (const id of sales) {
       expect((await ok(api.get(`/api/sales/${id}`))).paymentStatus).toBe("PAID");
     }
@@ -501,7 +519,9 @@ describe("pedidos anteriores a 5B, cancelación con seña y límite de crédito 
       lines: [{ lineId: order.lines[0].id, priceOverrideReason: null }],
     });
     expect(again.statusCode).toBe(409);
-    await ok(postSale(api, (await ok(saleFromOrder(api, w, await orderOf(api, order.id)), 201)).id));
+    await ok(
+      postSale(api, (await ok(saleFromOrder(api, w, await orderOf(api, order.id)), 201)).id),
+    );
     await invariants();
   });
 

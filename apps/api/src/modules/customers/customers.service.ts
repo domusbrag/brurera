@@ -100,7 +100,11 @@ export async function getCustomer(db: Database | Transaction, ctx: OperationCont
 }
 
 /** La lista asignada tiene que ser de la empresa y estar activa. */
-async function checkPriceList(tx: Transaction, ctx: OperationContext, id: string | null | undefined) {
+async function checkPriceList(
+  tx: Transaction,
+  ctx: OperationContext,
+  id: string | null | undefined,
+) {
   if (!id) return;
   const [list] = await tx
     .select({ active: priceLists.active })

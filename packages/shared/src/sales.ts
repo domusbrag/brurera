@@ -3,13 +3,7 @@ import type { ConservationStateDto } from "./lots";
 import { REQUESTED_CONSERVATIONS, linePriceFields, type RequestedConservationDto } from "./orders";
 import type { PersonRefDto, UnitRefDto } from "./recipes";
 import { localDateTimeSchema } from "./timezone";
-import {
-  decimalString,
-  optionalText,
-  optionalUuid,
-  requiredText,
-  uuid,
-} from "./validation";
+import { decimalString, optionalText, optionalUuid, requiredText, uuid } from "./validation";
 
 /*
  * Ventas, entregas, precios, cobros y cuenta corriente (Fase 5B). Las reglas
@@ -632,7 +626,13 @@ export interface OrderCommercialDto {
     total: string;
     applied: string;
     available: string;
-    payments: { id: string; code: string; paymentDate: string; amount: string; method: PaymentMethodDto }[];
+    payments: {
+      id: string;
+      code: string;
+      paymentDate: string;
+      amount: string;
+      method: PaymentMethodDto;
+    }[];
   } | null;
   /** null sin sales.read. */
   sales:

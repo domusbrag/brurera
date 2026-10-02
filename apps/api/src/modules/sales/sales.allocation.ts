@@ -13,7 +13,7 @@ import {
 } from "@bakery/database";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { OperationContext } from "../../lib/context.js";
-import { forAvailability, selectLots } from "../lots/lots.data.js";
+import { type forAvailability, selectLots } from "../lots/lots.data.js";
 import { committedByLot, lockLots, reservationRemaining } from "../orders/reservations.js";
 import type { Db, SaleLineRow } from "./sales.data.js";
 
@@ -216,7 +216,9 @@ export function planSaleLines(args: {
   });
   return args.lines.map((line) => {
     const mine = line.sourceOrderLineId
-      ? args.reservations.filter((r) => r.orderLineId === line.sourceOrderLineId && r.remaining.gt(0))
+      ? args.reservations.filter(
+          (r) => r.orderLineId === line.sourceOrderLineId && r.remaining.gt(0),
+        )
       : [];
     const usable = mine.filter((r) => {
       const lot = lots.get(r.lotId);
@@ -234,7 +236,11 @@ export function planSaleLines(args: {
     }, new D(0));
     const result = allocateSaleLine({
       quantity: line.normalizedQuantity,
-      reservations: usable.map((r) => ({ id: r.id, lot: forDomain(lots.get(r.lotId)!), remaining: r.remaining })),
+      reservations: usable.map((r) => ({
+        id: r.id,
+        lot: forDomain(lots.get(r.lotId)!),
+        remaining: r.remaining,
+      })),
       freeLots: freeLots.map(forDomain),
       at: args.at,
       requested: line.requestedConservation as RequestedConservation,

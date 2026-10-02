@@ -24,7 +24,20 @@ import {
   type SaleListItemDto,
   type saleListQuerySchema,
 } from "@bakery/shared";
-import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { z } from "zod";
 import type { OperationContext } from "../../lib/context.js";
 import { notFound } from "../../lib/db-errors.js";
@@ -98,7 +111,9 @@ export async function walkInCustomer(db: Db, ctx: OperationContext) {
 }
 
 const margin = (amount: string | null, percentage: string | null) =>
-  amount === null ? null : { amount, percentage: percentage === null ? null : new D(percentage).toFixed(2) };
+  amount === null
+    ? null
+    : { amount, percentage: percentage === null ? null : new D(percentage).toFixed(2) };
 
 /* ---------- Listado ---------- */
 
@@ -129,7 +144,9 @@ export async function listSales(
       ? and(eq(sales.status, "POSTED"), sql`${sales.paidAmount} < ${sales.total}`)
       : undefined,
     query.from ? gte(when, zonedLocalToInstant(`${query.from}T00:00`, ctx.timezone)) : undefined,
-    query.to ? lt(when, zonedLocalToInstant(`${nextDay(query.to)}T00:00`, ctx.timezone)) : undefined,
+    query.to
+      ? lt(when, zonedLocalToInstant(`${nextDay(query.to)}T00:00`, ctx.timezone))
+      : undefined,
     query.search
       ? or(
           ilike(sales.internalCode, likePattern(query.search)),
@@ -361,7 +378,8 @@ export async function getSaleDetail(
         }
       : null,
     materialCost: see.costs && posted ? sale.materialCostTotal : null,
-    margin: see.margin && posted ? margin(sale.grossMarginAmount, sale.grossMarginPercentage) : null,
+    margin:
+      see.margin && posted ? margin(sale.grossMarginAmount, sale.grossMarginPercentage) : null,
     creditLimitExceeded: sale.creditLimitExceeded,
     lines: lineDtos,
     payments: applications

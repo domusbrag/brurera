@@ -501,7 +501,11 @@ export const customerPaymentApplications = pgTable(
     foreignKey({
       name: "customer_payment_applications_payment_fk",
       columns: [t.companyId, t.paymentId, t.customerId],
-      foreignColumns: [customerPayments.companyId, customerPayments.id, customerPayments.customerId],
+      foreignColumns: [
+        customerPayments.companyId,
+        customerPayments.id,
+        customerPayments.customerId,
+      ],
     }).onDelete("restrict"),
     foreignKey({
       name: "customer_payment_applications_sale_fk",
@@ -568,7 +572,11 @@ export const customerAccountMovements = pgTable(
     foreignKey({
       name: "customer_account_movements_payment_fk",
       columns: [t.companyId, t.paymentId, t.customerId],
-      foreignColumns: [customerPayments.companyId, customerPayments.id, customerPayments.customerId],
+      foreignColumns: [
+        customerPayments.companyId,
+        customerPayments.id,
+        customerPayments.customerId,
+      ],
     }).onDelete("restrict"),
     check(
       "customer_account_movements_sign",

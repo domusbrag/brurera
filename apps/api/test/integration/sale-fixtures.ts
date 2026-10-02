@@ -11,7 +11,12 @@ import type { OrderWorld } from "./order-fixtures.js";
  */
 
 /** Dos lotes frescos de Pan francés con distinto costo material (harina a 900 y a 1.500). */
-export async function twoLotsWithDifferentCost(api: ApiClient, w: OrderWorld, qtyA = "100", qtyB = "100") {
+export async function twoLotsWithDifferentCost(
+  api: ApiClient,
+  w: OrderWorld,
+  qtyA = "100",
+  qtyB = "100",
+) {
   const a = await produce(api, w, qtyA, { harinaCost: "900" });
   const b = await produce(api, w, qtyB, { harinaCost: "1500" });
   return { lotA: a.lot, lotB: b.lot };

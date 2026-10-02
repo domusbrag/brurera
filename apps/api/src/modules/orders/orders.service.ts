@@ -621,7 +621,11 @@ export async function updateOrder(
       const priced = await priceOrderLines(tx, ctx, customerId, lines, {
         permissions: viewer.permissions,
       });
-      Object.assign(values, { pricingStatus: "QUOTED" }, await quoteTotals(tx, ctx, customerId, priced));
+      Object.assign(
+        values,
+        { pricingStatus: "QUOTED" },
+        await quoteTotals(tx, ctx, customerId, priced),
+      );
       await tx
         .delete(customerOrderLines)
         .where(
@@ -1281,7 +1285,9 @@ export async function replanOrder(
           reason: "ORDER_REPLANNED",
           planRevision: order.planRevision,
           reservations: toRelease.length,
-          quantity: toRelease.reduce((s, r) => s.plus(reservationRemaining(r)), new D(0)).toString(),
+          quantity: toRelease
+            .reduce((s, r) => s.plus(reservationRemaining(r)), new D(0))
+            .toString(),
         },
       });
     }
@@ -1694,7 +1700,10 @@ export async function quoteOrder(
         code: order.internalCode,
         quotedTotal: quote.quotedTotal,
         lines: lines
-          .map((l, i) => `${l.normalized.toString()} ${l.saleUnit.symbol} ${l.product.name} a $ ${priced[i]!.unitPrice}`)
+          .map(
+            (l, i) =>
+              `${l.normalized.toString()} ${l.saleUnit.symbol} ${l.product.name} a $ ${priced[i]!.unitPrice}`,
+          )
           .join(", "),
       },
     });

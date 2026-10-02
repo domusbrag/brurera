@@ -267,7 +267,9 @@ export function applyLotMovement(
     },
     averageChanged:
       (before.movingAverageCost === null) !== (derived === null) ||
-      (derived !== null && before.movingAverageCost !== null && !derived.eq(before.movingAverageCost)),
+      (derived !== null &&
+        before.movingAverageCost !== null &&
+        !derived.eq(before.movingAverageCost)),
   };
 }
 

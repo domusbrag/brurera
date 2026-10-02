@@ -30,7 +30,12 @@ export async function priceListRoutes(app: FastifyInstance, { db }: { db: Databa
   );
   app.get("/price-lists/resolve", { preHandler: requirePermission(P.PRICE_LISTS_READ) }, (req) => {
     const q = parseInput(resolvePricesQuerySchema, req.query);
-    return service.resolveForCustomer(db, operationContext(req), q.customerId ?? null, q.productIds);
+    return service.resolveForCustomer(
+      db,
+      operationContext(req),
+      q.customerId ?? null,
+      q.productIds,
+    );
   });
   app.get("/price-lists/:id", { preHandler: requirePermission(P.PRICE_LISTS_READ) }, (req) =>
     service.getPriceList(db, operationContext(req), listId(req.params), perms(req)),

@@ -99,7 +99,9 @@ export async function resolvePrices(
     .where(and(eq(products.companyId, ctx.companyId), inArray(products.id, ids)));
   for (const p of rows) {
     const fromList = (listId: string | undefined) =>
-      listId ? (items.find((i) => i.listId === listId && i.productId === p.id)?.unitPrice ?? null) : null;
+      listId
+        ? (items.find((i) => i.listId === listId && i.productId === p.id)?.unitPrice ?? null)
+        : null;
     const resolved = resolveUnitPrice({
       customerList: fromList(customerList?.id),
       defaultList: fromList(companyDefault?.id),
@@ -180,9 +182,12 @@ export function priceLine(args: {
     }
     reason = args.input.priceOverrideReason ?? args.keep?.reason ?? null;
     if (!reason) {
-      throw new AppError(422, "PRICE_OVERRIDE_REASON_REQUIRED", "Indicá el motivo del cambio de precio.", [
-        { path: `${args.path}.priceOverrideReason`, message: "Motivo obligatorio" },
-      ]);
+      throw new AppError(
+        422,
+        "PRICE_OVERRIDE_REASON_REQUIRED",
+        "Indicá el motivo del cambio de precio.",
+        [{ path: `${args.path}.priceOverrideReason`, message: "Motivo obligatorio" }],
+      );
     }
   }
   let amounts;

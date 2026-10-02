@@ -240,7 +240,8 @@ describe("rollback: si algo falla a mitad de la confirmación no queda nada", ()
       ).rows,
     });
     const before = await snapshot();
-    await db().execute(sql.raw(`
+    await db().execute(
+      sql.raw(`
       create or replace function test_fail_sale_debit() returns trigger language plpgsql as $$
       begin
         if new.movement_type = 'SALE_DEBIT' then raise exception 'falla inyectada'; end if;
@@ -248,15 +249,18 @@ describe("rollback: si algo falla a mitad de la confirmación no queda nada", ()
       end $$;
       create trigger test_fail_sale_debit before insert on customer_account_movements
         for each row execute function test_fail_sale_debit();
-    `));
+    `),
+    );
     try {
       const res = await postSale(api, sale.id);
       expect(res.statusCode).toBe(500);
     } finally {
-      await db().execute(sql.raw(`
+      await db().execute(
+        sql.raw(`
         drop trigger test_fail_sale_debit on customer_account_movements;
         drop function test_fail_sale_debit();
-      `));
+      `),
+      );
     }
     expect(await snapshot()).toEqual(before);
     expect((await ok(api.get(`/api/sales/${sale.id}`))).status).toBe("DRAFT");

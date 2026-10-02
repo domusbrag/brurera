@@ -230,7 +230,9 @@ export async function updatePriceList(
     const [before] = await tx.select().from(priceLists).where(owned(ctx, id)).for("update");
     if (!before) throw notFound("Lista de precios");
     const next = {
-      ...(input.code !== undefined && input.code !== null ? { code: normalizeCode(input.code) } : {}),
+      ...(input.code !== undefined && input.code !== null
+        ? { code: normalizeCode(input.code) }
+        : {}),
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.active !== undefined ? { active: input.active } : {}),
@@ -297,7 +299,12 @@ export async function setPriceListItem(
     if (before) {
       await tx
         .update(priceListItems)
-        .set({ unitPrice, active: input.active, updatedByUserId: ctx.userId, updatedAt: new Date() })
+        .set({
+          unitPrice,
+          active: input.active,
+          updatedByUserId: ctx.userId,
+          updatedAt: new Date(),
+        })
         .where(eq(priceListItems.id, before.id));
     } else {
       await tx.insert(priceListItems).values({

@@ -132,7 +132,12 @@ describe("§93 margen sobre materiales", () => {
 describe("precios", () => {
   it("prioridad: acordado → lista del cliente → lista default → producto", () => {
     expect(
-      resolveUnitPrice({ agreed: "700", customerList: "750", defaultList: "780", productPrice: "800" }),
+      resolveUnitPrice({
+        agreed: "700",
+        customerList: "750",
+        defaultList: "780",
+        productPrice: "800",
+      }),
     ).toMatchObject({ source: "ORDER_QUOTE" });
     expect(
       resolveUnitPrice({ customerList: "750", defaultList: "780", productPrice: "800" }).source,
@@ -161,9 +166,9 @@ describe("precios", () => {
   it("override = precio o descuento distinto de lo acordado", () => {
     expect(isPriceOverride({ unitPrice: "800", agreedUnitPrice: "800.00" })).toBe(false);
     expect(isPriceOverride({ unitPrice: "750", agreedUnitPrice: "800" })).toBe(true);
-    expect(
-      isPriceOverride({ unitPrice: "800", discountAmount: "5", agreedUnitPrice: "800" }),
-    ).toBe(true);
+    expect(isPriceOverride({ unitPrice: "800", discountAmount: "5", agreedUnitPrice: "800" })).toBe(
+      true,
+    );
   });
 });
 
@@ -269,9 +274,9 @@ describe("cobros", () => {
   });
 
   it("PAYMENT_EXCEEDS_SALE_BALANCE", () => {
-    expect(() => assertApplicationFits({ total: "1000", applied: "400", amount: "600.01" })).toThrow(
-      expect.objectContaining({ code: "PAYMENT_EXCEEDS_SALE_BALANCE" }),
-    );
+    expect(() =>
+      assertApplicationFits({ total: "1000", applied: "400", amount: "600.01" }),
+    ).toThrow(expect.objectContaining({ code: "PAYMENT_EXCEEDS_SALE_BALANCE" }));
     expect(() => assertApplicationFits({ total: "1000", applied: "0", amount: "0" })).toThrow(
       expect.objectContaining({ code: "AMOUNT_NOT_POSITIVE" }),
     );

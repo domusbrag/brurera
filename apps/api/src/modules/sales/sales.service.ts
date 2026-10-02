@@ -68,7 +68,13 @@ import {
   lockAccount,
   postAccountMovement,
 } from "../payments/account.js";
-import { priceLine, priceListsFor, pricedTotals, resolvePrices, type PricedLine } from "../price-lists/pricing.js";
+import {
+  priceLine,
+  priceListsFor,
+  pricedTotals,
+  resolvePrices,
+  type PricedLine,
+} from "../price-lists/pricing.js";
 import { companyCurrency, loadUnits } from "../recipes/recipes.data.js";
 import {
   candidateLotIds,
@@ -200,7 +206,10 @@ async function buildDraftLines(
   const orderLineOf = inputs.map((input, i) => {
     if (!dc.order) {
       if (input.orderLineId) {
-        throw invalidReference(`lines.${i}.orderLineId`, "Una venta directa no tiene líneas de pedido");
+        throw invalidReference(
+          `lines.${i}.orderLineId`,
+          "Una venta directa no tiene líneas de pedido",
+        );
       }
       return null;
     }
@@ -240,7 +249,12 @@ async function buildDraftLines(
           409,
           "DELIVERY_EXCEEDS_PENDING",
           `Quedan ${pending.toString()} ${r.saleUnit.symbol} de ${r.product.name} por entregar.`,
-          [{ path: `lines.${i}.quantity`, message: `Pendiente: ${pending.toString()} ${r.saleUnit.symbol}` }],
+          [
+            {
+              path: `lines.${i}.quantity`,
+              message: `Pendiente: ${pending.toString()} ${r.saleUnit.symbol}`,
+            },
+          ],
         );
       }
     });
@@ -344,7 +358,10 @@ async function auditOverrides(
 
 const summarize = (lines: readonly DraftLine[]) =>
   lines
-    .map((d) => `${d.resolved.normalized.toString()} ${d.resolved.saleUnit.symbol} ${d.resolved.product.name}`)
+    .map(
+      (d) =>
+        `${d.resolved.normalized.toString()} ${d.resolved.saleUnit.symbol} ${d.resolved.product.name}`,
+    )
     .join(", ");
 
 export async function createSale(
@@ -525,7 +542,9 @@ const productNames = async (db: Db, ctx: OperationContext, ids: readonly string[
             unit: products.saleUnitId,
           })
           .from(products)
-          .where(and(eq(products.companyId, ctx.companyId), inArray(products.id, [...new Set(ids)])))
+          .where(
+            and(eq(products.companyId, ctx.companyId), inArray(products.id, [...new Set(ids)])),
+          )
       : []
     ).map((p) => [p.id, p]),
   );
@@ -558,7 +577,11 @@ export async function previewSale(
   const issues: SalePreviewIssueDto[] = [];
   const order = sale.sourceOrderId ? await findOrder(db, ctx, sale.sourceOrderId) : null;
   if (order && !isDeliverable(order.status)) {
-    issues.push({ code: "ORDER_NOT_DELIVERABLE", message: orderNotDeliverable(order).message, blocking: true });
+    issues.push({
+      code: "ORDER_NOT_DELIVERABLE",
+      message: orderNotDeliverable(order).message,
+      blocking: true,
+    });
   }
   if (order?.pricingStatus === "UNPRICED") {
     issues.push({ code: "ORDER_UNPRICED", message: orderUnpriced(order).message, blocking: true });
@@ -571,10 +594,22 @@ export async function previewSale(
     sale.warehouseId,
     reservations.map((r) => r.lotId),
   );
-  const lots = await loadLotStates(db, ctx, [...new Set([...ids, ...reservations.map((r) => r.lotId)])]);
+  const lots = await loadLotStates(db, ctx, [
+    ...new Set([...ids, ...reservations.map((r) => r.lotId)]),
+  ]);
   const now = new Date();
-  const planned = planSaleLines({ lines, lots, reservations, warehouseId: sale.warehouseId, at: now });
-  const names = await productNames(db, ctx, lines.map((l) => l.productId));
+  const planned = planSaleLines({
+    lines,
+    lots,
+    reservations,
+    warehouseId: sale.warehouseId,
+    at: now,
+  });
+  const names = await productNames(
+    db,
+    ctx,
+    lines.map((l) => l.productId),
+  );
   const units = await loadUnits(db, ctx);
 
   if (order) {
@@ -583,11 +618,16 @@ export async function previewSale(
     const asked = new Map<string, Dec>();
     for (const l of lines) {
       if (!l.sourceOrderLineId) continue;
-      asked.set(l.sourceOrderLineId, (asked.get(l.sourceOrderLineId) ?? new D(0)).plus(l.normalizedQuantity));
+      asked.set(
+        l.sourceOrderLineId,
+        (asked.get(l.sourceOrderLineId) ?? new D(0)).plus(l.normalizedQuantity),
+      );
     }
     for (const [lineId, q] of asked) {
       const ol = orderLines.find((x) => x.id === lineId);
-      const pending = ol ? D.max(new D(ol.normalizedQuantity).minus(delivered.get(lineId) ?? 0), 0) : new D(0);
+      const pending = ol
+        ? D.max(new D(ol.normalizedQuantity).minus(delivered.get(lineId) ?? 0), 0)
+        : new D(0);
       if (q.gt(pending)) {
         issues.push({
           code: "DELIVERY_EXCEEDS_PENDING",
@@ -619,7 +659,11 @@ export async function previewSale(
   const costReady = planned.every((p) => p.missing.isZero());
   const materialCost = planned.reduce((s, p) => s.plus(p.materialCost), new D(0));
   const marginTotal = costReady ? materialMargin(total, materialCost) : null;
-  if ((see.costs || see.margin) && costReady && planned.some((p) => new D(p.line.netAmount).lt(p.materialCost))) {
+  if (
+    (see.costs || see.margin) &&
+    costReady &&
+    planned.some((p) => new D(p.line.netAmount).lt(p.materialCost))
+  ) {
     issues.push({ code: "NEGATIVE_MARGIN", message: NEGATIVE_MARGIN_WARNING, blocking: false });
   }
 
@@ -649,7 +693,8 @@ export async function previewSale(
   if (check.exceeded) {
     issues.push({
       code: "CREDIT_LIMIT_EXCEEDED",
-      message: "Con esta venta el cliente supera su límite de crédito (se registra igual, con aviso).",
+      message:
+        "Con esta venta el cliente supera su límite de crédito (se registra igual, con aviso).",
       blocking: false,
     });
   }
@@ -683,7 +728,8 @@ export async function previewSale(
       })),
       netAmount: see.prices ? p.line.netAmount : null,
       materialCost: see.costs && p.missing.isZero() ? fixedMoney(p.materialCost) : null,
-      margin: see.margin && p.missing.isZero() ? lineMargin(p.line.netAmount, p.materialCost) : null,
+      margin:
+        see.margin && p.missing.isZero() ? lineMargin(p.line.netAmount, p.materialCost) : null,
     })),
     total: see.prices ? sale.total : null,
     materialCost: see.costs && costReady ? fixedMoney(materialCost) : null,
@@ -776,15 +822,28 @@ export async function postSale(
 
     // 9-10. Estado DESPUÉS de bloquear y asignación (reservas primero, luego FEFO libre).
     const lots = await loadLotStates(tx, ctx, lotIds);
-    const planned = planSaleLines({ lines, lots, reservations, warehouseId: sale.warehouseId, at: now });
-    const names = await productNames(tx, ctx, lines.map((l) => l.productId));
+    const planned = planSaleLines({
+      lines,
+      lots,
+      reservations,
+      warehouseId: sale.warehouseId,
+      at: now,
+    });
+    const names = await productNames(
+      tx,
+      ctx,
+      lines.map((l) => l.productId),
+    );
     const short = planned.filter((p) => p.missing.gt(0));
     if (short.length > 0) {
       throw new AppError(
         409,
         "INSUFFICIENT_FREE_PRODUCT_STOCK",
         `No hay stock disponible suficiente: ${short
-          .map((p) => `${names.get(p.line.productId)?.name ?? ""} (faltan ${showQty(p.missing)}; libres ${showQty(p.freeAvailable)})`)
+          .map(
+            (p) =>
+              `${names.get(p.line.productId)?.name ?? ""} (faltan ${showQty(p.missing)}; libres ${showQty(p.freeAvailable)})`,
+          )
           .join(", ")}. Lo reservado para otros pedidos no se usa.`,
         short.map((p) => ({
           path: `lines.${p.line.sortOrder}.quantity`,
@@ -802,7 +861,11 @@ export async function postSale(
       ...new Map(
         allocations.map((x) => [
           `${x.p.line.productId}:${x.a.lot.warehouseId}`,
-          { productId: x.p.line.productId, warehouseId: x.a.lot.warehouseId, unitId: x.a.lot.unitId },
+          {
+            productId: x.p.line.productId,
+            warehouseId: x.a.lot.warehouseId,
+            unitId: x.a.lot.unitId,
+          },
         ]),
       ).entries(),
     ]
@@ -826,7 +889,9 @@ export async function postSale(
         .update(productLotReservations)
         .set({
           fulfilledQuantity: fixedQty(complete ? r.quantity : total),
-          ...(complete ? { status: "FULFILLED" as const, releasedAt: now, releasedByUserId: ctx.userId } : {}),
+          ...(complete
+            ? { status: "FULFILLED" as const, releasedAt: now, releasedByUserId: ctx.userId }
+            : {}),
         })
         .where(eq(productLotReservations.id, reservationId));
     }
@@ -877,7 +942,9 @@ export async function postSale(
         .update(saleLines)
         .set({
           materialCost: fixedMoney(p.materialCost),
-          averageLotUnitCost: fixedMoney(averageMaterialCost(p.line.normalizedQuantity, p.materialCost) ?? 0),
+          averageLotUnitCost: fixedMoney(
+            averageMaterialCost(p.line.normalizedQuantity, p.materialCost) ?? 0,
+          ),
           grossMarginAmount: fixedMoney(m.amount),
           grossMarginPercentage: m.percentage?.toFixed(4) ?? null,
           updatedAt: now,
@@ -887,7 +954,8 @@ export async function postSale(
     const total = new D(sale.total);
     const saleMargin = materialMargin(total, materialCost);
     if (planned.some((p) => new D(p.line.netAmount).lt(p.materialCost))) {
-      if (visibility(viewer).costs || visibility(viewer).margin) warnings.push(NEGATIVE_MARGIN_WARNING);
+      if (visibility(viewer).costs || visibility(viewer).margin)
+        warnings.push(NEGATIVE_MARGIN_WARNING);
     }
 
     // 17-18. Cuenta corriente: deuda de la venta y límite de crédito (sólo aviso).
@@ -930,7 +998,12 @@ export async function postSale(
         updatedAt: now,
       })
       .where(eq(sales.id, sale.id));
-    const saleState = { id: sale.id, customerId: sale.customerId, total: sale.total, paidAmount: "0.00" };
+    const saleState = {
+      id: sale.id,
+      customerId: sale.customerId,
+      total: sale.total,
+      paidAmount: "0.00",
+    };
     if (credit.exceeded) {
       warnings.push(
         `El cliente supera su límite de crédito: saldo proyectado $ ${credit.projectedBalance.toFixed(2)} (límite $ ${new D(customer!.creditLimit!).toFixed(2)}).`,
@@ -961,17 +1034,31 @@ export async function postSale(
         .for("update");
       const fresh = await orderAdvances(tx, ctx, order!.id);
       const plan = allocateAdvances(
-        fresh.rows.map((r) => ({ id: r.id, code: r.code, available: new D(r.amount).minus(r.applied) })),
+        fresh.rows.map((r) => ({
+          id: r.id,
+          code: r.code,
+          available: new D(r.amount).minus(r.applied),
+        })),
         total,
       );
       for (const { advance: a, amount } of plan) {
-        await applyToSale(tx, ctx, { sale: saleState, paymentId: a.id, amount, origin: "ADVANCE_AUTO" });
+        await applyToSale(tx, ctx, {
+          sale: saleState,
+          paymentId: a.id,
+          amount,
+          origin: "ADVANCE_AUTO",
+        });
         await recordAudit(tx, {
           ...auditBase(ctx),
           action: "PAYMENT_APPLIED",
           entityType: "sale",
           entityId: sale.id,
-          metadata: { code: sale.internalCode, payment: a.code, amount: amount.toFixed(2), origin: "ADVANCE_AUTO" },
+          metadata: {
+            code: sale.internalCode,
+            payment: a.code,
+            amount: amount.toFixed(2),
+            origin: "ADVANCE_AUTO",
+          },
         });
       }
       const left = fresh.available.minus(plan.reduce((s, x) => s.plus(x.amount), new D(0)));
@@ -1033,7 +1120,12 @@ export async function postSale(
         occurredAt: now,
         paymentId: payment!.id,
       });
-      await applyToSale(tx, ctx, { sale: saleState, paymentId: payment!.id, amount: initial, origin: "SALE_PAYMENT" });
+      await applyToSale(tx, ctx, {
+        sale: saleState,
+        paymentId: payment!.id,
+        amount: initial,
+        origin: "SALE_PAYMENT",
+      });
       await recordAudit(tx, {
         ...auditBase(ctx),
         action: "CUSTOMER_PAYMENT_POSTED",
@@ -1057,7 +1149,10 @@ export async function postSale(
         after.set(key, (after.get(key) ?? new D(0)).plus(l.normalizedQuantity));
       }
       const status = orderDeliveryStatus(
-        orderLines.map((ol) => ({ ordered: ol.normalizedQuantity, delivered: after.get(ol.id) ?? 0 })),
+        orderLines.map((ol) => ({
+          ordered: ol.normalizedQuantity,
+          delivered: after.get(ol.id) ?? 0,
+        })),
       );
       orderStatus = status;
       if (status === "DELIVERED") {
@@ -1065,7 +1160,12 @@ export async function postSale(
         if (leftover.length > 0) {
           await tx
             .update(productLotReservations)
-            .set({ status: "RELEASED", releasedAt: now, releaseReason: "ORDER_DELIVERED", releasedByUserId: ctx.userId })
+            .set({
+              status: "RELEASED",
+              releasedAt: now,
+              releaseReason: "ORDER_DELIVERED",
+              releasedByUserId: ctx.userId,
+            })
             .where(inArray(productLotReservations.id, leftover));
         }
         await tx
@@ -1116,9 +1216,7 @@ export async function postSale(
         orderStatus,
         total: sale.total,
         materialCost: fixedMoney(materialCost),
-        lots: allocations
-          .map(({ a }) => `${a.lot.code}: ${showQty(a.quantity)}`)
-          .join(", "),
+        lots: allocations.map(({ a }) => `${a.lot.code}: ${showQty(a.quantity)}`).join(", "),
         paid: saleState.paidAmount,
         creditLimitExceeded: credit.exceeded,
       },
