@@ -571,3 +571,112 @@ antes y después de bloquear el lote: un reintento devuelve `200` con el mismo r
 **Consecuencias.** Dos pedidos simultáneos con el mismo id producen un solo hijo; dos con ids
 distintos se serializan por el lock del lote y el segundo puede recibir `409
 INSUFFICIENT_LOT_QUANTITY` (300 + 300 sobre 500).
+
+## ADR-050 — Reserva dura por lote de producto terminado, sin movimiento de stock
+
+**Contexto.** Un pedido confirmado tiene que apartar stock concreto para su fecha (vencimientos,
+FEFO, trazabilidad y, en Fase 5B, la venta y su costo real), sin que el stock físico cambie hasta
+que ocurra algo físico.
+**Decisión.** Confirmar crea `product_lot_reservations` por lote (no "400 medialunas" sino "150 de
+LOT-A + 250 de LOT-B"), elegidas por FEFO entre lotes **elegibles para `requestedAt`**
+(`calculateProductAvailabilityAt` de Fase 4.5, misma regla: vencido = `at > usable_until`, vida
+útil desconocida cuenta como utilizable y se advierte) que respeten la conservación pedida
+(`ANY` acepta cualquiera). Nunca se crea un `StockMovement`. Cantidades: `PHYSICAL` (saldo),
+`ELIGIBLE` (físico utilizable en la fecha), `COMMITTED` (Σ reservas `ACTIVE` sobre lotes
+elegibles), `AVAILABLE = ELIGIBLE − COMMITTED`. La base garantiza Σ reservas activas ≤ saldo del
+lote (trigger al reservar y al bajar el saldo) y que un lote bloqueado no tenga reservas activas.
+Las reservas no se borran: pasan a `RELEASED`, `INVALIDATED` o (Fase 5B) `FULFILLED`.
+**Consecuencias.** Un segundo pedido para la misma fecha no reutiliza lo comprometido: produce.
+Stock → Productos terminados muestra Comprometido y Disponible ahora; el lote, comprometido, libre
+y quién lo reserva.
+
+## ADR-051 — Materia prima: demanda proyectada, no reserva
+
+**Contexto.** Reservar harina para pedidos lejanos bloquearía la producción normal de hoy.
+**Decisión.** Lo que falta producir genera `order_production_requirements` (producto, cantidad,
+receta y versión fijadas) y su explosión en `order_material_requirements` (snapshot por materia
+prima, con la fórmula de escalado de Producción). No se reserva materia prima ni se mueve stock.
+`calculateMaterialDemand` agrega en el servidor la demanda de los pedidos `CONFIRMED`,
+`IN_PREPARATION` y `READY` (con horizonte `until` en hora de la empresa) contra el stock actual de
+toda la empresa: `openOrderDemand`, `availableAfterDemand`, `shortage`, proveedor preferido y los
+pedidos que la componen.
+**Consecuencias.** Dos pedidos que "alcanzan" por separado muestran faltante juntos (7 + 5 contra
+10 → faltan 2). La materia prima se compra con la información de Necesidades; reservarla
+físicamente queda fuera de la fase.
+
+## ADR-052 — REPLAN explícito con `planRevision`; ninguna consulta reescribe un plan
+
+**Contexto.** Cambiar fecha o cantidades de un pedido confirmado, o aprovechar stock nuevo, no
+puede reescribir silenciosamente lo prometido ni borrar historia.
+**Decisión.** Un pedido confirmado sólo edita datos informativos (contacto, entrega, prioridad,
+notas); fecha y productos cambian con `POST /orders/:id/replan` (con `replan-preview` que muestra
+antes y después). El replan, en una transacción: libera las reservas activas (`ORDER_REPLANNED`),
+cierra las necesidades (las cumplidas por una producción completada quedan `SATISFIED`; las que ya
+tienen una orden en curso en una línea que sigue se conservan y se descuentan de lo que falta; el
+resto `CANCELLED`), incrementa `planRevision`, aplica los cambios y crea reservas y necesidades
+nuevas con la revisión nueva. Un pedido `READY` que deja de estar cubierto vuelve a
+`IN_PREPARATION`. Sin cambios, el replan es "Actualizar cobertura" con el stock de hoy. Ningún GET
+escribe: si un pedido cancelado o una producción liberan stock, los demás pedidos muestran "Hay
+nuevo stock disponible — recalcular cobertura" y no cambian hasta que alguien lo pide.
+**Consecuencias.** La historia de reservas y necesidades se conserva por revisión. Cancelar libera
+reservas y cancela necesidades abiertas; las órdenes de producción ya creadas no se cancelan solas.
+
+## ADR-053 — Orden global de locks de pedidos y lotes
+
+**Contexto.** Confirmar/replanificar/cancelar un pedido toca pedido, líneas, necesidades, lotes,
+saldos y reservas; congelar, mermar o bloquear un lote toca lote, saldo y reservas. Sin un orden
+común hay deadlocks y sobre-reserva.
+**Decisión.** Operaciones de pedido: pedido (`FOR UPDATE`) → líneas → necesidades → lotes
+candidatos (`FOR UPDATE`, ordenados por id) → saldos → reservas. Operaciones de lote: lote → saldo →
+reservas, nunca el pedido (marcar `NEEDS_REPLAN` no escribe el pedido: la cobertura efectiva se
+deriva de reservas `INVALIDATED` de la revisión vigente). Marcar listo toma las reservas `FOR
+SHARE`. Crear una orden de producción desde una necesidad: pedido `FOR SHARE` → necesidad `FOR
+UPDATE`. Los triggers de capacidad no son diferibles, por eso merma y bloqueo **invalidan antes**
+de bajar el saldo o cambiar la calidad.
+**Consecuencias.** Dos confirmaciones simultáneas de 70 sobre 100 reservan 70 + 30 (y 40 a
+producir), nunca 140; merma y confirmación concurrentes nunca dejan una reserva activa sobre
+cantidad inexistente.
+
+## ADR-054 — Calidad y merma tienen prioridad sobre la reserva; lo comprometido no se transforma
+
+**Contexto.** No se puede impedir bloquear producto potencialmente no apto, ni registrar una merma
+real, sólo porque estaba reservado; tampoco congelar mercadería prometida fresca.
+**Decisión.** Bloquear por calidad invalida todas las reservas activas del lote
+(`LOT_RESERVATION_INVALIDATED`, motivo `LOT_BLOCKED`). La merma que deja el saldo por debajo de lo
+comprometido invalida reservas (primero las de menor prioridad y entrega más lejana) y, para la
+reserva parcialmente afectada, re-reserva lo que queda en el lote; motivo `LOT_WASTE`. Los pedidos
+afectados quedan `NEEDS_REPLAN` hasta un replan. Transformar (congelar/descongelar) sólo puede
+tomar `saldo − comprometido`: si no, `409 LOT_QUANTITY_COMMITTED`.
+**Consecuencias.** Un pedido nunca afirma estar cubierto por un lote bloqueado o mermado. Para
+congelar lo reservado hay que replanificar primero.
+
+## ADR-055 — Fecha y hora del pedido en la zona de la empresa
+
+**Contexto.** En Fase 4.5 el selector de disponibilidad usaba `datetime-local` y `new Date()`, es
+decir, la zona del navegador.
+**Decisión.** `requestedAt` viaja entre UI y API como hora de pared de la empresa
+(`"AAAA-MM-DDTHH:mm"`, `localDateTimeSchema`) y la API la convierte con `Company.timezone`
+(`zonedLocalToInstant`); se guarda `timestamptz` y se devuelve también `requestedAtLocal`. La UI usa
+`WallClockInput` (fecha + hora por separado, rotulado "hora de <zona>") y nunca interpreta la hora
+con la zona del navegador. Los filtros `from`/`to` son fechas del calendario de la empresa. La
+disponibilidad a una fecha de Fase 4.5 y el "hoy" del formulario de producción pasan a la misma
+regla.
+**Consecuencias.** Probado con la empresa en Buenos Aires y el navegador en Tokio (E2E) y con una
+empresa en Tokio (integración): 10/10/2026 10:00 se guarda y se muestra 10:00 hora de la empresa.
+Quedan con `datetime-local` las fechas de recepción de compras y de operaciones de stock (deuda en
+UX_BACKLOG).
+
+## ADR-056 — Necesidad de producción → orden de producción, 1:1 en el MVP; idempotencia de pedidos
+
+**Contexto.** Lo que falta producir debe poder convertirse en una orden de producción sabiendo
+para qué pedido es, sin atar Producción a Pedidos.
+**Decisión.** `production_orders.source_order_requirement_id` (opcional). "Crear orden de
+producción" prellena producto, cantidad, receta, fecha requerida y depósitos sugeridos; al crearla
+la necesidad pasa `OPEN → PRODUCTION_CREATED` (una sola orden por necesidad: la segunda recibe
+`409 REQUIREMENT_NOT_OPEN`). Cancelar la orden la devuelve a `OPEN`; completarla, a `SATISFIED`
+(el pedido avisa stock nuevo y se actualiza con un replan). Requiere `order_production.create`
+además de `production_orders.create`. Confirmar, replanificar y cancelar llevan un `operationId`
+registrado en `customer_order_operations`: un reintento devuelve el mismo resultado
+(`replayed: true`); el mismo id en otra acción u otro pedido, `409 OPERATION_ID_REUSED`.
+**Consecuencias.** No hay consolidación de varios pedidos en una producción (deuda
+`PRODUCTION_CONSOLIDATION`). Las producciones normales siguen existiendo sin pedido.

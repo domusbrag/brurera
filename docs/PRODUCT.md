@@ -41,9 +41,55 @@ costos, precios, reportes, auditoría y configuración empresarial.
 
 ## Estado
 
-Fases 0 (fundación), 1 (maestros), 2 (recetas + costo teórico), 3 (compras + inventario) y 4
-(producción) aceptadas; Fase 4.5 (lotes, conservación y vida útil) implementada y esperando gate
-humano. Ver [ROADMAP](ROADMAP.md).
+Fases 0 (fundación), 1 (maestros), 2 (recetas + costo teórico), 3 (compras + inventario), 4
+(producción) y 4.5 (lotes, conservación y vida útil) aceptadas; Fase 5A (pedidos, demanda
+comprometida y necesidades) implementada y esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+
+### Pedidos, demanda comprometida y necesidades (Fase 5A)
+
+Un pedido es un **compromiso futuro**: qué prometimos, para cuándo, qué tenemos, qué de eso sirve
+para esa fecha, qué ya prometimos a otros, qué falta producir, qué ingredientes requiere y qué
+falta comprar. Nada de esto mueve el inventario físico.
+
+- **Cargar un pedido** (Comercial → Pedidos → Nuevo pedido): cliente, fecha y hora de entrega o
+  retiro **en la hora de la empresa** (se muestra la zona), retiro o entrega (con dirección),
+  evento, prioridad (normal, alta, urgente), productos con cantidad, unidad y conservación pedida
+  (indistinto, fresco, refrigerado, congelado, descongelado) y notas. El precio actual del producto
+  se muestra como referencia; el precio final es de Fase 5B.
+- **Vista previa explicada** mientras se carga: por producto, stock físico, stock válido para la
+  fecha, ya comprometido con otros pedidos, disponible, cuánto se reservaría y cuánto falta
+  producir, con la explicación en palabras ("Hay 700 kg; 300 vencen antes de la fecha…"), los lotes
+  y las materias primas que harían falta. No reserva nada.
+- **Borrador**: se edita libremente y no compromete stock.
+- **Confirmar**: reserva lotes concretos (primero los que vencen antes), registra lo que falta
+  producir con la receta vigente y proyecta la materia prima, todo junto o nada. El pedido muestra
+  estado (borrador, confirmado, en preparación, listo, cancelado) y cobertura (cubierto, cobertura
+  parcial, sin cobertura, necesita recalcular).
+- **Detalle del pedido**: datos, avisos (falta producir, falta materia prima, lote bloqueado o con
+  merma, sin receta, lote sin vida útil configurada, receta nueva publicada, hay stock nuevo),
+  productos y cobertura, lotes reservados (con historial), producción necesaria con su orden
+  vinculada, materias primas necesarias contra stock y demás pedidos, e historial.
+- **Crear orden de producción** desde lo que falta: queda prellenada y vinculada al pedido; la
+  orden muestra "Creada para PED-0001".
+- **Modificar pedido** (fecha o productos) con comparación antes/después: cobertura, reservas que
+  se mantienen, liberan y toman, producción y materias primas. **Actualizar cobertura** recalcula
+  con el stock de hoy. Cada cambio deja una revisión nueva del plan; la anterior queda en el
+  historial.
+- **Cancelar** libera las reservas. Un pedido listo se cancela sólo confirmando la advertencia.
+- **Empezar preparación** y **Marcar listo** (sólo con todo el pedido reservado).
+- Si otro pedido se cancela o termina una producción, el pedido avisa "Hay nuevo stock disponible —
+  recalcular cobertura" y no cambia solo. Si un lote reservado se bloquea por calidad o tiene merma,
+  el pedido pasa a "Necesita recalcular". Lo reservado no se puede congelar ni descongelar.
+- **Necesidades** (Planificación → Necesidades), con horizonte de fecha: productos a producir
+  (cantidad, primera entrega, pedidos y botón para crear la orden), materias primas (stock actual,
+  necesidad comprometida, lo que queda, falta comprar, proveedor sugerido) y pedidos en riesgo.
+- Stock → Productos terminados agrega **Comprometido** y **Disponible ahora**; el detalle del lote,
+  comprometido, libre y los pedidos que lo reservan.
+
+Producción ve los pedidos sin los datos de contacto del cliente. Fuera de esta fase: venta y
+entrega, cobros, señas (`ORDER_ADVANCE_PAYMENT`, Fase 5B; se puede anotar en notas), cuenta
+corriente, precio final y margen, reserva física de materia prima, producción consolidada de varios
+pedidos, planificación por capacidad y rutas de reparto.
 
 ### Lotes, conservación y vida útil (Fase 4.5)
 
@@ -70,7 +116,7 @@ humano. Ver [ROADMAP](ROADMAP.md).
 - En el listado de productos terminados: físico, fresco, refrigerado, congelado, utilizable ahora
   y próximo a vencer. Los movimientos muestran su lote.
 
-Fuera de esta fase: reservas de stock, ventas que consuman lotes (Fase 5), transferir lotes entre
+Fuera de esta fase: reservas de stock (Fase 5A), ventas que consuman lotes (Fase 5B), transferir lotes entre
 depósitos y vencimiento automático con tareas programadas (el estado se calcula en cada consulta).
 
 ### Producción (Fase 4)

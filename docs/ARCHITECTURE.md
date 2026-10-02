@@ -35,7 +35,12 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   (stock y costo de productos terminados). Fase 4.5: `lots` (`lots.service.ts`: lote al completar,
   congelar / descongelar, merma, bloqueo, disponibilidad a una fecha, próximos a vencer y resumen
   por producto; `conservation.service.ts`: perfil de conservación; `lots.data.ts`: lecturas y
-  DTOs) y, en `ledger.ts`, `postLotMovement` y el saldo por lote. Los módulos futuros siguen la lista de la
+  DTOs) y, en `ledger.ts`, `postLotMovement` y el saldo por lote. Fase 5A: `orders`
+  (`orders.service.ts`: alta, edición, vista previa, confirmar, replan, cancelar, preparación y
+  listo; `orders.plan.ts`: resolución de líneas y plan FEFO + receta por pedido; `orders.data.ts`:
+  lecturas, cobertura efectiva, proyección de materias primas y DTOs; `reservations.ts`:
+  comprometido por lote, locks e invalidación; `requirements.ts`: vínculo necesidad ↔ orden de
+  producción; `planning.service.ts`: Necesidades). Los módulos futuros siguen la lista de la
   especificación (§30).
 - **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
   `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
@@ -128,6 +133,16 @@ PRODUCTION_ALREADY_COMPLETED`) + único `(company_id, source_line_id)` (línea p
 replayed: true`; el mismo id en otra operación → `409 OPERATION_ID_REUSED`. "Vencido", "próximo
   a vencer" y "agotado" se derivan al consultar (no hay jobs); la disponibilidad a una fecha y el
   orden FEFO salen de `@bakery/domain` (`calculateAvailabilityAt`, `sortFefo`).
+- **Pedidos (Fase 5A, ADR-050 a 056):** confirmar, replanificar y cancelar son una transacción
+  cada uno con orden de locks fijo (pedido → líneas → necesidades → lotes ordenados → saldos →
+  reservas; las operaciones de lote nunca toman el pedido) e idempotencia por `operationId`
+  (`customer_order_operations`, verificado después de bloquear el pedido). El plan reutiliza el
+  dominio: elegibilidad y FEFO de Fase 4.5 más `availabilityForOrder` / `allocateFefo`
+  (comprometido de otros pedidos descontado) y el escalado de recetas de Producción
+  (`expandRecipe`). Reservar no escribe el ledger. La cobertura `NEEDS_REPLAN` se deriva de las
+  reservas invalidadas de la revisión vigente, así merma y bloqueo no tocan el pedido. Ningún GET
+  escribe: vistas previas (`coverage-preview`, `replan-preview`) calculan sin guardar. Necesidades
+  (`/planning/*`) agrega en SQL y pagina en el servidor.
 - **Visibilidad de costos:** las rutas de inventario calculan `canSeeCosts` con el permiso
   `inventory.cost.read`; sin él, promedio, valor de inventario, costo unitario y valor de los
   movimientos y costo de la última compra vienen en `null`, e `GET /api/inventory/costs/:id`
@@ -194,6 +209,16 @@ replayed: true`; el mismo id en otra operación → `409 OPERATION_ID_REUSED`. "
   útil y tiempo restante en palabras). Productos terminados suma columnas por conservación; los
   movimientos muestran el lote; la orden completada enlaza su lote y, si el producto admite varios
   estados iniciales, el diálogo de completar permite elegirlo.
+- **Pedidos y Necesidades (Fase 5A):** `src/components/orders/` — `order-shared.tsx` (estado,
+  cobertura, `WallClockInput` de fecha + hora de la empresa, cobertura por producto explicada,
+  proyección de materias primas), `order-form.tsx` (alta y edición con vista previa de cobertura
+  en vivo), `order-pages.tsx` (listado con filtros y detalle con acciones; confirmar, actualizar
+  cobertura y cancelar llevan `operationId` por intento), `order-replan.tsx` (modificar con
+  comparación antes/después) y `planning-pages.tsx` (pestañas Producción / Materias primas /
+  Pedidos en riesgo con horizonte). Rutas `/pedidos` y `/necesidades`; navegación **Comercial →
+  Pedidos** (`orders.read`) y **Planificación → Necesidades** (`order_planning.read`). La orden de
+  producción acepta `?requirementId=` para prellenarse desde una necesidad. Stock y lotes muestran
+  comprometido y disponible.
 - La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared
@@ -253,6 +278,10 @@ inválida detiene el proceso con un mensaje claro. Ver `.env.example`.
 - Todas las marcas de tiempo son `timestamptz` (UTC). La zona horaria de presentación es la de la
   empresa (`companies.timezone`, por defecto `America/Argentina/Buenos_Aires`).
 - Fechas de calendario sin hora (p. ej. fecha de ingreso) usan `date`.
+- **Hora de pared de la empresa (Fase 5A, ADR-055):** una fecha y hora que el usuario elige (la
+  entrega de un pedido, la disponibilidad a una fecha) viaja como `"AAAA-MM-DDTHH:mm"` en la zona de
+  la empresa y la API la convierte con `zonedLocalToInstant`; las respuestas traen también la forma
+  local (`requestedAtLocal`). La UI no usa `datetime-local` ni `new Date()` para interpretarla.
 - Dinero, costos y cantidades comerciales: `numeric(p, s)` en PostgreSQL; en TypeScript viajan como
   strings decimales y se operan con `decimal.js` (nunca `number`). Hay un test que falla si
   aparece una columna `real`/`double precision`.

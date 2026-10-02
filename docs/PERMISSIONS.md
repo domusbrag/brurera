@@ -164,3 +164,14 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
   llegan con recetas/producción (Fases 2 y 4) e inventario (Fase 3).
 - Nadie salvo ADMIN y OWNER ve usuarios con permisos de alta, roles o auditoría completa;
   ADMINISTRACIÓN puede leer usuarios, roles y auditoría.
+- **Pedidos (Fase 5A):** VENTAS carga, edita, confirma, replanifica y cancela pedidos (no los
+  marca listos ni ve Necesidades). ADMINISTRACIÓN ve pedidos, los replanifica y consulta
+  Necesidades. PRODUCCIÓN ve pedidos y Necesidades, pasa pedidos a preparación y crea órdenes de
+  producción desde una necesidad (`order_production.create`, además de
+  `production_orders.create`). DEPÓSITO ve pedidos (reservas y lotes comprometidos) y los marca
+  listos. Nadie recibe permisos financieros: no existen todavía.
+- **Visibilidad mínima:** sin `customers.read` el detalle del pedido no muestra teléfono,
+  contacto ni direcciones, y el detalle de lote no muestra el cliente de cada reserva; sin
+  `orders.read` el lote sólo muestra sus totales comprometido y libre.
+- Empresas existentes reciben los permisos nuevos con `pnpm db:sync-reference` (o `pnpm
+  bootstrap` en desarrollo).

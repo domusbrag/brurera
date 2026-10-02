@@ -280,6 +280,32 @@ describe("conservación pedida y sin receta", () => {
     expect(fresh.reservations[0].lot.conservationState).toBe("FRESH");
   });
 
+  it("§78 replan por cambio de fecha: el lote fresco deja de servir, se libera y se reserva congelado", async () => {
+    const order = await confirmedOrder(api, w, [{ productId: w.panFrances, quantity: "200" }]);
+    expect(
+      order.reservations.map(
+        (r: { lot: { conservationState: string } }) => r.lot.conservationState,
+      ),
+    ).toEqual(["FRESH"]);
+    const { order: after } = await ok(replan(api, order.id, { requestedAt: localIn(3, 10) }));
+    expect(after.planRevision).toBe(2);
+    expect(after.requestedAtLocal).toBe(localIn(3, 10));
+    const byRevision = after.reservations.map(
+      (r: { planRevision: number; status: string; lot: { conservationState: string } }) => [
+        r.planRevision,
+        r.status,
+        r.lot.conservationState,
+      ],
+    );
+    expect(byRevision).toEqual([
+      [2, "ACTIVE", "FROZEN"],
+      [1, "RELEASED", "FRESH"],
+    ]);
+    expect(dec(after.lines[0].reserved)).toBe("200");
+    expect(after.coverageStatus).toBe("FULLY_COVERED");
+    await ok(cancel(api, order.id));
+  });
+
   it("un producto sin receta queda sin cubrir, con problema y sin materias primas inventadas", async () => {
     const product = await ok(
       api.post("/api/products", {

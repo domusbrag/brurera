@@ -22,6 +22,13 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4.5] Stock suma la pestaña "Próximos a vencer": ya son cinco pestañas en Inventario. Evaluar
   una sección "Producto terminado" con sub-pestañas (stock, lotes, por vencer).
 
+- [F5A] Aparecen "Comercial → Pedidos" y un grupo nuevo "Planificación → Necesidades". Con Ventas
+  (5B) Comercial tendrá Pedidos, Ventas, Clientes y Proveedores: revisar si Pedidos y Ventas van
+  juntos en un grupo "Clientes" y Proveedores con Compras.
+- [F5A] Necesidades usa pestañas por enlace (Producción · Materias primas · Pedidos en riesgo) con
+  el horizonte en la URL; es el mismo patrón que Inventario pero con un filtro compartido. Tomarlo
+  como base del patrón de subnavegación.
+
 ## INFORMATION_ARCHITECTURE
 
 - [F3] La ficha de la materia prima (Maestros) y la ficha de stock (Inventario) muestran parte de
@@ -42,6 +49,12 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4.5] La conservación se configura en la ficha del producto (Maestros) y se consulta en la ficha
   de stock; un acceso directo desde el lote o la ficha de stock acortaría el recorrido.
 
+- [F5A] El detalle del pedido es largo (datos, avisos, productos, lotes, producción, materias
+  primas, historial). En un pedido confirmado lo urgente (avisos y acciones) está arriba, pero
+  lotes y producción quedan debajo del pliegue en 1366×768. Evaluar pestañas o un resumen lateral.
+- [F5A] La cobertura por producto de la vista previa usa tarjetas con ocho métricas; con varios
+  productos la vista previa se alarga. Evaluar una tabla compacta con detalle desplegable.
+
 ## VISUAL_HIERARCHY
 
 - [F3] Los tres costos (promedio de inventario, referencia manual, usado por recetas) se
@@ -54,6 +67,11 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 
 - [F4.5] El estado de un lote combina dos badges (conservación + estado operativo). Definir un
   único indicador compacto (p. ej. ícono de copo para congelado + color por vencimiento).
+
+- [F5A] El pedido muestra estado y cobertura como dos badges en el título; "Confirmado · Cobertura
+  parcial" se entiende, pero compite con la prioridad. Definir una línea de estado del pedido.
+- [F5A] El campo "Datos del pedido" muestra "—" para los datos vacíos (contacto, evento, listo);
+  ocultar los vacíos acortaría el bloque.
 
 ## FORMS
 
@@ -75,6 +93,14 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   tablet entra justo. Evaluar tarjetas por estado con interruptor.
 - [F4.5] "Disponibilidad a una fecha" usa `datetime-local` en la zona del navegador, mientras que
   las fechas se muestran en la zona de la empresa. Unificar con el selector de fecha propio.
+  _(F5A: corregido con `WallClockInput`, fecha + hora de la empresa.)_
+- [F5A] Quedan dos campos `datetime-local` interpretados en la zona del navegador: fecha de
+  recepción de compras (`purchase-form.tsx`) y fecha de operaciones de stock
+  (`stock-operation.tsx`). Pasarlos a `WallClockInput` (deuda técnica, no sólo UX).
+- [F5A] `WallClockInput` es fecha + hora nativas: el selector de fecha sigue el idioma del
+  navegador (mm/dd/aaaa en inglés). Mismo hallazgo que [F4]: selector propio en es-AR.
+- [F5A] Al modificar un pedido, la línea existente no cambia de producto (se quita y se agrega
+  otra); explicarlo junto al selector bloqueado.
 
 ## TABLES
 
@@ -96,6 +122,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   se escribe y se navega enseguida, el reemplazo devuelve al listado. Cancelar el filtro pendiente
   al navegar.
 
+- [F5A] Necesidades → Producción lista los pedidos de cada producto dentro de la celda; con muchos
+  pedidos la fila crece. Evaluar filas expandibles por producto.
+
 ## DASHBOARD
 
 - [F3] El inicio todavía no muestra alertas de stock bajo mínimo ni compras pendientes de
@@ -106,6 +135,9 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4.5] El inicio no avisa lotes vencidos o próximos a vencer; es la alerta diaria más útil para
   producción y mostrador.
 
+- [F5A] El inicio no muestra pedidos de hoy y mañana ni pedidos en riesgo; Necesidades → Pedidos
+  en riesgo es la base natural de ese indicador.
+
 ## RESPONSIVE
 
 - [F3] En 768 px de ancho el menú pasa a panel desplegable; las tablas con 6+ columnas dependen
@@ -114,6 +146,10 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F4] El diálogo "Revisar antes de completar" usa casi todo el alto en 768×1024 cuando hay
   muchas materias primas; tiene scroll propio, pero el botón "Confirmar producción" queda abajo.
   Evaluar un pie fijo dentro del diálogo.
+
+- [F5A] En 768 px, el menú desplegable volvía a aparecer abierto al regresar a la página donde se
+  había abierto (corregido en F5A). Los formularios con tablas anchas ensanchaban la página
+  (corregido: `.form` con columna `minmax(0, 1fr)`).
 
 ## ACCESSIBILITY
 
@@ -140,3 +176,13 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   "Registrar merma" directo en la fila.
 - [F4] No hay reversa de una producción completada (deuda PRODUCTION_REVERSAL): un error de carga
   se corrige hoy con ajustes manuales de stock. Definir el flujo de reversa con negocio.
+- [F5A] Cada necesidad de un pedido genera su propia orden de producción (deuda
+  `PRODUCTION_CONSOLIDATION`): si tres pedidos piden medialunas para el sábado, son tres órdenes.
+  Definir con negocio cómo consolidar (por producto y fecha) sin perder el vínculo a cada pedido.
+- [F5A] Al terminar una producción el pedido avisa "Hay nuevo stock disponible" pero hay que
+  entrar a cada pedido y "Actualizar cobertura". Evaluar una acción por lote "recalcular los
+  pedidos afectados" (siempre explícita, nunca automática).
+- [F5A] La seña del pedido sólo puede anotarse en Notas (`ORDER_ADVANCE_PAYMENT` es Fase 5B).
+- [F5A] Para empresas que ya existían, los permisos nuevos de pedidos llegan con
+  `pnpm db:sync-reference` (o `pnpm bootstrap` en desarrollo); sin ese paso el menú no muestra
+  Pedidos. Evaluar avisarlo en la pantalla de roles.
