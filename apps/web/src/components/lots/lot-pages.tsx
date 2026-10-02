@@ -17,6 +17,7 @@ import {
   type ProductLotDetailDto,
   type ProductLotDto,
   type ProductWasteReasonDto,
+  zonedLocalToInstant,
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -47,8 +48,8 @@ import {
   LotStatusBadge,
   formatRemaining,
   formatShelfLife,
-  toLocalInput,
 } from "./lot-shared";
+import { WallClockInput, isCompleteWallClock, wallClockIn } from "../orders/order-shared";
 
 /*
  * Lotes de producto terminado (Fase 4.5): lotes de un producto, disponibilidad a
@@ -216,32 +217,27 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
   const user = useCurrentUser();
   const can = useCan();
   const warehouses = useWarehouseOptions();
-  const [at, setAt] = useState(() => toLocalInput(new Date(Date.now() + 2 * 86_400_000)));
+  const tz = user.company.timezone;
+  // Hora de pared de la EMPRESA (no la del navegador): deuda de Fase 4.5 corregida en 5A.
+  const [at, setAt] = useState(() => wallClockIn(tz, 2, 10));
   const [warehouseId, setWarehouseId] = useState("");
-  const instant = at ? new Date(at) : null;
-  const valid = instant !== null && !Number.isNaN(instant.getTime());
+  const valid = isCompleteWallClock(at);
   const { data, error } = useResource<ProductAvailabilityDto>(
     can(P.PRODUCT_LOTS_READ) && valid
       ? listPath(`/api/inventory/products/${productId}/availability`, {
-          at: instant.toISOString(),
+          at: zonedLocalToInstant(at, tz).toISOString(),
           warehouseId,
         })
       : null,
   );
   if (!can(P.PRODUCT_LOTS_READ)) return null;
-  const tz = user.company.timezone;
   return (
     <section className="panel" aria-labelledby="availability-title">
       <h2 id="availability-title">Disponibilidad a una fecha</h2>
       <div className="form-grid">
         <div className="form__field">
           <label htmlFor="availability-at">Fecha y hora</label>
-          <input
-            id="availability-at"
-            type="datetime-local"
-            value={at}
-            onChange={(e) => setAt(e.target.value)}
-          />
+          <WallClockInput id="availability-at" value={at} timeZone={tz} onChange={setAt} />
         </div>
         <div className="form__field">
           <label htmlFor="availability-warehouse">Depósito</label>
@@ -284,6 +280,16 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
                 {formatQuantity(data.ineligibleQuantity, unit)}
               </dd>
             </div>
+            <div>
+              <dt>Comprometido con pedidos</dt>
+              <dd>{formatQuantity(data.committedQuantity, unit)}</dd>
+            </div>
+            <div>
+              <dt>Disponible para pedidos nuevos</dt>
+              <dd>
+                <strong>{formatQuantity(data.availableQuantity, unit)}</strong>
+              </dd>
+            </div>
           </dl>
           {data.reasons.length > 0 && (
             <ul className="muted">
@@ -308,6 +314,9 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
                     <th scope="col" className="num">
                       Cantidad
                     </th>
+                    <th scope="col" className="num hide-sm">
+                      Comprometido
+                    </th>
                     <th scope="col">Ese día</th>
                   </tr>
                 </thead>
@@ -322,6 +331,9 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
                         </td>
                         <td>{CONSERVATION_STATE_LABELS[l.conservationState]}</td>
                         <td className="num">{formatQuantity(l.quantity, unit)}</td>
+                        <td className="num hide-sm">
+                          {new D(l.committed).isZero() ? "—" : formatQuantity(l.committed, unit)}
+                        </td>
                         <td>
                           {l.eligible ? (
                             "Utilizable"
@@ -344,6 +356,49 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
 }
 
 /* ---------- Detalle del lote ---------- */
+
+/** Pedidos que reservan este lote (Fase 5A). Sin orders.read sólo se ven los totales. */
+function LotReservations({ lot, tz }: { lot: ProductLotDetailDto; tz: string }) {
+  const { reservations } = lot.commitment;
+  if (reservations === null || reservations.length === 0) return null;
+  const unit = lot.unit.symbol;
+  return (
+    <section className="panel" aria-labelledby="reservations-title">
+      <h2 id="reservations-title">Reservado para pedidos</h2>
+      <p className="muted small">
+        Lo reservado sigue en el lote: no se puede transformar ni usar para otro pedido.
+      </p>
+      <div className="table-wrap">
+        <table className="table" aria-label="Pedidos que reservan el lote">
+          <thead>
+            <tr>
+              <th scope="col">Pedido</th>
+              <th scope="col" className="hide-sm">
+                Cliente
+              </th>
+              <th scope="col">Entrega</th>
+              <th scope="col" className="num">
+                Reservado
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {reservations.map((r) => (
+              <tr key={r.id}>
+                <td>
+                  <Link href={`/pedidos/${r.order.id}`}>{r.order.code}</Link>
+                </td>
+                <td className="hide-sm">{r.customer ?? "—"}</td>
+                <td>{formatDateTime(r.order.requestedAt, tz)}</td>
+                <td className="num">{formatQuantity(r.quantity, unit)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
 
 export function LotDetail({ id }: { id: string }) {
   const user = useCurrentUser();
@@ -397,7 +452,11 @@ export function LotDetail({ id }: { id: string }) {
                 <ConfirmAction
                   label="Bloquear"
                   title={`Bloquear el lote ${data.code}`}
-                  message="Un lote bloqueado no se cuenta como disponible ni se puede congelar o descongelar. Sí admite merma."
+                  message={
+                    new D(data.commitment.committedQuantity).gt(0)
+                      ? `Un lote bloqueado no se cuenta como disponible ni se puede congelar o descongelar. Sí admite merma. Tiene ${formatQuantity(data.commitment.committedQuantity, unit)} reservados: esas reservas se invalidan y los pedidos quedan para recalcular cobertura.`
+                      : "Un lote bloqueado no se cuenta como disponible ni se puede congelar o descongelar. Sí admite merma."
+                  }
                   confirmLabel="Bloquear lote"
                   danger
                   onConfirm={async () => {
@@ -451,6 +510,16 @@ export function LotDetail({ id }: { id: string }) {
           <div>
             <dt>Cantidad actual</dt>
             <dd>{formatQuantity(data.quantity, unit)}</dd>
+          </div>
+          <div>
+            <dt>Comprometido con pedidos</dt>
+            <dd>{formatQuantity(data.commitment.committedQuantity, unit)}</dd>
+          </div>
+          <div>
+            <dt>Libre</dt>
+            <dd>
+              <strong>{formatQuantity(data.commitment.freeQuantity, unit)}</strong>
+            </dd>
           </div>
           <div>
             <dt>Cantidad inicial</dt>
@@ -522,6 +591,8 @@ export function LotDetail({ id }: { id: string }) {
           <p className="muted small">Un lote descongelado no puede volver a congelarse.</p>
         )}
       </section>
+
+      <LotReservations lot={data} tz={tz} />
 
       {data.children.length > 0 && (
         <section className="panel" aria-labelledby="children-title">
@@ -657,10 +728,15 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
         ? "El lote está agotado."
         : null;
 
-  const available = new D(lot.quantity);
+  // Lo reservado por pedidos no se transforma (LOT_QUANTITY_COMMITTED); la merma sí
+  // puede tocarlo, e invalida esas reservas.
+  const committed = new D(lot.commitment.committedQuantity);
+  const available = target ? new D(lot.commitment.freeQuantity) : new D(lot.quantity);
   const qty = isPositive(quantity) ? parseDecimal(quantity) : null;
   const after = qty ? available.minus(qty) : null;
   const tooMuch = after?.lt(0) ?? false;
+  const touchesReservations =
+    kind === "waste" && !!qty && committed.gt(0) && qty.gt(new D(lot.commitment.freeQuantity));
   const ready = !!qty && !tooMuch && (kind !== "waste" || !!reason) && !blockedReason;
   const newUsableUntil =
     option?.shelfLifeMinutes !== null && option?.shelfLifeMinutes !== undefined
@@ -668,7 +744,7 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
       : null;
   const value =
     lot.canSeeCosts && qty && lot.unitMaterialCost
-      ? (after?.isZero() ? new D(lot.value!) : qty.times(lot.unitMaterialCost)).toString()
+      ? (qty.eq(lot.quantity) ? new D(lot.value!) : qty.times(lot.unitMaterialCost)).toString()
       : null;
 
   async function confirm() {
@@ -718,7 +794,7 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
       <div>
         <dt>Lote {lot.code} después</dt>
         <dd className={tooMuch ? "text-negative" : undefined}>
-          {after ? formatQuantity(after.toString(), unit) : "—"}
+          {qty ? formatQuantity(new D(lot.quantity).minus(qty).toString(), unit) : "—"}
         </dd>
       </div>
       {target && (
@@ -733,6 +809,15 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
                 {formatShelfLife(option!.shelfLifeMinutes)})
               </span>
             )}
+          </dd>
+        </div>
+      )}
+      {touchesReservations && (
+        <div>
+          <dt>Pedidos afectados</dt>
+          <dd className="text-negative">
+            La merma toca stock reservado: esas reservas se invalidan y los pedidos quedan para
+            recalcular cobertura.
           </dd>
         </div>
       )}
@@ -806,7 +891,10 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
                   onChange={(e) => setQuantity(e.target.value)}
                 />
                 <span className="form__hint">
-                  Disponible: {formatQuantity(lot.quantity, unit)}.{" "}
+                  {target ? "Libre" : "Disponible"}: {formatQuantity(available.toString(), unit)}
+                  {committed.gt(0) &&
+                    ` (${formatQuantity(lot.commitment.committedQuantity, unit)} reservados para pedidos${target ? ", no se pueden " + copy.verb : ""})`}
+                  .{" "}
                   <button
                     type="button"
                     className="link-button"

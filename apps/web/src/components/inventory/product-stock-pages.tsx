@@ -106,6 +106,21 @@ export function ProductStockList() {
           className: "num",
         },
         {
+          header: "Comprometido",
+          cell: (i: ProductStockItemDto) =>
+            new D(i.lots.committed).isZero()
+              ? "—"
+              : formatQuantity(i.lots.committed, i.saleUnit.symbol),
+          className: "num hide-sm",
+        },
+        {
+          header: "Disponible ahora",
+          cell: (i: ProductStockItemDto) => (
+            <strong>{formatQuantity(i.lots.availableNow, i.saleUnit.symbol)}</strong>
+          ),
+          className: "num",
+        },
+        {
           header: "Próximo a vencer",
           cell: (i: ProductStockItemDto) =>
             new D(i.lots.nearExpiry).isZero() ? (
@@ -200,6 +215,16 @@ export function ProductStockDetail({ id }: { id: string }) {
           <div>
             <dt>Utilizable ahora</dt>
             <dd>{formatQuantity(data.lots.usableNow, unit)}</dd>
+          </div>
+          <div>
+            <dt>Comprometido con pedidos</dt>
+            <dd>{formatQuantity(data.lots.committed, unit)}</dd>
+          </div>
+          <div>
+            <dt>Disponible ahora</dt>
+            <dd>
+              <strong>{formatQuantity(data.lots.availableNow, unit)}</strong>
+            </dd>
           </div>
           <div>
             <dt>Próximo a vencer</dt>

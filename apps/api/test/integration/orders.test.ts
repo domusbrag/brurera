@@ -200,12 +200,12 @@ describe("borrador, vista previa y confirmación (§72–§76)", () => {
   });
 
   it("la materia prima no se reserva: el stock sigue igual y sólo se proyecta la demanda", async () => {
-    const [{ n }] = (
+    const [row] = (
       await db().execute<{ n: number }>(
         sql`select count(*)::int as n from stock_movements where item_type = 'RAW_MATERIAL' and movement_type not in ('INITIAL_STOCK','ADJUSTMENT_POSITIVE','PRODUCTION_CONSUMPTION')`,
       )
     ).rows;
-    expect(Number(n)).toBe(0);
+    expect(Number(row?.n)).toBe(0);
     const demand = await ok(api.get("/api/planning/material-demand"));
     const harina = demand.items.find(
       (m: { rawMaterial: { id: string } }) => m.rawMaterial.id === w.harina,

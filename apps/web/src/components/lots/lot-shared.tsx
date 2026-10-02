@@ -64,9 +64,3 @@ export function formatRemaining(minutes: number | null): string {
         : `${mins} min`;
   return minutes >= 0 ? `vence en ${parts}` : `venció hace ${parts}`;
 }
-
-/** "2026-10-01T10:00" (input datetime-local) a partir de un instante. */
-export function toLocalInput(date: Date): string {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}

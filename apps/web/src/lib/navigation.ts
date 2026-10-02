@@ -75,6 +75,13 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
   {
+    label: "Planificación",
+    items: [
+      // Fase 5A: necesidades de producción y materia prima de los pedidos confirmados.
+      { slug: "necesidades", label: "Necesidades", phase: 4, anyOf: [P.ORDER_PLANNING_READ] },
+    ],
+  },
+  {
     label: "Inventario",
     items: [
       { slug: "stock", label: "Stock", phase: 3, anyOf: [P.INVENTORY_READ] },
@@ -90,6 +97,8 @@ export const NAVIGATION: NavGroup[] = [
   {
     label: "Comercial",
     items: [
+      // Fase 5A (pedidos y demanda comprometida): entre Fase 4 y Ventas (5B).
+      { slug: "pedidos", label: "Pedidos", phase: 4, anyOf: [P.ORDERS_READ] },
       { slug: "clientes", label: "Clientes", phase: 1, anyOf: [P.CUSTOMERS_READ] },
       { slug: "proveedores", label: "Proveedores", phase: 1, anyOf: [P.SUPPLIERS_READ] },
     ],

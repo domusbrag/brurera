@@ -79,4 +79,18 @@ describe("menú según permisos", () => {
     expect(group(["recipes.read"]).map((i) => i.slug)).toEqual(["recetas"]);
     expect(group(["inventory.read"])).toEqual([]);
   });
+
+  it("Comercial → Pedidos y Planificación → Necesidades (Fase 5A) aparecen con su permiso", async () => {
+    const { visibleNavigation } = await import("@/lib/navigation");
+    const slugsOf = (perms: string[]) =>
+      visibleNavigation(perms).flatMap((g) => g.items.map((i) => i.slug));
+    expect(slugsOf(["orders.read"])).toContain("pedidos");
+    expect(slugsOf(["orders.read"])).not.toContain("necesidades");
+    expect(slugsOf(["order_planning.read"])).toContain("necesidades");
+    expect(slugsOf(["customers.read"])).not.toContain("pedidos");
+    const commercial = visibleNavigation(["orders.read", "customers.read"]).find(
+      (g) => g.label === "Comercial",
+    );
+    expect(commercial?.items[0]?.slug).toBe("pedidos");
+  });
 });
