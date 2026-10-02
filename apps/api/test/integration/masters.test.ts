@@ -99,7 +99,8 @@ describe("clientes", () => {
     const byCode = await api.get("/api/customers?search=cli-0002");
     expect(byCode.json().total).toBe(1);
     const page = await api.get("/api/customers?page=2&pageSize=2");
-    expect(page.json()).toMatchObject({ page: 2, pageSize: 2, total: 5 });
+    // 5 creados + Consumidor Final (Fase 5B, uno por empresa).
+    expect(page.json()).toMatchObject({ page: 2, pageSize: 2, total: 6 });
     expect(page.json().items).toHaveLength(2);
   });
 

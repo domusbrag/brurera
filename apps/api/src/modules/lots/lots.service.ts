@@ -67,6 +67,7 @@ import {
   type Db,
   type LotRow,
 } from "./lots.data.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Lotes de producto terminado (Fase 4.5, ADR-043 a 046).
@@ -892,7 +893,7 @@ export async function listExpiring(
   const threshold = query.withinHours
     ? sql`${query.withinHours * 60}`
     : sql`coalesce((select s.near_expiry_minutes from product_conservation_settings s
-        where s.company_id = ${productLots.companyId} and s.product_id = ${productLots.productId}), ${DEFAULT_NEAR_EXPIRY_MINUTES})`;
+        where s.company_id = ${qualified(productLots.companyId)} and s.product_id = ${qualified(productLots.productId)}), ${DEFAULT_NEAR_EXPIRY_MINUTES})`;
   const nowSql = sql`${now.toISOString()}::timestamptz`;
   const where = and(
     gt(productLotBalances.quantity, "0"),
@@ -901,7 +902,7 @@ export async function listExpiring(
     query.productId ? eq(productLots.productId, query.productId) : undefined,
     query.search
       ? sql`(${productLots.lotCode} ilike ${likePattern(query.search)} or exists (
-          select 1 from products p where p.id = ${productLots.productId}
+          select 1 from products p where p.id = ${qualified(productLots.productId)}
             and (p.name ilike ${likePattern(query.search)} or p.internal_code ilike ${likePattern(query.search)})))`
       : undefined,
     query.status === "expired"

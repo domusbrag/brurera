@@ -238,7 +238,7 @@ describe("integración — flujo principal (§66)", () => {
   it("ingresa 96 kg de Pan francés a 806,25/kg y deja historial de costo", async () => {
     const detail = await productStock(w.panFrances);
     expect(dec(detail.quantity)).toBe("96");
-    expect(detail.movingAverageCost).toBe("806.250000");
+    expect(detail.averageMaterialCost).toBe("806.250000");
     expect(detail.inventoryValue).toBe("77400.000000");
     expect(detail.byWarehouse).toEqual([
       expect.objectContaining({ warehouse: expect.objectContaining({ id: w.warehouseId }) }),
@@ -248,7 +248,7 @@ describe("integración — flujo principal (§66)", () => {
     const { cost, history } = await ok(
       api.get(`/api/inventory/products/${w.panFrances}/cost-history`),
     );
-    expect(cost.movingAverageCost).toBe("806.250000");
+    expect(cost.averageMaterialCost).toBe("806.250000");
     expect(history.items).toHaveLength(1);
     expect(history.items[0]).toMatchObject({
       productionOrder: { id, code: "OP-0001" },
@@ -262,7 +262,7 @@ describe("integración — flujo principal (§66)", () => {
       expect.objectContaining({
         id: w.panFrances,
         lastProduction: expect.objectContaining({ id, code: "OP-0001" }),
-        movingAverageCost: "806.250000",
+        averageMaterialCost: "806.250000",
       }),
     ]);
   });
@@ -461,12 +461,12 @@ describe("integración — promedio del producto (§68) y escalado", () => {
     const first = await produce("1333.333333");
     expect(first.costs.actual).toEqual({ total: "99999.999975", unit: "1000.000000" });
     const detailA = await productStock(w.panFrances);
-    expect(detailA.movingAverageCost).toBe("1000.000000");
+    expect(detailA.averageMaterialCost).toBe("1000.000000");
     const second = await produce("1600");
     expect(second.costs.actual).toEqual({ total: "120000.000000", unit: "1200.000000" });
     const detail = await productStock(w.panFrances);
     expect(dec(detail.quantity)).toBe("200");
-    expect(detail.movingAverageCost).toBe("1100.000000");
+    expect(detail.averageMaterialCost).toBe("1100.000000");
     // El valor conserva exactamente lo consumido (sin redondeo del unitario).
     expect(detail.inventoryValue).toBe("219999.999975");
     const { history } = await ok(api.get(`/api/inventory/products/${w.panFrances}/cost-history`));

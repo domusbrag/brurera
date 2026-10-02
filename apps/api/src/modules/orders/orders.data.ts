@@ -43,6 +43,7 @@ import { companyCurrency, loadUnits, unitOrThrow, type UnitRow } from "../recipe
 import { fixedQty } from "../inventory/ledger.js";
 import { resolvePrices } from "../price-lists/pricing.js";
 import { committedByLot, reservationRemaining } from "./reservations.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Lecturas de pedidos (Fase 5A). Ninguna escribe: la cobertura que se muestra
@@ -181,7 +182,7 @@ export async function orderAdvances(db: Db, ctx: OperationContext, orderId: stri
       paymentDate: customerPayments.paymentDate,
       amount: customerPayments.amount,
       method: customerPayments.paymentMethod,
-      applied: sql<string>`(select coalesce(sum(a.amount), 0) from customer_payment_applications a where a.company_id = ${customerPayments.companyId} and a.payment_id = ${customerPayments.id})`,
+      applied: sql<string>`(select coalesce(sum(a.amount), 0) from customer_payment_applications a where a.company_id = ${qualified(customerPayments.companyId)} and a.payment_id = ${qualified(customerPayments.id)})`,
     })
     .from(customerPayments)
     .where(

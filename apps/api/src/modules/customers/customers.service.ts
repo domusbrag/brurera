@@ -1,18 +1,26 @@
-import { allocateCode, customers, type Database, type Transaction } from "@bakery/database";
+import {
+  allocateCode,
+  customers,
+  priceLists,
+  type Database,
+  type Transaction,
+} from "@bakery/database";
 import type { CustomerDto, ListQuery, Page } from "@bakery/shared";
 import { type createCustomerSchema, type updateCustomerSchema } from "@bakery/shared";
 import { and, asc, count, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { auditBase, type OperationContext } from "../../lib/context.js";
-import { codeTaken, mapUniqueViolations, notFound } from "../../lib/db-errors.js";
+import { codeTaken, invalidReference, mapUniqueViolations, notFound } from "../../lib/db-errors.js";
+import { AppError } from "../../lib/errors.js";
 import { activeCondition, pageWindow, searchCondition, toPage } from "../../lib/listing.js";
 import { diffChanges, recordAudit } from "../audit/audit.service.js";
 
 type Row = typeof customers.$inferSelect;
+type ListRef = { id: string; code: string; name: string } | null;
 type CreateInput = z.infer<typeof createCustomerSchema>;
 type UpdateInput = z.infer<typeof updateCustomerSchema>;
 
-function toDto(r: Row): CustomerDto {
+function toDto(r: Row, priceList: ListRef = null): CustomerDto {
   return {
     id: r.id,
     code: r.internalCode,
@@ -28,12 +36,20 @@ function toDto(r: Row): CustomerDto {
     postalCode: r.postalCode,
     commercialCondition: r.commercialCondition,
     creditLimit: r.creditLimit,
+    defaultPriceList: priceList,
+    walkIn: r.isWalkIn,
     active: r.active,
     notes: r.notes,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
 }
+
+const listRef = { id: priceLists.id, code: priceLists.code, name: priceLists.name };
+const listJoin = and(
+  eq(priceLists.companyId, customers.companyId),
+  eq(priceLists.id, customers.defaultPriceListId),
+);
 
 /** Todas las consultas se restringen a la empresa de la sesión. */
 const owned = (ctx: OperationContext, id: string) =>
@@ -57,21 +73,42 @@ export async function listCustomers(
   const { limit, offset } = pageWindow(query);
   const [rows, [total]] = await Promise.all([
     db
-      .select()
+      .select({ c: customers, list: listRef })
       .from(customers)
+      .leftJoin(priceLists, listJoin)
       .where(where)
       .orderBy(asc(customers.legalName), asc(customers.internalCode))
       .limit(limit)
       .offset(offset),
     db.select({ n: count() }).from(customers).where(where),
   ]);
-  return toPage(rows.map(toDto), total?.n ?? 0, query);
+  return toPage(
+    rows.map((r) => toDto(r.c, r.list)),
+    total?.n ?? 0,
+    query,
+  );
 }
 
-export async function getCustomer(db: Database, ctx: OperationContext, id: string) {
-  const [row] = await db.select().from(customers).where(owned(ctx, id));
+export async function getCustomer(db: Database | Transaction, ctx: OperationContext, id: string) {
+  const [row] = await db
+    .select({ c: customers, list: listRef })
+    .from(customers)
+    .leftJoin(priceLists, listJoin)
+    .where(owned(ctx, id));
   if (!row) throw notFound("Cliente");
-  return toDto(row);
+  return toDto(row.c, row.list);
+}
+
+/** La lista asignada tiene que ser de la empresa y estar activa. */
+async function checkPriceList(tx: Transaction, ctx: OperationContext, id: string | null | undefined) {
+  if (!id) return;
+  const [list] = await tx
+    .select({ active: priceLists.active })
+    .from(priceLists)
+    .where(and(eq(priceLists.companyId, ctx.companyId), eq(priceLists.id, id)));
+  if (!list?.active) {
+    throw invalidReference("defaultPriceListId", "La lista de precios no existe o está inactiva");
+  }
 }
 
 async function isCodeTaken(tx: Transaction, ctx: OperationContext, code: string) {
@@ -86,6 +123,7 @@ async function isCodeTaken(tx: Transaction, ctx: OperationContext, code: string)
 export async function createCustomer(db: Database, ctx: OperationContext, input: CreateInput) {
   return db.transaction(async (tx) => {
     const { code: manualCode, ...fields } = input;
+    await checkPriceList(tx, ctx, fields.defaultPriceListId);
     const code =
       manualCode ??
       (await allocateCode(tx, ctx.companyId, "CUSTOMER", (c) => isCodeTaken(tx, ctx, c)));
@@ -104,7 +142,7 @@ export async function createCustomer(db: Database, ctx: OperationContext, input:
       entityId: row.id,
       metadata: { code: row.internalCode, legalName: row.legalName },
     });
-    return toDto(row);
+    return getCustomer(tx, ctx, row.id);
   });
 }
 
@@ -117,6 +155,7 @@ export async function updateCustomer(
   return db.transaction(async (tx) => {
     const [before] = await tx.select().from(customers).where(owned(ctx, id)).for("update");
     if (!before) throw notFound("Cliente");
+    await checkPriceList(tx, ctx, input.defaultPriceListId);
     const [after] = await tx.update(customers).set(input).where(owned(ctx, id)).returning();
     if (!after) throw notFound("Cliente");
     const changes = diffChanges(before, after, Object.keys(input));
@@ -129,7 +168,7 @@ export async function updateCustomer(
         metadata: { code: after.internalCode, changes },
       });
     }
-    return toDto(after);
+    return getCustomer(tx, ctx, id);
   });
 }
 
@@ -143,7 +182,14 @@ export async function setCustomerActive(
   return db.transaction(async (tx) => {
     const [before] = await tx.select().from(customers).where(owned(ctx, id)).for("update");
     if (!before) throw notFound("Cliente");
-    if (before.active === active) return toDto(before);
+    if (before.isWalkIn && !active) {
+      throw new AppError(
+        409,
+        "WALK_IN_CUSTOMER",
+        "Consumidor Final no se puede desactivar: es el cliente de las ventas de mostrador",
+      );
+    }
+    if (before.active === active) return getCustomer(tx, ctx, id);
     const [after] = await tx.update(customers).set({ active }).where(owned(ctx, id)).returning();
     if (!after) throw notFound("Cliente");
     await recordAudit(tx, {
@@ -153,6 +199,6 @@ export async function setCustomerActive(
       entityId: id,
       metadata: { code: after.internalCode },
     });
-    return toDto(after);
+    return getCustomer(tx, ctx, id);
   });
 }

@@ -28,6 +28,7 @@ import { codeTaken, invalidReference, mapUniqueViolations, notFound } from "../.
 import { activeCondition, pageWindow, searchCondition, toPage } from "../../lib/listing.js";
 import { diffChanges, recordAudit } from "../audit/audit.service.js";
 import { money2, resolvePrices } from "./pricing.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Listas de precios (Fase 5B). Una lista tiene precios por producto (por unidad
@@ -42,8 +43,8 @@ type Row = typeof priceLists.$inferSelect;
 const owned = (ctx: OperationContext, id: string) =>
   and(eq(priceLists.companyId, ctx.companyId), eq(priceLists.id, id));
 
-const itemCount = sql<number>`(select count(*)::int from price_list_items i where i.company_id = ${priceLists.companyId} and i.price_list_id = ${priceLists.id} and i.active)`;
-const customerCount = sql<number>`(select count(*)::int from customers c where c.company_id = ${priceLists.companyId} and c.default_price_list_id = ${priceLists.id})`;
+const itemCount = sql<number>`(select count(*)::int from price_list_items i where i.company_id = ${qualified(priceLists.companyId)} and i.price_list_id = ${qualified(priceLists.id)} and i.active)`;
+const customerCount = sql<number>`(select count(*)::int from customers c where c.company_id = ${qualified(priceLists.companyId)} and c.default_price_list_id = ${qualified(priceLists.id)})`;
 
 function toDto(r: Row, counts: { itemCount: number; customerCount: number }): PriceListDto {
   return {

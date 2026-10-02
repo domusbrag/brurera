@@ -190,7 +190,7 @@ describe("visibilidad de costos (§50-51)", () => {
     const stockList = await ok(warehouse.get("/api/inventory/products"));
     const row = stockList.items.find((i: { id: string }) => i.id === a.panFrances);
     expect(row.quantity).toBe("96.0000000000");
-    expect(row.movingAverageCost).toBeNull();
+    expect(row.averageMaterialCost).toBeNull();
 
     const purchasing = await as("PURCHASING");
     expect((await purchasing.get("/api/production-orders")).statusCode).toBe(403);

@@ -32,6 +32,7 @@ import { loadProfile } from "../lots/lots.data.js";
 import { lotSummaries } from "../lots/lots.service.js";
 import { companyCurrency } from "../recipes/recipes.data.js";
 import { fixedMoney, fixedQty } from "./ledger.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Stock de productos terminados (Fase 4). Entra por una producción completada
@@ -98,13 +99,13 @@ export async function listProductStock(
         averageMaterialCost: productInventoryCosts.averageMaterialCost,
         inventoryValue: sql<string>`coalesce(${productInventoryCosts.inventoryValue}, 0)`,
         // Valor del depósito = Σ valor de sus lotes (identificación específica, ADR-057).
-        warehouseValue: sql<string>`(select coalesce(sum(plb.inventory_value), 0) from ${productLotBalances} plb where plb.company_id = ${products.companyId} and plb.product_id = ${products.id} and plb.warehouse_id = ${query.warehouseId ?? sql`null`})`,
-        warehouseCount: sql<number>`(select count(*)::int from ${stockBalances} sb where sb.company_id = ${products.companyId} and sb.product_id = ${products.id} and sb.quantity > 0)`,
+        warehouseValue: sql<string>`(select coalesce(sum(plb.inventory_value), 0) from ${productLotBalances} plb where plb.company_id = ${qualified(products.companyId)} and plb.product_id = ${qualified(products.id)} and plb.warehouse_id = ${query.warehouseId ?? sql`null`})`,
+        warehouseCount: sql<number>`(select count(*)::int from ${stockBalances} sb where sb.company_id = ${qualified(products.companyId)} and sb.product_id = ${qualified(products.id)} and sb.quantity > 0)`,
         lastProduction: sql<{
           id: string;
           code: string;
           completedAt: string;
-        } | null>`(select json_build_object('id', po.id, 'code', po.internal_code, 'completedAt', po.completed_at) from ${productionOrders} po where po.company_id = ${products.companyId} and po.product_id = ${products.id} and po.status = 'COMPLETED' order by po.completed_at desc limit 1)`,
+        } | null>`(select json_build_object('id', po.id, 'code', po.internal_code, 'completedAt', po.completed_at) from ${productionOrders} po where po.company_id = ${qualified(products.companyId)} and po.product_id = ${qualified(products.id)} and po.status = 'COMPLETED' order by po.completed_at desc limit 1)`,
       })
       .from(products)
       .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, products.saleUnitId))

@@ -49,6 +49,7 @@ import {
   paymentApplied,
   postAccountMovement,
 } from "./account.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Cobros, señas y cuenta corriente (Fase 5B, ADR-061).
@@ -97,10 +98,20 @@ async function byOperation(tx: Db, ctx: OperationContext, operationId: string) {
   return row ?? null;
 }
 
-/** ¿El reintento corresponde a este mismo cobro? Si no, el id está reusado. */
-function sameOperation(row: PaymentRow, expected: Partial<PaymentRow>) {
+/**
+ * ¿El reintento corresponde a este mismo cobro (destino, monto y medio)? Si no,
+ * el id está reusado.
+ */
+function sameOperation(
+  row: PaymentRow,
+  expected: Partial<PaymentRow>,
+  input: { amount: string; paymentMethod: string },
+) {
   for (const [k, v] of Object.entries(expected)) {
     if ((row as Record<string, unknown>)[k] !== v) throw operationReused();
+  }
+  if (!new D(row.amount).eq(input.amount) || row.paymentMethod !== input.paymentMethod) {
+    throw operationReused();
   }
   return true;
 }
@@ -195,7 +206,7 @@ export async function registerSalePayment(
   const result = await db.transaction(async (tx) => {
     const sale = await findSale(tx, ctx, saleId, true);
     const existing = await byOperation(tx, ctx, input.operationId);
-    if (existing && sameOperation(existing, { kind: "SALE_PAYMENT", sourceSaleId: sale.id })) {
+    if (existing && sameOperation(existing, { kind: "SALE_PAYMENT", sourceSaleId: sale.id }, input)) {
       return { id: existing.id, replayed: true };
     }
     if (sale.status !== "POSTED") {
@@ -258,7 +269,7 @@ export async function registerOrderAdvance(
       .for("share");
     if (!order) throw notFound("Pedido");
     const existing = await byOperation(tx, ctx, input.operationId);
-    if (existing && sameOperation(existing, { kind: "ORDER_ADVANCE", sourceOrderId: order.id })) {
+    if (existing && sameOperation(existing, { kind: "ORDER_ADVANCE", sourceOrderId: order.id }, input)) {
       return { id: existing.id, replayed: true };
     }
     if (order.status === "CANCELLED" || order.status === "DELIVERED") {
@@ -292,7 +303,7 @@ export async function registerOnAccountPayment(
     await assertCustomer(tx, ctx, customerId);
     await lockAccount(tx, ctx, customerId);
     const existing = await byOperation(tx, ctx, input.operationId);
-    if (existing && sameOperation(existing, { kind: "ON_ACCOUNT", customerId })) {
+    if (existing && sameOperation(existing, { kind: "ON_ACCOUNT", customerId }, input)) {
       return { id: existing.id, replayed: true };
     }
     const payment = await insertPayment(tx, ctx, { customerId, kind: "ON_ACCOUNT", input });
@@ -465,7 +476,7 @@ export async function getPayment(db: Db, ctx: OperationContext, id: string): Pro
   };
 }
 
-const appliedSql = sql<string>`(select coalesce(sum(a.amount), 0) from customer_payment_applications a where a.company_id = ${customerPayments.companyId} and a.payment_id = ${customerPayments.id})`;
+const appliedSql = sql<string>`(select coalesce(sum(a.amount), 0) from customer_payment_applications a where a.company_id = ${qualified(customerPayments.companyId)} and a.payment_id = ${qualified(customerPayments.id)})`;
 
 export async function listPayments(
   db: Database,
@@ -671,9 +682,9 @@ export async function listReceivables(
         )
       : undefined,
   );
-  const pendingCount = sql<number>`(select count(*)::int from sales s where s.company_id = ${customers.companyId} and s.customer_id = ${customers.id} and s.status = 'POSTED' and s.paid_amount < s.total)`;
-  const oldest = sql<Date | null>`(select min(s.sale_date) from sales s where s.company_id = ${customers.companyId} and s.customer_id = ${customers.id} and s.status = 'POSTED' and s.paid_amount < s.total)`;
-  const lastMovement = sql<Date | null>`(select max(m.occurred_at) from customer_account_movements m where m.company_id = ${customers.companyId} and m.customer_id = ${customers.id})`;
+  const pendingCount = sql<number>`(select count(*)::int from sales s where s.company_id = ${qualified(customers.companyId)} and s.customer_id = ${qualified(customers.id)} and s.status = 'POSTED' and s.paid_amount < s.total)`;
+  const oldest = sql<Date | null>`(select min(s.sale_date) from sales s where s.company_id = ${qualified(customers.companyId)} and s.customer_id = ${qualified(customers.id)} and s.status = 'POSTED' and s.paid_amount < s.total)`;
+  const lastMovement = sql<Date | null>`(select max(m.occurred_at) from customer_account_movements m where m.company_id = ${qualified(customers.companyId)} and m.customer_id = ${qualified(customers.id)})`;
   const { limit, offset } = pageWindow(query);
   const [rows, [total]] = await Promise.all([
     db

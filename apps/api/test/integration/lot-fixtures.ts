@@ -51,11 +51,17 @@ export async function produce(
   api: ApiClient,
   w: ProductionWorld,
   quantity: string,
-  opts: { warehouseId?: string; conservationState?: string; productId?: string } = {},
+  opts: {
+    warehouseId?: string;
+    conservationState?: string;
+    productId?: string;
+    /** Costo de la harina que se carga para esta producción (por defecto 900/kg). */
+    harinaCost?: string;
+  } = {},
 ) {
   const harina = new D(quantity).times("0.75").toString();
   const sal = new D(quantity).times("0.008").toString();
-  await stock(api, w, w.harina, harina, "900");
+  await stock(api, w, w.harina, harina, opts.harinaCost ?? "900");
   await stock(api, w, w.sal, sal, "400");
   const order = await startedOrder(api, w, {
     plannedOutputQuantity: quantity,

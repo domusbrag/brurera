@@ -204,8 +204,8 @@ describe("migración 0007 sobre datos de Fase 3 (Gate B)", () => {
     const applied = await q<{ n: number }>(
       "select count(*)::int as n from drizzle.__drizzle_migrations",
     );
-    // Todas las migraciones hasta la actual (0009 = Fase 5A).
-    expect(applied[0]!.n).toBe(10);
+    // Todas las migraciones hasta la actual (0010 = Fase 5B).
+    expect(applied[0]!.n).toBe(11);
     expect(await inventorySnapshot()).toEqual(before);
     const [mismatch] = await q<{ n: number }>(`
       select count(*)::int as n from stock_balances b

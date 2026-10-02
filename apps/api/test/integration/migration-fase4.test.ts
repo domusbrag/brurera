@@ -27,6 +27,7 @@ const dbUrl = (suffix: string) => {
 const OK_DB = dbUrl("migration4");
 const BLOCKED_DB = dbUrl("migration4_blocked");
 const F45_DB = dbUrl("migration45");
+const F5A_DB = dbUrl("migration5a");
 const nameOf = (url: string) => new URL(url).pathname.slice(1);
 
 let tmp: string;
@@ -220,7 +221,10 @@ async function snapshot(w: World) {
       "select id, product_id, warehouse_id, quantity, last_movement_id from stock_balances order by id",
     ),
     costs: await w.q(
-      "select product_id, quantity, inventory_value, moving_average_cost, last_movement_id from product_inventory_costs",
+      // 0010 renombra moving_average_cost → average_material_cost (mismo valor).
+      `select product_id, quantity, inventory_value,
+        coalesce(to_jsonb(c)->>'moving_average_cost', to_jsonb(c)->>'average_material_cost') as average_cost,
+        last_movement_id from product_inventory_costs c`,
     ),
     orders: await w.q(
       "select id, status, batch_code, output_movement_id from production_orders order by internal_code",
@@ -240,6 +244,7 @@ afterAll(async () => {
   await admin(`drop database if exists "${nameOf(OK_DB)}" with (force)`);
   await admin(`drop database if exists "${nameOf(BLOCKED_DB)}" with (force)`);
   await admin(`drop database if exists "${nameOf(F45_DB)}" with (force)`);
+  await admin(`drop database if exists "${nameOf(F5A_DB)}" with (force)`);
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -255,8 +260,8 @@ describe("migración 0008 sobre datos de Fase 4 (Gate B, §51)", () => {
 
     await migrate(OK_DB, MIGRATIONS_FOLDER);
 
-    // Todas las migraciones hasta la actual (0009 = Fase 5A).
-    expect(await applied(w)).toBe(10);
+    // Todas las migraciones hasta la actual (0010 = Fase 5B).
+    expect(await applied(w)).toBe(11);
     // Ledger, saldos, costos y órdenes: nada cambia (salvo la columna nueva del movimiento).
     expect(await snapshot(w)).toEqual(before);
 
@@ -343,7 +348,7 @@ describe("migración 0009 (Fase 5A) sobre datos de Fase 4.5", () => {
 
     await migrate(F45_DB, MIGRATIONS_FOLDER);
 
-    expect(await applied(w)).toBe(10);
+    expect(await applied(w)).toBe(11);
     expect(await lotsSnapshot()).toEqual(before);
     for (const table of [
       "customer_orders",
@@ -370,5 +375,83 @@ describe("migración 0009 (Fase 5A) sobre datos de Fase 4.5", () => {
         "product_lots_blocked_reserved",
       ]),
     );
+  });
+});
+
+describe("migración 0010 (Fase 5B) sobre datos de Fase 5A", () => {
+  it("pedidos sin precio (UNPRICED), Consumidor Final, promedio derivado, ledger intacto", async () => {
+    const w = await fase4Database(F5A_DB);
+    await completedOrder(w, "OP-0001", "100", "678.2", "LOT-20261001-001");
+    await completedOrder(w, "OP-0002", "50", "726.4", null);
+    await migrate(F5A_DB, migrationsUpTo(9));
+    const [customer] = await w.q<{ id: string }>(
+      `insert into customers (company_id, internal_code, type, legal_name)
+       values ($1, 'CLI-0001', 'RETAILER', 'Hotel Central') returning id`,
+      [w.companyId],
+    );
+    const order = async (code: string, confirmed: boolean) => {
+      const [o] = await w.q<{ id: string }>(
+        `insert into customer_orders (company_id, internal_code, customer_id, status, coverage_status,
+           requested_at, plan_revision, confirmed_at)
+         values ($1, $2, $3, $4, $5, now() + interval '1 day', $6, $7) returning id`,
+        [
+          w.companyId,
+          code,
+          customer!.id,
+          confirmed ? "CONFIRMED" : "DRAFT",
+          confirmed ? "PARTIALLY_COVERED" : null,
+          confirmed ? 1 : 0,
+          confirmed ? new Date() : null,
+        ],
+      );
+      await w.q(
+        `insert into customer_order_lines (company_id, customer_order_id, product_id, requested_quantity,
+           unit_id, normalized_quantity, sale_unit_id)
+         values ($1, $2, $3, 10, $4, 10, $4)`,
+        [w.companyId, o!.id, w.product, w.kg],
+      );
+      return o!.id;
+    };
+    await order("PED-0001", true);
+    await order("PED-0002", false);
+    const before = await snapshot(w);
+
+    await migrate(F5A_DB, MIGRATIONS_FOLDER);
+
+    expect(await applied(w)).toBe(11);
+    expect(await snapshot(w)).toEqual(before);
+    const orders = await w.q<{ pricing_status: string; quoted_total: string | null }>(
+      "select pricing_status, quoted_total from customer_orders order by internal_code",
+    );
+    expect(orders).toEqual([
+      { pricing_status: "UNPRICED", quoted_total: null },
+      { pricing_status: "UNPRICED", quoted_total: null },
+    ]);
+    const [lines] = await w.q<{ n: number }>(
+      "select count(*)::int as n from customer_order_lines where quoted_unit_price is not null or price_source is not null",
+    );
+    expect(lines!.n).toBe(0);
+    const walkIn = await w.q<{ legal_name: string; internal_code: string }>(
+      "select legal_name, internal_code from customers where is_walk_in",
+    );
+    expect(walkIn).toEqual([{ legal_name: "Consumidor Final", internal_code: "CONS-FINAL" }]);
+    const [cost] = await w.q<{ ok: boolean }>(
+      "select average_material_cost = round(inventory_value / quantity, 6) as ok from product_inventory_costs",
+    );
+    expect(cost!.ok).toBe(true);
+    for (const table of [
+      "sales",
+      "sale_lines",
+      "sale_lot_allocations",
+      "customer_payments",
+      "customer_payment_applications",
+      "customer_account_movements",
+      "customer_account_balances",
+      "price_lists",
+      "price_list_items",
+    ]) {
+      const [row] = await w.q<{ n: number }>(`select count(*)::int as n from ${table}`);
+      expect(row!.n, table).toBe(0);
+    }
   });
 });
