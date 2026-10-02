@@ -6,11 +6,12 @@
 FASE_5A_TECHNICAL_REVIEW = PASS
 FASE_5A_HUMAN_GATE = ACCEPTED
 FASE_5A_STATUS = CLOSED
+FASE_5B_CLOSURE_HARDENING = PASS
 FASE_5B_STATUS = COMPLETE_PENDING_HUMAN_ACCEPTANCE
 ```
 
-Todos los gates de §117 están en verde en el entorno local. El CI remoto del PR se informa en
-el hilo. No empezó UX/DESIGN OPTIMIZATION.
+Todos los gates de §117 y los de cierre (C1–C14, ver [Cierre](#cierre-idempotencia-de-imputaciones-y-ajustes))
+están en verde, incluido el CI remoto. No empezó UX/DESIGN OPTIMIZATION.
 
 ## Base commit
 
@@ -255,9 +256,21 @@ En `sales-concurrency.test.ts`, con conexiones reales del pool:
 
 - Postear la misma venta 5 veces en paralelo da `[200, 409×4]` y un solo juego de movimientos;
   en serie da `[200, 409, 409]`.
-- Los cobros y las señas llevan `operationId` (índice único por empresa). Un reintento devuelve
-  `200 replayed` con el mismo cobro; ×3 en paralelo da `[200, 200, 201]`.
-- El mismo id con otro monto, medio, tipo o destino devuelve `409 OPERATION_ID_REUSED`.
+- Toda operación financiera lleva un `operationId` por intento, único por empresa y guardado en la
+  fila que produce la consecuencia, en la misma transacción (ADR-062 y ADR-063):
+
+  | Operación                                         | Dónde se guarda                                                 | Huella comparada en el reintento |
+  | ------------------------------------------------- | --------------------------------------------------------------- | -------------------------------- |
+  | Cobro de una venta, cobro a cuenta, cobro inicial | `customer_payments.operation_id`                                | tipo, destino, monto y medio     |
+  | Seña (`OrderAdvance`)                             | `customer_payments.operation_id`                                | pedido, monto y medio            |
+  | Imputación manual                                 | `customer_payment_applications.operation_id`                    | cobro, venta y monto             |
+  | Ajuste de cuenta                                  | `customer_account_movements.operation_id` (CHECK: sólo ajustes) | cliente, tipo, monto y motivo    |
+
+- Reintento idéntico: `200` con `replayed: true`, sin segunda fila, movimiento ni auditoría. Cobros
+  ×3 en paralelo dan `[200, 200, 201]`; imputación y ajuste ×5 en paralelo dan
+  `[200, 200, 200, 200, 201]`.
+- El mismo id con otra huella devuelve `409 OPERATION_ID_REUSED` y no produce nada. Las notas no
+  forman parte de la huella (no cambian la consecuencia).
 
 ## Rollback
 
@@ -268,6 +281,8 @@ En `sales-concurrency.test.ts`, con conexiones reales del pool:
 - **Cobro (§86):** una falla inyectada en la aplicación (después del `PAYMENT_CREDIT`) no deja
   cobro, movimiento, aplicación ni auditoría, y el saldo no cambia. El reintento con el mismo
   `operationId` se registra normalmente.
+- **Imputación manual y ajuste (C6):** una falla inyectada después de insertar la imputación o el
+  movimiento (en la auditoría) da `500` y no deja nada; el mismo `operationId` funciona después.
 
 ## Tenancy
 
@@ -324,6 +339,10 @@ Todas tienen etiqueta en español en el historial.
   - reservas, revisiones, estados y cobertura intactos;
   - tablas nuevas vacías.
 - Hay test sobre DB limpia (Gate A) y desde 5A con datos (Gate B, en `migration-fase4.test.ts`).
+- `0011_idempotent_applications_adjustments` (cierre): `operation_id` nulo en imputaciones y
+  movimientos de cuenta, índices únicos parciales por empresa y CHECK. No modifica 0000–0010 ni
+  cambia saldos o movimientos. Probado sobre base vacía y sobre una base en 0010 con un cobro, su
+  crédito y un ajuste: todo idéntico y la base rechaza un segundo ajuste con el mismo id.
 - **Pasos manuales en una base existente:** `pnpm db:migrate` y después
   `pnpm db:sync-reference`. Sin este último paso los roles no reciben los permisos nuevos y
   Ventas no aparece en el menú.
@@ -378,13 +397,13 @@ Diferencias con el plan:
 
 ## Tests
 
-| Paquete                                                                       | Tests |
-| ----------------------------------------------------------------------------- | ----: |
-| domain (unit, incluye `sales.test.ts` con 21: §91–§93 exactos)                |   170 |
-| shared (unit)                                                                 |    42 |
-| database (unit)                                                               |     5 |
-| web (unit)                                                                    |    22 |
-| api (integración, incluye `sales.test.ts` 28 y `sales-concurrency.test.ts` 9) |   389 |
+| Paquete                                                                        | Tests |
+| ------------------------------------------------------------------------------ | ----: |
+| domain (unit, incluye `sales.test.ts` con 21: §91–§93 exactos)                 |   170 |
+| shared (unit)                                                                  |    42 |
+| database (unit)                                                                |     5 |
+| web (unit)                                                                     |    22 |
+| api (integración, incluye `sales.test.ts` 28 y `sales-concurrency.test.ts` 15) |   396 |
 
 Los §90 1–32 están cubiertos entre dominio, integración y E2E. El detalle está en
 [TESTING.md](../TESTING.md#cobertura-de-fase-5b).
@@ -474,12 +493,13 @@ Registrado en [UX_BACKLOG.md](../UX_BACKLOG.md) con la etiqueta [F5B]:
 | AP Typecheck                        | ✅     |                                                                                                  |
 | AQ Build                            | ✅     |                                                                                                  |
 | AR Worktree clean                   | ✅     |                                                                                                  |
-| AS Remote CI                        | ⏳     | se informa en el PR                                                                              |
+| AS Remote CI                        | ✅     | workflow `verify` verde en el PR #8                                                              |
 
 ## CI
 
-El CI de `main` está verde en `4c95051`. El CI del PR #8 corre sobre el head de la rama y se
-reporta en el hilo.
+El CI de `main` está verde en `4c95051`. El workflow `verify` del PR #8 (lint, typecheck,
+migraciones, seed, tests, build y E2E) está verde. En el cierre, la primera corrida falló en lint
+por formato de cuatro docs editados; se corrigió y la siguiente pasó completa.
 
 ## Risks
 
@@ -492,16 +512,14 @@ reporta en el hilo.
 - El margen es sólo material; faltan mano de obra e indirectos.
 - Las reservas de materias primas siguen proyectadas.
 - La consolidación productiva sigue pendiente.
-- Imputaciones manuales y ajustes no llevan `operationId`: un doble envío del formulario puede
-  duplicar un ajuste (la UI deshabilita el botón mientras envía).
 
 ## Debt
 
 - `SALE_RETURN`, `SALE_REVERSAL`, `CREDIT_NOTE`, `PAYMENT_REFUND`, `FISCAL_INVOICING`,
   `BANK_RECONCILIATION`, `CARD_SETTLEMENT`, `PRODUCTION_CONSOLIDATION`,
   `RAW_MATERIAL_RESERVATIONS`, `FULL_COSTING` y `DELIVERY_LOGISTICS`.
-- Nuevas: `LOT_PICKING_OVERRIDE`, `ORDER_FORM_PRICE_OVERRIDE` e idempotencia de imputaciones y
-  ajustes (`APPLICATION_IDEMPOTENCY`).
+- Nuevas: `LOT_PICKING_OVERRIDE` y `ORDER_FORM_PRICE_OVERRIDE`.
+- `APPLICATION_IDEMPOTENCY` quedó resuelta en el cierre (ADR-063): ya no es deuda.
 - De paso se corrigió un bug previo: subconsultas correlacionadas sin calificar en inventario y
   lotes. Ahora usan `lib/sql.ts` `qualified()`.
 
@@ -513,6 +531,44 @@ reporta en el hilo.
 - ADR-060: precios, congelado y override.
 - ADR-061: cobros, señas y cuenta corriente (política B).
 - ADR-062: orden global de locks, idempotencia y rollback.
+- ADR-063: idempotencia de imputaciones manuales y ajustes de cuenta (cierre).
+
+## Cierre: idempotencia de imputaciones y ajustes
+
+Pedido por maxi como cierre de la Fase 5B (sin Fase 5C). Antes, la imputación manual y el ajuste
+de cuenta sólo estaban protegidos por el botón deshabilitado de la UI.
+
+- **API:** `POST /payments/:id/applications` y `POST /customers/:id/account/adjustments` exigen
+  `operationId`. Primera vez `201`; reintento idéntico `200` con `replayed: true`.
+- **Base:** migración 0011, índice único parcial (`company_id`, `operation_id`) en cada tabla.
+  Si dos intentos con el mismo id no se serializan por el mismo lock (otro destino), el índice los
+  frena y la API responde `409 OPERATION_ID_REUSED`.
+- **Transacción:** la fila con el id es la misma que produce la consecuencia; el reintento se busca
+  después de los locks (imputación: venta → cobro; ajuste: cuenta), así el segundo intento ve el
+  primero confirmado.
+- **UI:** se mantiene el botón deshabilitado; además cada diálogo genera un id por intento y lo
+  renueva sólo después de un éxito.
+- De paso se agregó `app/favicon.ico` (el mismo ícono): el navegador a veces pedía
+  `/favicon.ico`, el 404 aparecía como error de consola y hacía fallar el E2E de maestros.
+
+| Gate                              | Estado | Evidencia (`sales-concurrency.test.ts`, salvo indicación)                                                             |
+| --------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| C1 PaymentApplication retry       | ✅     | `201` y luego `200 replayed`; una aplicación, una auditoría `PAYMENT_APPLIED`                                         |
+| C2 PaymentApplication concurrency | ✅     | cobro de $50.000, venta de $50.000, 5 × $20.000 con el mismo id: `[200×4, 201]`, cobrado $20.000, sin imputar $30.000 |
+| C3 AccountAdjustment retry        | ✅     | `201` y luego `200 replayed` (también con otra nota); un movimiento, una auditoría                                    |
+| C4 AccountAdjustment concurrency  | ✅     | saldo $100.000, 5 créditos de $20.000 con el mismo id: saldo $80.000, un solo `ADJUSTMENT_CREDIT`                     |
+| C5 OPERATION_ID_REUSED            | ✅     | imputación con otro monto u otra venta; ajuste con otro monto, tipo, motivo o cliente: `409`, sin filas nuevas        |
+| C6 Rollback                       | ✅     | falla inyectada después de la fila: `500`, nada persiste, el mismo id funciona después                                |
+| C7 Tenancy                        | ✅     | empresa B usa el mismo id para su ajuste (`201`, no replay); B no imputa ni ajusta en A (`422` / `404`)               |
+| C8 Ledger reconciliation          | ✅     | `salesProblems` + `reconciliationProblems` vacíos después de cada test                                                |
+| C9 Lint                           | ✅     | `pnpm lint`                                                                                                           |
+| C10 Typecheck                     | ✅     | `pnpm typecheck`                                                                                                      |
+| C11 Build                         | ✅     | `pnpm build`                                                                                                          |
+| C12 E2E existentes                | ✅     | todas las fases, desktop y tablet                                                                                     |
+| C13 Worktree clean                | ✅     |                                                                                                                       |
+| C14 Remote CI                     | ✅     | workflow `verify` verde en el PR #8                                                                                   |
+
+Regresión: dominio 170, shared 42, database 5, web 22 y API 396 (antes 389), todos en verde.
 
 ## Próximo paso
 
