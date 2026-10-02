@@ -38,6 +38,12 @@ export interface TestContext {
 
 const ALL_TABLES = [
   "audit_logs",
+  "customer_order_operations",
+  "order_material_requirements",
+  "order_production_requirements",
+  "product_lot_reservations",
+  "customer_order_lines",
+  "customer_orders",
   "product_lot_balances",
   "product_lots",
   "product_conservation_profiles",

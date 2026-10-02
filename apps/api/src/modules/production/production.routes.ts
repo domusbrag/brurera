@@ -12,7 +12,7 @@ import {
 } from "@bakery/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { operationContext } from "../../lib/context.js";
-import { parseInput } from "../../lib/errors.js";
+import { forbidden, parseInput } from "../../lib/errors.js";
 import { idParam } from "../../lib/params.js";
 import { requirePermission } from "../auth/auth.plugin.js";
 import * as production from "./production.service.js";
@@ -29,6 +29,17 @@ export async function productionRoutes(app: FastifyInstance, { db }: { db: Datab
     idParam({ id: (params as { lineId?: unknown }).lineId }, "Línea");
   const canSeeCosts = (req: FastifyRequest) =>
     hasPermissions(req.auth?.permissions ?? [], [P.PRODUCTION_COST_READ]);
+  /** Crear desde la necesidad de un pedido exige además order_production.create. */
+  const createInput = (req: FastifyRequest) => {
+    const input = parseInput(createProductionOrderSchema, req.body);
+    if (
+      input.sourceOrderRequirementId &&
+      !hasPermissions(req.auth?.permissions ?? [], [P.ORDER_PRODUCTION_CREATE])
+    ) {
+      throw forbidden();
+    }
+    return input;
+  };
 
   app.get(
     "/production-orders",
@@ -51,7 +62,7 @@ export async function productionRoutes(app: FastifyInstance, { db }: { db: Datab
           await production.createOrder(
             db,
             operationContext(req),
-            parseInput(createProductionOrderSchema, req.body),
+            createInput(req),
             canSeeCosts(req),
           ),
         ),
@@ -59,13 +70,7 @@ export async function productionRoutes(app: FastifyInstance, { db }: { db: Datab
   app.post(
     "/production-orders/preview",
     { preHandler: requirePermission(P.PRODUCTION_ORDERS_CREATE) },
-    (req) =>
-      production.previewOrder(
-        db,
-        operationContext(req),
-        parseInput(createProductionOrderSchema, req.body),
-        canSeeCosts(req),
-      ),
+    (req) => production.previewOrder(db, operationContext(req), createInput(req), canSeeCosts(req)),
   );
   app.get(
     "/production-orders/:id",

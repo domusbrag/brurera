@@ -12,6 +12,7 @@ export const CODE_PREFIXES = {
   PURCHASE: "OC",
   PURCHASE_RECEIPT: "REC",
   PRODUCTION_ORDER: "OP",
+  CUSTOMER_ORDER: "PED",
 } as const;
 
 export type CodeEntity = keyof typeof CODE_PREFIXES;

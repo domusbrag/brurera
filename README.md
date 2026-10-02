@@ -3,14 +3,14 @@
 ERP vertical para panificadoras: proveedores → compras → materias primas → stock → recetas →
 producción → productos → ventas → clientes → cobros. Monolito modular en TypeScript.
 
-> Estado: **Fase 4 (producción)**, pendiente de aceptación. Sobre la fundación (autenticación,
-> roles y permisos, auditoría, shell), los maestros de Fase 1, las recetas versionadas con costo
-> teórico de Fase 2 y las compras e inventario de materias primas de Fase 3 (presentaciones,
-> recepciones parciales, ledger de movimientos, costo promedio ponderado), existen órdenes de
-> producción: se planifican con la receta vigente fijada y el costo esperado, se inician con stock
-> suficiente, registran consumo real, consumos extra y salida real, y al completarse descuentan
-> materias primas y suman producto terminado con su costo material real y promedio. Ventas y
-> finanzas llegan en fases siguientes (ver [docs/ROADMAP.md](docs/ROADMAP.md)).
+> Estado: **Fase 5A (pedidos, demanda comprometida y necesidades)**, pendiente de aceptación.
+> Sobre la fundación, los maestros, las recetas con costo teórico, las compras e inventario, la
+> producción y los lotes con conservación y vida útil (Fases 0 a 4.5), existen pedidos de
+> clientes para una fecha y hora: muestran qué stock sirve para esa fecha, qué ya está
+> comprometido y qué falta producir; al confirmarse reservan lotes por FEFO (sin mover stock),
+> registran la producción necesaria con la receta fijada y proyectan la materia prima. Necesidades
+> agrega la demanda de todos los pedidos. Ventas, cobros y finanzas llegan en fases siguientes (ver
+> [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Requisitos
 
@@ -47,8 +47,9 @@ Credenciales **solo de desarrollo** (configurables en `.env` con `SEED_ADMIN_EMA
 
 Cada fase agrega migraciones y permisos nuevos (Fase 3: tablas de compras e inventario y los
 permisos `purchases.*`, `inventory.*` y `presentations.*`; Fase 4: migración `0007_production` y
-los permisos `production_orders.*` y `production.cost.read`). Después de traer cambios, en una base
-que ya existía:
+los permisos `production_orders.*` y `production.cost.read`; Fase 4.5: `0008_product_lots` y
+`product_lots.*`; Fase 5A: `0009_customer_orders` y los permisos `orders.*`, `order_planning.read`
+y `order_production.create`). Después de traer cambios, en una base que ya existía:
 
 ```bash
 pnpm bootstrap                    # o, con la base ya levantada:
@@ -105,9 +106,9 @@ bakery-erp/
 │   └── web/            Aplicación web (Next.js, App Router)
 ├── packages/
 │   ├── shared/         Contratos compartidos: permisos, roles, esquemas zod, DTOs
-│   ├── domain/         Reglas puras de dominio (unidades, costos, inventario, producción) con decimal.js
+│   ├── domain/         Reglas puras de dominio (unidades, costos, inventario, producción, lotes, pedidos) con decimal.js
 │   └── database/       Esquema Drizzle, migraciones SQL versionadas, datos de referencia
-├── e2e/                Tests Playwright (smoke, maestros, recetas, compras e inventario, producción)
+├── e2e/                Tests Playwright (smoke, maestros, recetas, compras e inventario, producción, lotes, pedidos)
 ├── infra/              docker-compose de desarrollo
 ├── scripts/            Utilidades del repo
 └── docs/               Producto, arquitectura, dominio, base, roadmap, testing, decisiones

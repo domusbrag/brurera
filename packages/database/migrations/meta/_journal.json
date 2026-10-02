@@ -64,6 +64,13 @@
       "when": 1790881663840,
       "tag": "0008_product_lots",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790897786834,
+      "tag": "0009_customer_orders",
+      "breakpoints": true
     }
   ]
 }

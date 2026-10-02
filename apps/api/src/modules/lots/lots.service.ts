@@ -6,6 +6,7 @@ import {
   calculateAvailabilityAt,
   calculateUsableUntil,
   childLotCode,
+  freeLotQuantity,
   lotEligibilityAt,
   lotOutflow,
   resolveInitialConservation,
@@ -48,6 +49,12 @@ import { likePattern, pageWindow, toPage } from "../../lib/listing.js";
 import { recordAudit } from "../audit/audit.service.js";
 import { selectMovements } from "../inventory/inventory.service.js";
 import { fixedMoney, fixedQty, lockLotBalance, postLotMovement } from "../inventory/ledger.js";
+import {
+  committedByLot,
+  invalidateLotReservations,
+  lotCommitment,
+  lotCommitted,
+} from "../orders/reservations.js";
 import {
   DEFAULT_NEAR_EXPIRY_MINUTES,
   findLotRow,
@@ -265,6 +272,7 @@ export async function getLot(
   ctx: OperationContext,
   lotId: string,
   canSeeCosts: boolean,
+  permissions: Iterable<string> = [],
 ): Promise<ProductLotDetailDto> {
   const row = await findLotRow(db, ctx, lotId);
   const now = new Date();
@@ -323,6 +331,7 @@ export async function getLot(
       quantity: fixedQty(c.quantity),
       createdAt: c.lot.createdAt.toISOString(),
     })),
+    commitment: await lotCommitment(db, ctx, row.lot.id, row.quantity, permissions),
     transformOptions: (["FROZEN", "THAWED"] as const)
       .filter((to) => to !== row.lot.conservationState)
       .map((to) => {
@@ -476,6 +485,24 @@ export async function transformLot(
       });
     } catch (err) {
       lotError(err);
+    }
+    // Lo comprometido con pedidos no se transforma (Fase 5A): sólo la cantidad libre.
+    const committed = await lotCommitted(tx, ctx, row.lot.id);
+    const free = freeLotQuantity(balance.quantity, committed);
+    if (out.quantity.gt(free)) {
+      throw new AppError(
+        409,
+        "LOT_QUANTITY_COMMITTED",
+        `Del lote ${row.lot.lotCode} hay ${committed.toString()} ${row.unit.symbol} comprometidos con pedidos: se pueden transformar hasta ${free.toString()} ${row.unit.symbol}.`,
+        [
+          {
+            path: "quantity",
+            message: `Libre: ${free.toString()} ${row.unit.symbol}`,
+            committed: fixedQty(committed),
+            free: fixedQty(free),
+          },
+        ],
+      );
     }
 
     const [{ n: siblings } = { n: 0 }] = await tx
@@ -633,6 +660,19 @@ export async function wasteLot(
     } catch (err) {
       lotError(err);
     }
+    // La merma tiene prioridad sobre las reservas: las que dejan de estar cubiertas
+    // se invalidan (o reducen) ANTES de bajar el saldo (ADR-052).
+    const invalidated = await invalidateLotReservations(
+      tx,
+      ctx,
+      {
+        id: row.lot.id,
+        code: row.lot.lotCode,
+        productName: row.product.name,
+        unitSymbol: row.unit.symbol,
+      },
+      { reason: "LOT_WASTE", newBalance: fixedQty(new D(balance.quantity).minus(out.quantity)) },
+    );
     const posted = await postLotMovement(tx, ctx, {
       productId: row.lot.productId,
       productCode: row.product.code,
@@ -667,6 +707,7 @@ export async function wasteLot(
         notes: input.notes,
         operationId: input.operationId,
         movementId: posted.movement.id,
+        ...(invalidated.length > 0 ? { affectedOrders: invalidated.map((i) => i.orderCode) } : {}),
       },
     });
     return operationResult(tx, ctx, lotId, null, [input.operationId], canSeeCosts, false);
@@ -695,6 +736,20 @@ export async function setLotQuality(
     if (!blocked && row.lot.qualityStatus === "AVAILABLE") {
       throw new AppError(409, "LOT_NOT_BLOCKED", `El lote ${row.lot.lotCode} no está bloqueado.`);
     }
+    // Calidad tiene prioridad sobre las reservas: un lote bloqueado no conserva ninguna.
+    const invalidated = blocked
+      ? await invalidateLotReservations(
+          tx,
+          ctx,
+          {
+            id: row.lot.id,
+            code: row.lot.lotCode,
+            productName: row.product.name,
+            unitSymbol: row.unit.symbol,
+          },
+          { reason: "LOT_BLOCKED" },
+        )
+      : [];
     await tx
       .update(productLots)
       .set(
@@ -713,6 +768,7 @@ export async function setLotQuality(
         product: row.product.name,
         reason: blocked ? input!.reason : row.lot.qualityReason,
         quantity: fixedQty(row.quantity),
+        ...(invalidated.length > 0 ? { affectedOrders: invalidated.map((i) => i.orderCode) } : {}),
       },
     });
     const [dto] = await toLotDtos(tx, ctx, [await findLotRow(tx, ctx, lotId)], canSeeCosts);
@@ -725,7 +781,7 @@ export async function setLotQuality(
 /**
  * calculateProductAvailabilityAt(productId, warehouse?, requestedAt): qué
  * cantidad existe y qué cantidad es utilizable en ese momento (FEFO). Base de
- * Pedidos (Fase 5A). No descuenta reservas: no existen todavía.
+ * Pedidos (Fase 5A): informa además lo comprometido por pedidos y lo disponible.
  */
 export async function calculateProductAvailabilityAt(
   db: Db,
@@ -755,6 +811,15 @@ export async function calculateProductAvailabilityAt(
   );
   const byId = new Map(rows.map((r) => [r.lot.id, r]));
   const result = calculateAvailabilityAt(rows.map(forAvailability), requestedAt);
+  const committedMap = await committedByLot(
+    db,
+    ctx,
+    rows.map((r) => r.lot.id),
+  );
+  const committedOf = (id: string) => new D(committedMap.get(id) ?? 0);
+  let committedEligible = new D(0);
+  for (const l of result.lots)
+    if (l.eligible) committedEligible = committedEligible.plus(committedOf(l.id));
   const breakdown = (b: typeof result.physicalByState) => ({
     FRESH: fixedQty(b.FRESH),
     REFRIGERATED: fixedQty(b.REFRIGERATED),
@@ -793,6 +858,8 @@ export async function calculateProductAvailabilityAt(
     physicalByState: breakdown(result.physicalByState),
     eligibleByState: breakdown(result.eligibleByState),
     shelfLifeUnknownQuantity: fixedQty(result.shelfLifeUnknownQuantity),
+    committedQuantity: fixedQty(committedEligible),
+    availableQuantity: fixedQty(D.max(result.eligibleQuantity.minus(committedEligible), 0)),
     reasons,
     lots: result.lots.map((l, i) => ({
       id: l.id,
@@ -806,6 +873,8 @@ export async function calculateProductAvailabilityAt(
       eligible: l.eligible,
       reason: l.reason,
       fefoRank: i + 1,
+      committed: fixedQty(committedOf(l.id)),
+      available: fixedQty(l.eligible ? freeLotQuantity(l.quantity, committedOf(l.id)) : 0),
     })),
   };
 }
@@ -889,6 +958,8 @@ const emptySummary = (): ProductLotSummaryDto => ({
   expired: fixedQty(0),
   blocked: fixedQty(0),
   shelfLifeUnknown: fixedQty(0),
+  committed: fixedQty(0),
+  availableNow: fixedQty(0),
 });
 
 /**
@@ -916,10 +987,23 @@ export async function lotSummaries(
     ),
   );
   const profiles = await loadProfiles(db, ctx, ids);
+  const committedMap = await committedByLot(
+    db,
+    ctx,
+    rows.map((r) => r.lot.id),
+  );
   const acc = new Map<
     string,
     Record<
-      "physical" | "usable" | "near" | "expired" | "blocked" | "unknown" | ConservationState,
+      | "physical"
+      | "usable"
+      | "near"
+      | "expired"
+      | "blocked"
+      | "unknown"
+      | "committed"
+      | "free"
+      | ConservationState,
       InstanceType<typeof D>
     >
   >();
@@ -934,6 +1018,8 @@ export async function lotSummaries(
         expired: new D(0),
         blocked: new D(0),
         unknown: new D(0),
+        committed: new D(0),
+        free: new D(0),
         FRESH: new D(0),
         REFRIGERATED: new D(0),
         FROZEN: new D(0),
@@ -946,10 +1032,13 @@ export async function lotSummaries(
       profile: profiles.get(key),
     }).status;
     const next = { ...a };
+    const committed = new D(committedMap.get(row.lot.id) ?? 0);
+    next.committed = a.committed.plus(committed);
     next.physical = a.physical.plus(q);
     next[row.lot.conservationState] = a[row.lot.conservationState].plus(q);
     if (status === "AVAILABLE" || status === "NEAR_EXPIRY") {
       next.usable = a.usable.plus(q);
+      next.free = a.free.plus(freeLotQuantity(q, committed));
       if (status === "NEAR_EXPIRY") next.near = a.near.plus(q);
       if (row.lot.usableUntil === null) next.unknown = a.unknown.plus(q);
     } else if (status === "BLOCKED") {
@@ -973,6 +1062,8 @@ export async function lotSummaries(
       expired: fixedQty(a.expired),
       blocked: fixedQty(a.blocked),
       shelfLifeUnknown: fixedQty(a.unknown),
+      committed: fixedQty(a.committed),
+      availableNow: fixedQty(a.free),
     });
   }
   return result;

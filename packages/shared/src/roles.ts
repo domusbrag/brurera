@@ -84,6 +84,10 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.PRODUCT_LOTS_READ,
       P.PRODUCT_CONSERVATION_READ,
       P.INVENTORY_EXPIRY_READ,
+      // Pedidos: seguimiento, recálculo de cobertura y planificación; no los carga.
+      P.ORDERS_READ,
+      P.ORDERS_REPLAN,
+      P.ORDER_PLANNING_READ,
     ],
   },
   {
@@ -97,6 +101,13 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.CUSTOMERS_UPDATE,
       ...CATALOG_READ,
       P.PRODUCTS_READ,
+      // Carga, confirma, modifica y cancela pedidos de clientes.
+      P.ORDERS_READ,
+      P.ORDERS_CREATE,
+      P.ORDERS_UPDATE,
+      P.ORDERS_CONFIRM,
+      P.ORDERS_REPLAN,
+      P.ORDERS_CANCEL,
     ],
   },
   {
@@ -155,6 +166,11 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.PRODUCT_LOTS_TRANSFORM,
       P.PRODUCT_CONSERVATION_READ,
       P.INVENTORY_EXPIRY_READ,
+      // Ve los pedidos (sin datos de contacto del cliente) y lo que hay que producir.
+      P.ORDERS_READ,
+      P.ORDERS_PREPARE,
+      P.ORDER_PLANNING_READ,
+      P.ORDER_PRODUCTION_CREATE,
     ],
   },
   {
@@ -181,6 +197,9 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.PRODUCT_LOTS_QUALITY,
       P.PRODUCT_CONSERVATION_READ,
       P.INVENTORY_EXPIRY_READ,
+      // Ve reservas y lotes comprometidos; marca listos los pedidos cubiertos.
+      P.ORDERS_READ,
+      P.ORDERS_READY,
     ],
   },
 ];

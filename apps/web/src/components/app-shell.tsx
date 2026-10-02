@@ -12,6 +12,12 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
   const router = useRouter();
   // El menú móvil queda abierto solo para la ruta en la que se abrió: al navegar se cierra.
   const [menuOpenAt, setMenuOpenAt] = useState<string | null>(null);
+  // Al cambiar de ruta se olvida dónde se abrió: volver a esa ruta no lo reabre.
+  const [lastPath, setLastPath] = useState(pathname);
+  if (lastPath !== pathname) {
+    setLastPath(pathname);
+    setMenuOpenAt(null);
+  }
   const menuOpen = menuOpenAt === pathname;
   const setMenuOpen = (open: boolean) => setMenuOpenAt(open ? pathname : null);
   const [loggingOut, setLoggingOut] = useState(false);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AuditLogItemDto } from "./audit";
 import type { StockMovementDto } from "./inventory";
+import type { LotCommitmentDto } from "./orders";
 import type { PersonRefDto, UnitRefDto } from "./recipes";
 import { decimalString, optionalText, requiredText, uuid } from "./validation";
 
@@ -243,6 +244,8 @@ export interface ProductLotDetailDto extends ProductLotDto {
     createdAt: string;
   }[];
   transformOptions: TransformOptionDto[];
+  /** Comprometido y libre; pedidos que lo reservan (Fase 5A). */
+  commitment: LotCommitmentDto;
   movements: StockMovementDto[];
   audit: AuditLogItemDto[];
   canSeeCosts: boolean;
@@ -270,6 +273,10 @@ export interface AvailabilityLotDto {
   reason: LotIneligibilityReasonDto | null;
   /** Orden FEFO (1 = primero en usarse). */
   fefoRank: number;
+  /** Reservado por pedidos confirmados (Fase 5A). */
+  committed: string;
+  /** Elegible y no comprometido: lo único que un pedido nuevo puede reservar. */
+  available: string;
 }
 
 /** Resultado de calculateProductAvailabilityAt: físico vs. utilizable en una fecha. */
@@ -286,6 +293,10 @@ export interface ProductAvailabilityDto {
   eligibleByState: ConservationBreakdownDto;
   /** Elegible pero sin vida útil configurada (se informa, no se excluye). */
   shelfLifeUnknownQuantity: string;
+  /** Comprometido por pedidos sobre lotes elegibles (Fase 5A). */
+  committedQuantity: string;
+  /** Elegible − comprometido. */
+  availableQuantity: string;
   /** Razones en lenguaje de negocio ("300 vencen antes de la fecha"). */
   reasons: { reason: LotIneligibilityReasonDto; quantity: string; label: string }[];
   lots: AvailabilityLotDto[];
@@ -304,4 +315,8 @@ export interface ProductLotSummaryDto {
   expired: string;
   blocked: string;
   shelfLifeUnknown: string;
+  /** Reservado por pedidos confirmados (Fase 5A). */
+  committed: string;
+  /** Utilizable hoy y no comprometido. */
+  availableNow: string;
 }

@@ -77,6 +77,8 @@ h2 {
 
 .form {
   display: grid;
+  /* Una tabla ancha dentro del formulario se desplaza en su .table-wrap, no ensancha la página. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.9rem;
 }
 
@@ -1053,4 +1055,27 @@ h2 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+/* Fase 5A: listas compactas dentro de tablas (pedidos de una necesidad). */
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+/* Fecha + hora de la empresa: en pantallas angostas la zona baja de renglón. */
+.wall-clock {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.wall-clock input[type="date"] {
+  flex: 1 1 9rem;
+}
+
+.wall-clock input[type="time"] {
+  flex: 0 1 7rem;
 }

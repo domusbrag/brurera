@@ -59,6 +59,8 @@ export const createProductionOrderSchema = z.object({
   responsibleEmployeeId: optionalUuid(),
   batchCode: optionalText(40),
   notes: optionalText(1000),
+  /** Necesidad de un pedido que origina la orden (Fase 5A); null = producción normal. */
+  sourceOrderRequirementId: optionalUuid(),
 });
 export type CreateProductionOrderInput = z.infer<typeof createProductionOrderSchema>;
 
@@ -278,6 +280,13 @@ export interface ProductionOrderDto {
     code: string;
     conservationState: "FRESH" | "REFRIGERATED" | "FROZEN" | "THAWED";
     usableUntil: string | null;
+  } | null;
+  /** Pedido que originó la orden (Fase 5A): "se creó para PED-0012". */
+  sourceOrder: {
+    requirementId: string;
+    orderId: string;
+    orderCode: string;
+    requestedAt: string;
   } | null;
   responsible: { id: string; name: string } | null;
   notes: string | null;

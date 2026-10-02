@@ -2,7 +2,10 @@
 
 import {
   PERMISSIONS as P,
+  formatLocalDateTime,
+  instantToZonedLocal,
   type CreateProductionOrderInput,
+  type OrderRequirementDto,
   type Page,
   type ProductDto,
   type ProductionOrderDto,
@@ -19,7 +22,7 @@ import { ApiError, apiFetch, fetchOptions, listPath } from "@/lib/api-client";
 import { isPositive, toDecimal } from "@/lib/decimal-input";
 import { formatDate, formatQuantity } from "@/lib/format";
 import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
-import { useCan } from "../user-context";
+import { useCan, useCurrentUser } from "../user-context";
 import {
   AvailabilityTable,
   PRODUCTION_BASE,
@@ -50,11 +53,8 @@ interface Form {
   notes: string;
 }
 
-const today = () => {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-};
+/** Hoy en el calendario de la EMPRESA (no del navegador). */
+const todayIn = (timeZone: string) => instantToZonedLocal(new Date(), timeZone).slice(0, 10);
 
 interface Catalog {
   products: ProductDto[];
@@ -131,11 +131,18 @@ export function ProductionForm({ id }: { id?: string }) {
 
 function ProductionFormInner({ id }: { id?: string }) {
   const catalog = useCatalog();
+  const params = useSearchParams();
+  const requirementId = id ? null : params.get("requirementId");
   const { data: existing, error } = useResource<ProductionOrderDto>(
     id ? `/api/production-orders/${id}` : null,
   );
+  // Fase 5A: orden prellenada desde la necesidad de un pedido.
+  const { data: requirement, error: requirementError } = useResource<OrderRequirementDto>(
+    requirementId ? `/api/planning/requirements/${requirementId}` : null,
+  );
   if (error) return <ErrorState error={error} />;
-  if (!catalog || (id && !existing)) return <Loading />;
+  if (requirementError) return <ErrorState error={requirementError} />;
+  if (!catalog || (id && !existing) || (requirementId && !requirement)) return <Loading />;
   if (existing && (existing.status === "COMPLETED" || existing.status === "CANCELLED")) {
     return (
       <section className="panel panel--empty">
@@ -147,7 +154,24 @@ function ProductionFormInner({ id }: { id?: string }) {
       </section>
     );
   }
-  return <ProductionEditor catalog={catalog} existing={existing ?? null} />;
+  if (requirement?.blockedReason) {
+    return (
+      <section className="panel panel--empty">
+        <p className="upcoming">No se puede crear la orden desde este pedido</p>
+        <p className="muted">
+          {requirement.blockedReason}{" "}
+          <Link href={`/pedidos/${requirement.order.id}`}>Ver pedido {requirement.order.code}</Link>
+        </p>
+      </section>
+    );
+  }
+  return (
+    <ProductionEditor
+      catalog={catalog}
+      existing={existing ?? null}
+      requirement={requirement ?? null}
+    />
+  );
 }
 
 const plain = (v: string | null | undefined) =>
@@ -156,13 +180,16 @@ const plain = (v: string | null | undefined) =>
 function ProductionEditor({
   catalog,
   existing,
+  requirement,
 }: {
   catalog: Catalog;
   existing: ProductionOrderDto | null;
+  requirement: OrderRequirementDto | null;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const can = useCan();
+  const today = todayIn(useCurrentUser().company.timezone);
   const operationalOnly = existing !== null && existing.status !== "DRAFT";
   const defaultWarehouse = catalog.warehouses[0]?.id ?? "";
   const [form, setForm] = useState<Form>(() =>
@@ -179,18 +206,32 @@ function ProductionEditor({
           batchCode: existing.batchCode ?? "",
           notes: existing.notes ?? "",
         }
-      : {
-          productId: params.get("productId") ?? "",
-          scheduledFor: today(),
-          plannedOutputQuantity: "",
-          plannedOutputUnitId: "",
-          recipeVersionId: "",
-          sourceWarehouseId: defaultWarehouse,
-          outputWarehouseId: defaultWarehouse,
-          responsibleEmployeeId: "",
-          batchCode: "",
-          notes: "",
-        },
+      : requirement
+        ? {
+            productId: requirement.product.id,
+            // Se produce antes de la entrega: hoy por defecto (la fecha requerida se muestra arriba).
+            scheduledFor: today <= requirement.requiredBy ? today : requirement.requiredBy,
+            plannedOutputQuantity: plain(requirement.quantity),
+            plannedOutputUnitId: requirement.unit.id,
+            recipeVersionId: requirement.recipe?.versionId ?? "",
+            sourceWarehouseId: requirement.suggestedSourceWarehouseId ?? defaultWarehouse,
+            outputWarehouseId: requirement.suggestedOutputWarehouseId ?? defaultWarehouse,
+            responsibleEmployeeId: "",
+            batchCode: "",
+            notes: `Para el pedido ${requirement.order.code}`,
+          }
+        : {
+            productId: params.get("productId") ?? "",
+            scheduledFor: today,
+            plannedOutputQuantity: "",
+            plannedOutputUnitId: "",
+            recipeVersionId: "",
+            sourceWarehouseId: defaultWarehouse,
+            outputWarehouseId: defaultWarehouse,
+            responsibleEmployeeId: "",
+            batchCode: "",
+            notes: "",
+          },
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -227,6 +268,7 @@ function ProductionEditor({
     responsibleEmployeeId: form.responsibleEmployeeId || null,
     batchCode: form.batchCode.trim() || null,
     notes: form.notes.trim() || null,
+    sourceOrderRequirementId: requirement?.id ?? null,
   });
 
   // Vista previa en vivo (con demora) cuando los datos que definen el plan están completos.
@@ -254,7 +296,8 @@ function ProductionEditor({
     const timer = setTimeout(() => {
       apiFetch<ProductionOrderDto>("/api/production-orders/preview", {
         method: "POST",
-        body: { ...payload(), batchCode: null, notes: null },
+        // La vista previa no reclama la necesidad del pedido (sólo el alta la vincula).
+        body: { ...payload(), batchCode: null, notes: null, sourceOrderRequirementId: null },
       })
         .then((result) => {
           if (!cancelled) setPreviewState({ key: previewKey, preview: result, error: null });
@@ -329,7 +372,9 @@ function ProductionEditor({
     }
   }
 
-  const allowed = existing ? can(P.PRODUCTION_ORDERS_UPDATE) : can(P.PRODUCTION_ORDERS_CREATE);
+  const allowed = existing
+    ? can(P.PRODUCTION_ORDERS_UPDATE)
+    : can(P.PRODUCTION_ORDERS_CREATE) && (!requirement || can(P.ORDER_PRODUCTION_CREATE));
   const field = (name: keyof Form) => ({
     id: `f-${name}`,
     "aria-invalid": fieldErrors[name] ? true : undefined,
@@ -362,6 +407,16 @@ function ProductionEditor({
         <p className="notice">No tenés permiso para esta operación.</p>
       ) : (
         <form className="form" onSubmit={submit} noValidate>
+          {requirement && (
+            <p className="notice" data-testid="from-order">
+              Orden para el pedido{" "}
+              <Link href={`/pedidos/${requirement.order.id}`}>{requirement.order.code}</Link>:
+              faltan {formatQuantity(requirement.quantity, requirement.unit.symbol)} de{" "}
+              {requirement.product.name} para la entrega del{" "}
+              {formatLocalDateTime(requirement.order.requestedAtLocal)}. Podés ajustar cantidad y
+              fecha; la orden queda vinculada al pedido.
+            </p>
+          )}
           <section className="panel">
             <div className="form-grid">
               <div className="form__field">

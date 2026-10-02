@@ -106,10 +106,20 @@ export const productionOrders = pgTable(
     completedAt: timestamp({ withTimezone: true }),
     cancelledAt: timestamp({ withTimezone: true }),
     cancelReason: text(),
+    /**
+     * Necesidad de un pedido que originó la orden (Fase 5A); null = producción normal.
+     * FK compuesta a order_production_requirements declarada en la migración 0009
+     * (evita el ciclo de tipos entre schema/production y schema/orders).
+     */
+    sourceOrderRequirementId: uuid(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique("production_orders_company_id_uq").on(t.companyId, t.id),
+    index("production_orders_source_requirement_idx")
+      .on(t.companyId, t.sourceOrderRequirementId)
+      .where(sql`${t.sourceOrderRequirementId} is not null`),
+
     uniqueIndex("production_orders_company_code_uq").on(t.companyId, t.internalCode),
     uniqueIndex("production_orders_company_batch_uq")
       .on(t.companyId, t.batchCode)

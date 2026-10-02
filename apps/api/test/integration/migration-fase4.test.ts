@@ -26,6 +26,7 @@ const dbUrl = (suffix: string) => {
 };
 const OK_DB = dbUrl("migration4");
 const BLOCKED_DB = dbUrl("migration4_blocked");
+const F45_DB = dbUrl("migration45");
 const nameOf = (url: string) => new URL(url).pathname.slice(1);
 
 let tmp: string;
@@ -234,6 +235,7 @@ afterAll(async () => {
   await Promise.all(clients.map((c) => c.end()));
   await admin(`drop database if exists "${nameOf(OK_DB)}" with (force)`);
   await admin(`drop database if exists "${nameOf(BLOCKED_DB)}" with (force)`);
+  await admin(`drop database if exists "${nameOf(F45_DB)}" with (force)`);
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -249,7 +251,8 @@ describe("migración 0008 sobre datos de Fase 4 (Gate B, §51)", () => {
 
     await migrate(OK_DB, MIGRATIONS_FOLDER);
 
-    expect(await applied(w)).toBe(9);
+    // Todas las migraciones hasta la actual (0009 = Fase 5A).
+    expect(await applied(w)).toBe(10);
     // Ledger, saldos, costos y órdenes: nada cambia (salvo la columna nueva del movimiento).
     expect(await snapshot(w)).toEqual(before);
 
@@ -313,5 +316,55 @@ describe("migración 0008 sobre datos de Fase 4 (Gate B, §51)", () => {
     );
     expect(table!.t).toBeNull();
     expect(await snapshot(w)).toEqual(before);
+  });
+});
+
+describe("migración 0009 (Fase 5A) sobre datos de Fase 4.5", () => {
+  it("lotes, saldos, ledger y órdenes quedan idénticos; las tablas de pedidos nacen vacías", async () => {
+    const w = await fase4Database(F45_DB);
+    await completedOrder(w, "OP-0001", "100", "678.2", "LOT-20261001-001");
+    await completedOrder(w, "OP-0002", "50", "726.4", null);
+    await migrate(F45_DB, migrationsUpTo(8));
+    const lotsSnapshot = async () => ({
+      ...(await snapshot(w)),
+      lots: await w.q(
+        "select id, lot_code, conservation_state, usable_until, quality_status, initial_quantity from product_lots order by lot_code",
+      ),
+      lotBalances: await w.q(
+        "select product_lot_id, quantity, inventory_value from product_lot_balances order by product_lot_id",
+      ),
+    });
+    const before = await lotsSnapshot();
+    expect(before.lots).toHaveLength(2);
+
+    await migrate(F45_DB, MIGRATIONS_FOLDER);
+
+    expect(await applied(w)).toBe(10);
+    expect(await lotsSnapshot()).toEqual(before);
+    for (const table of [
+      "customer_orders",
+      "customer_order_lines",
+      "product_lot_reservations",
+      "order_production_requirements",
+      "order_material_requirements",
+      "customer_order_operations",
+    ]) {
+      const [row] = await w.q<{ n: number }>(`select count(*)::int as n from ${table}`);
+      expect(row!.n, table).toBe(0);
+    }
+    const [linked] = await w.q<{ n: number }>(
+      "select count(*)::int as n from production_orders where source_order_requirement_id is not null",
+    );
+    expect(linked!.n).toBe(0);
+    const triggers = await w.q<{ tgname: string }>(
+      "select tgname from pg_trigger where not tgisinternal and tgname like any (array['product_lot%reserv%', 'customer_order%', 'order_%'])",
+    );
+    expect(triggers.map((t) => t.tgname)).toEqual(
+      expect.arrayContaining([
+        "product_lot_reservations_capacity",
+        "product_lot_balances_reserved",
+        "product_lots_blocked_reserved",
+      ]),
+    );
   });
 });

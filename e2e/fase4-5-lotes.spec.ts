@@ -315,12 +315,17 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
     lots.filter({ hasText: "Fresco" }).getByRole("link", { name: `Congelar ${lotCode}` }),
   ).toBeVisible();
   const availability = section(page, "Disponibilidad a una fecha");
-  const inThreeDays = new Date(
-    Date.now() + 3 * 86_400_000 - new Date().getTimezoneOffset() * 60_000,
-  )
-    .toISOString()
-    .slice(0, 16);
+  // Fecha y hora de pared de la EMPRESA (no del navegador): fecha + hora por separado.
+  const { user } = await call<{ user: { company: { timezone: string } } }>(
+    page.request,
+    "get",
+    "/api/auth/me",
+  );
+  const inThreeDays = new Intl.DateTimeFormat("en-CA", {
+    timeZone: user.company.timezone,
+  }).format(new Date(Date.now() + 3 * 86_400_000));
   await availability.getByLabel("Fecha y hora").fill(inThreeDays);
+  await availability.getByLabel("Hora", { exact: true }).fill("10:00");
   await expect(summaryValue(availability, /^Utilizable el/)).toHaveText("20 kg");
   await expect(summaryValue(availability, "No utilizable")).toHaveText("75 kg");
   await expect(availability).toContainText("75 kg vencen antes de la fecha");

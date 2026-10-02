@@ -24,7 +24,8 @@ import {
 const ANY_ID = "00000000-0000-4000-8000-000000000000";
 
 type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-const ENDPOINTS: [Method, string, PermissionCode[]][] = [
+/** Cuarto elemento opcional: body (cuando el permiso depende de lo que se envía). */
+const ENDPOINTS: [Method, string, PermissionCode[], unknown?][] = [
   ["GET", "/api/audit-logs", [P.AUDIT_READ]],
   ["GET", "/api/company", [P.COMPANY_READ]],
   ["PATCH", "/api/company", [P.COMPANY_UPDATE]],
@@ -198,6 +199,36 @@ ENDPOINTS.push(
   ["POST", `/api/product-lots/${ANY_ID}/waste`, [P.PRODUCT_LOTS_WASTE]],
   ["POST", `/api/product-lots/${ANY_ID}/block`, [P.PRODUCT_LOTS_QUALITY]],
   ["POST", `/api/product-lots/${ANY_ID}/unblock`, [P.PRODUCT_LOTS_QUALITY]],
+  // Fase 5A: pedidos y planificación.
+  ["GET", "/api/orders", [P.ORDERS_READ]],
+  ["POST", "/api/orders", [P.ORDERS_CREATE]],
+  ["POST", "/api/orders/coverage-preview", [P.ORDERS_CREATE]],
+  ["GET", `/api/orders/${ANY_ID}`, [P.ORDERS_READ]],
+  ["PATCH", `/api/orders/${ANY_ID}`, [P.ORDERS_UPDATE]],
+  ["GET", `/api/orders/${ANY_ID}/coverage-preview`, [P.ORDERS_READ]],
+  ["POST", `/api/orders/${ANY_ID}/confirm`, [P.ORDERS_CONFIRM]],
+  ["POST", `/api/orders/${ANY_ID}/replan-preview`, [P.ORDERS_REPLAN]],
+  ["POST", `/api/orders/${ANY_ID}/replan`, [P.ORDERS_REPLAN]],
+  ["POST", `/api/orders/${ANY_ID}/cancel`, [P.ORDERS_CANCEL]],
+  ["POST", `/api/orders/${ANY_ID}/start-preparation`, [P.ORDERS_PREPARE]],
+  ["POST", `/api/orders/${ANY_ID}/mark-ready`, [P.ORDERS_READY]],
+  ["GET", "/api/planning/production-needs", [P.ORDER_PLANNING_READ]],
+  ["GET", "/api/planning/material-demand", [P.ORDER_PLANNING_READ]],
+  ["GET", "/api/planning/orders-at-risk", [P.ORDER_PLANNING_READ]],
+  ["GET", `/api/planning/requirements/${ANY_ID}`, [P.ORDER_PLANNING_READ]],
+  [
+    "POST",
+    "/api/production-orders",
+    [P.PRODUCTION_ORDERS_CREATE, P.ORDER_PRODUCTION_CREATE],
+    {
+      productId: ANY_ID,
+      scheduledFor: "2030-01-01",
+      plannedOutputQuantity: "1",
+      sourceWarehouseId: ANY_ID,
+      outputWarehouseId: ANY_ID,
+      sourceOrderRequirementId: ANY_ID,
+    },
+  ],
 );
 
 let ctx: TestContext;
@@ -225,12 +256,12 @@ describe("matriz de autorización (rol × endpoint)", () => {
     it(`${role.code}: 403 exactamente donde el rol no tiene permiso`, async () => {
       const api = clients.get(role.code)!;
       const mismatches: string[] = [];
-      for (const [method, url, required] of ENDPOINTS) {
+      for (const [method, url, required, body = {}] of ENDPOINTS) {
         const res =
           method === "GET"
             ? await api.get(url)
             : method === "POST"
-              ? await api.post(url, {})
+              ? await api.post(url, body)
               : method === "PATCH"
                 ? await api.patch(url, {})
                 : method === "PUT"

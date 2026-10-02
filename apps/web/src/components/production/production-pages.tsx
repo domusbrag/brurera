@@ -351,6 +351,20 @@ export function ProductionDetail({ id }: { id: string }) {
             ["Fecha programada", formatDate(data.scheduledFor)],
             ["Depósito de materias primas", data.sourceWarehouse.name],
             ["Depósito de producto terminado", data.outputWarehouse.name],
+            ...(data.sourceOrder
+              ? ([
+                  [
+                    "Pedido",
+                    <>
+                      Creada para{" "}
+                      <Link href={`/pedidos/${data.sourceOrder.orderId}`}>
+                        {data.sourceOrder.orderCode}
+                      </Link>{" "}
+                      · entrega {formatDateTime(data.sourceOrder.requestedAt, tz)}
+                    </>,
+                  ],
+                ] as [string, ReactNode][])
+              : []),
             ["Responsable", data.responsible?.name ?? "Sin asignar"],
             ["Creada", who(data.createdAt, data.createdBy, tz)],
             ["Planificada", who(data.plannedAt, data.plannedBy, tz)],
