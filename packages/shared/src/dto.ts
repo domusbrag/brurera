@@ -94,6 +94,10 @@ export interface CustomerDto {
   postalCode: string | null;
   commercialCondition: (typeof COMMERCIAL_CONDITIONS)[number];
   creditLimit: string | null;
+  /** Lista de precios del cliente (Fase 5B). */
+  defaultPriceList: { id: string; code: string; name: string } | null;
+  /** "Consumidor Final": uno por empresa, para ventas de mostrador. */
+  walkIn: boolean;
   active: boolean;
   notes: string | null;
   createdAt: string;

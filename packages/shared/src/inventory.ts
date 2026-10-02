@@ -27,6 +27,7 @@ export const STOCK_MOVEMENT_TYPE_LABELS = {
   PRODUCTION_OUTPUT: "Producción terminada",
   LOT_TRANSFORMATION_OUT: "Transformación (salida del lote)",
   LOT_TRANSFORMATION_IN: "Transformación (ingreso al lote)",
+  SALE: "Venta",
 } as const;
 export type StockMovementTypeDto = keyof typeof STOCK_MOVEMENT_TYPE_LABELS;
 export const STOCK_MOVEMENT_TYPES_DTO = Object.keys(
@@ -277,8 +278,17 @@ export interface StockOperationResultDto {
 
 /* ---------- Producto terminado (Fase 4) ---------- */
 
+/**
+ * Valorización de producto terminado (null sin inventory.cost.read). El valor es
+ * Σ valor de los lotes; el promedio es informativo: valor / cantidad (ADR-057).
+ */
+export interface ProductValuationDto {
+  averageMaterialCost: string | null;
+  inventoryValue: string | null;
+}
+
 /** Fila del stock de productos terminados (valorización: null sin inventory.cost.read). */
-export interface ProductStockItemDto extends InventoryValuationDto {
+export interface ProductStockItemDto extends ProductValuationDto {
   /** Id del producto. */
   id: string;
   product: { id: string; code: string; name: string; active: boolean };
@@ -293,7 +303,7 @@ export interface ProductStockItemDto extends InventoryValuationDto {
   lots: ProductLotSummaryDto;
 }
 
-export interface ProductStockDetailDto extends InventoryValuationDto {
+export interface ProductStockDetailDto extends ProductValuationDto {
   product: {
     id: string;
     code: string;
@@ -353,6 +363,7 @@ export interface ProductCostDto {
   currency: string;
   quantity: string;
   inventoryValue: string;
-  movingAverageCost: string | null;
+  /** Promedio informativo valor / cantidad (el costo de una venta sale de sus lotes). */
+  averageMaterialCost: string | null;
   lastUpdatedAt: string | null;
 }

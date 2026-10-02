@@ -13,6 +13,9 @@ export const CODE_PREFIXES = {
   PURCHASE_RECEIPT: "REC",
   PRODUCTION_ORDER: "OP",
   CUSTOMER_ORDER: "PED",
+  SALE: "VTA",
+  CUSTOMER_PAYMENT: "COB",
+  PRICE_LIST: "LP",
 } as const;
 
 export type CodeEntity = keyof typeof CODE_PREFIXES;

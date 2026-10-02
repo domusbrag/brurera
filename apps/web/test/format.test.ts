@@ -14,6 +14,10 @@ describe("formato de costos (política de display)", () => {
     expect(formatMoney("2.345")).toBe("$2,35");
     expect(formatMoney(null)).toBe("—");
   });
+  it("dinero negativo: el signo va antes de la moneda (margen negativo, saldo a favor)", () => {
+    expect(formatMoney("-7500")).toBe("-$7.500,00");
+    expect(formatMoney("-0.001")).toBe("$0,00");
+  });
   it("costo por unidad: '$850,00 / kg' y sin $0,00 engañoso para costos chicos", () => {
     expect(formatUnitCost("850", "ARS", "kg")).toBe("$850,00 / kg");
     expect(formatUnitCost("0.000500", "ARS", "g")).toBe("$0,0005 / g");

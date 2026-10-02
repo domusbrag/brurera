@@ -40,7 +40,14 @@ aplicación web y una base PostgreSQL. Sin microservicios, sin colas, sin event 
   listo; `orders.plan.ts`: resolución de líneas y plan FEFO + receta por pedido; `orders.data.ts`:
   lecturas, cobertura efectiva, proyección de materias primas y DTOs; `reservations.ts`:
   comprometido por lote, locks e invalidación; `requirements.ts`: vínculo necesidad ↔ orden de
-  producción; `planning.service.ts`: Necesidades). Los módulos futuros siguen la lista de la
+  producción; `planning.service.ts`: Necesidades). Fase 5B: `sales` (`sales.service.ts`: borrador,
+  vista previa, posteo atómico y cancelación; `sales.allocation.ts`: qué lotes salen, reservas
+  del pedido primero y después FEFO libre; `sales.data.ts`: lecturas y DTOs con costo y margen
+  según permiso), `price-lists` (`pricing.ts`: precio vigente y congelado al confirmar un pedido;
+  `price-lists.service.ts`: listas e ítems) y `payments` (`payments.service.ts`: cobros, señas,
+  imputaciones y cuentas a cobrar; `account.ts`: ledger de cuenta corriente con saldo corrido y
+  ajustes). `src/lib/sql.ts` tiene `qualified(column)` para subconsultas correlacionadas (Drizzle
+  omite el nombre de la tabla en SELECTs de una sola tabla). Los módulos futuros siguen la lista de la
   especificación (§30).
 - **Patrón de maestros:** `GET /api/x?search&status&page&pageSize` (paginado en el servidor,
   `status` = active/inactive/all), `GET /api/x/:id`, `POST /api/x` (201), `PATCH /api/x/:id`,
@@ -143,6 +150,16 @@ replayed: true`; el mismo id en otra operación → `409 OPERATION_ID_REUSED`. "
   reservas invalidadas de la revisión vigente, así merma y bloqueo no tocan el pedido. Ningún GET
   escribe: vistas previas (`coverage-preview`, `replan-preview`) calculan sin guardar. Necesidades
   (`/planning/*`) agrega en SQL y pagina en el servidor.
+- **Ventas y cobros (Fase 5B, ADR-057 a 062):** postear una venta es una transacción con el orden
+  de locks de ADR-062 (pedido → líneas del pedido → venta → líneas → lotes → saldos de lote →
+  reservas → costos de producto → saldos de producto → cuenta → cobros). Escribe `SALE` por lote
+  al costo real del lote, consume las reservas del pedido, actualiza entregado / pendiente, debita
+  la cuenta y aplica las señas disponibles en la misma transacción. Cobros e imputaciones bloquean
+  la cuenta del cliente; la capacidad de cada cobro y de cada venta la custodian triggers. La
+  vista previa usa la misma asignación sin locks y no escribe. Costo y margen sólo salen en la
+  respuesta con `sales.cost.read` / `sales.margin.read`. Cobros, señas, imputaciones manuales y
+  ajustes son idempotentes por `operationId` guardado en la fila que produce la consecuencia
+  (ADR-063).
 - **Visibilidad de costos:** las rutas de inventario calculan `canSeeCosts` con el permiso
   `inventory.cost.read`; sin él, promedio, valor de inventario, costo unitario y valor de los
   movimientos y costo de la última compra vienen en `null`, e `GET /api/inventory/costs/:id`
@@ -219,6 +236,14 @@ replayed: true`; el mismo id en otra operación → `409 OPERATION_ID_REUSED`. "
   Pedidos** (`orders.read`) y **Planificación → Necesidades** (`order_planning.read`). La orden de
   producción acepta `?requirementId=` para prellenarse desde una necesidad. Stock y lotes muestran
   comprometido y disponible.
+- **Ventas, listas de precios y cuentas a cobrar (Fase 5B):** `src/components/sales/` —
+  `sale-shared.tsx` (estados, margen, `PaymentDialog`, avisos), `sale-form.tsx` (venta directa o
+  desde `?orderId=`, precio vigente resuelto en vivo y motivo si se cambia), `sale-pages.tsx`
+  (listado, detalle, vista previa de la entrega y «Confirmar entrega y venta» con cobro opcional),
+  `price-list-pages.tsx` y `account-pages.tsx` (cuentas a cobrar, cuenta corriente con Debe /
+  Haber / Saldo, cobro a cuenta, imputar y ajustar). Rutas `/ventas`, `/listas-de-precios` y
+  `/cuentas-a-cobrar`. El pedido suma «Entregar y vender», «Acordar precio», «Registrar seña» y la
+  sección «Precio, señas y ventas»; el cliente, su lista de precios y el acceso a la cuenta.
 - La interfaz nunca muestra UUIDs ni `companyId` (hay un E2E que lo verifica).
 
 ### packages/shared

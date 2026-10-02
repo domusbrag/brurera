@@ -19,7 +19,7 @@ export interface NavGroup {
 }
 
 /** Última fase implementada: los módulos de fases posteriores son "próxima etapa". */
-export const CURRENT_PHASE = 4;
+export const CURRENT_PHASE = 5;
 
 export const CONFIG_SECTIONS: {
   slug: string;
@@ -62,10 +62,7 @@ export const CONFIG_SECTIONS: {
 export const NAVIGATION: NavGroup[] = [
   {
     label: "Operaciones",
-    items: [
-      { slug: "ventas", label: "Ventas", phase: 5 },
-      { slug: "compras", label: "Compras", phase: 3, anyOf: [P.PURCHASES_READ] },
-    ],
+    items: [{ slug: "compras", label: "Compras", phase: 3, anyOf: [P.PURCHASES_READ] }],
   },
   {
     label: "Producción",
@@ -99,6 +96,14 @@ export const NAVIGATION: NavGroup[] = [
     items: [
       // Fase 5A (pedidos y demanda comprometida): entre Fase 4 y Ventas (5B).
       { slug: "pedidos", label: "Pedidos", phase: 4, anyOf: [P.ORDERS_READ] },
+      // Fase 5B: ventas, entrega y precios.
+      { slug: "ventas", label: "Ventas", phase: 5, anyOf: [P.SALES_READ] },
+      {
+        slug: "listas-de-precios",
+        label: "Listas de precios",
+        phase: 5,
+        anyOf: [P.PRICE_LISTS_READ],
+      },
       { slug: "clientes", label: "Clientes", phase: 1, anyOf: [P.CUSTOMERS_READ] },
       { slug: "proveedores", label: "Proveedores", phase: 1, anyOf: [P.SUPPLIERS_READ] },
     ],
@@ -107,7 +112,12 @@ export const NAVIGATION: NavGroup[] = [
     label: "Finanzas",
     items: [
       { slug: "caja", label: "Caja", phase: 6 },
-      { slug: "cuentas-a-cobrar", label: "Cuentas a cobrar", phase: 5 },
+      {
+        slug: "cuentas-a-cobrar",
+        label: "Cuentas a cobrar",
+        phase: 5,
+        anyOf: [P.CUSTOMER_ACCOUNTS_READ],
+      },
       { slug: "cuentas-a-pagar", label: "Cuentas a pagar", phase: 6 },
       { slug: "gastos", label: "Gastos", phase: 6 },
       { slug: "facturacion", label: "Facturación", phase: 7 },

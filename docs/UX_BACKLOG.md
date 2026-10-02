@@ -25,6 +25,8 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
 - [F5A] Aparecen "Comercial → Pedidos" y un grupo nuevo "Planificación → Necesidades". Con Ventas
   (5B) Comercial tendrá Pedidos, Ventas, Clientes y Proveedores: revisar si Pedidos y Ventas van
   juntos en un grupo "Clientes" y Proveedores con Compras.
+- [F5B] Comercial queda con Pedidos, Ventas, Listas de precios, Clientes y Proveedores, y
+  Finanzas suma Cuentas a cobrar real junto a módulos futuros. Mismo hallazgo: reagrupar.
 - [F5A] Necesidades usa pestañas por enlace (Producción · Materias primas · Pedidos en riesgo) con
   el horizonte en la URL; es el mismo patrón que Inventario pero con un filtro compartido. Tomarlo
   como base del patrón de subnavegación.
@@ -101,6 +103,14 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   navegador (mm/dd/aaaa en inglés). Mismo hallazgo que [F4]: selector propio en es-AR.
 - [F5A] Al modificar un pedido, la línea existente no cambia de producto (se quita y se agrega
   otra); explicarlo junto al selector bloqueado.
+- [F5B] Las tablas editables de líneas (pedido, compra) usan inputs con el estilo del navegador;
+  la venta y la lista de precios ya usan `.line-editor`. Unificar un único editor de líneas.
+- [F5B] En 768 px el selector de producto de la venta queda angosto ("Elegí un pro…") porque
+  Precio + Descuento ocupan dos campos. Evaluar el descuento en una segunda fila o un diálogo.
+- [F5B] El alta y la edición del pedido no permiten cambiar el precio de una línea (el override
+  sólo está en la venta); hoy se acuerda el precio vigente al confirmar.
+- [F5B] La vista previa de la entrega muestra los lotes FEFO elegidos, pero no se puede elegir
+  otro lote a mano (deuda `LOT_PICKING_OVERRIDE`).
 
 ## TABLES
 
@@ -183,6 +193,13 @@ Formato: categoría · hallazgo · dónde se vio · propuesta. Fase en que se re
   entrar a cada pedido y "Actualizar cobertura". Evaluar una acción por lote "recalcular los
   pedidos afectados" (siempre explícita, nunca automática).
 - [F5A] La seña del pedido sólo puede anotarse en Notas (`ORDER_ADVANCE_PAYMENT` es Fase 5B).
+  _(F5B: «Registrar seña» en el pedido; se aplica sola al entregar.)_
 - [F5A] Para empresas que ya existían, los permisos nuevos de pedidos llegan con
   `pnpm db:sync-reference` (o `pnpm bootstrap` en desarrollo); sin ese paso el menú no muestra
   Pedidos. Evaluar avisarlo en la pantalla de roles.
+- [F5B] Cancelar un pedido con seña deja el crédito a favor del cliente y lo avisa, pero la
+  devolución del dinero no existe (Caja, fase siguiente). Definir el flujo de devolución.
+- [F5B] Imputar un cobro a cuenta es venta por venta; con muchas ventas pendientes conviene
+  "imputar a las más viejas" en un paso.
+- [F5B] Los enlaces a ventas dentro del pedido usan el estilo de enlace por defecto (azul,
+  monoespaciado), distinto de los códigos del resto de la app.

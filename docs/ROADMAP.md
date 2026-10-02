@@ -7,21 +7,21 @@ Disciplina por fase: inspeccionar estado → plan breve → implementar → prue
 gates → revisión manual de UX → actualizar docs → resumen (CAMBIOS, ARCHIVOS, MIGRACIONES, TESTS,
 RESULTADOS, RIESGOS, DEUDA, SIGUIENTE PASO) → detenerse.
 
-| Fase | Nombre                                       | Estado                          |
-| ---- | -------------------------------------------- | ------------------------------- |
-| 0    | Discovery + Foundation                       | Completa — aceptada             |
-| 1    | Maestros                                     | Completa — aceptada             |
-| 2    | Recetas + costo teórico                      | Completa — aceptada             |
-| 3    | Compras + inventario                         | Completa — aceptada             |
-| 4    | Producción                                   | Completa — aceptada             |
-| 4.5  | Lotes + conservación + vida útil             | Completa — aceptada             |
-| 5A   | Pedidos + demanda comprometida + necesidades | **Completa — esperando gate**   |
-| 5B   | Ventas + cobros + cuenta corriente + margen  | Pendiente (requiere aceptar 5A) |
-| UX   | UX/DESIGN OPTIMIZATION                       | Pendiente (después de Fase 5B)  |
-| 6    | Proveedores + finanzas + caja                | Pendiente                       |
-| 7    | Facturación interna                          | Pendiente                       |
-| 8    | Dashboard y reportes                         | Pendiente                       |
-| 9    | Piloto                                       | Pendiente                       |
+| Fase | Nombre                                       | Estado                         |
+| ---- | -------------------------------------------- | ------------------------------ |
+| 0    | Discovery + Foundation                       | Completa — aceptada            |
+| 1    | Maestros                                     | Completa — aceptada            |
+| 2    | Recetas + costo teórico                      | Completa — aceptada            |
+| 3    | Compras + inventario                         | Completa — aceptada            |
+| 4    | Producción                                   | Completa — aceptada            |
+| 4.5  | Lotes + conservación + vida útil             | Completa — aceptada            |
+| 5A   | Pedidos + demanda comprometida + necesidades | Completa — aceptada            |
+| 5B   | Ventas + cobros + cuenta corriente + margen  | **Completa — esperando gate**  |
+| UX   | UX/DESIGN OPTIMIZATION                       | Pendiente (después de Fase 5B) |
+| 6    | Proveedores + finanzas + caja                | Pendiente                      |
+| 7    | Facturación interna                          | Pendiente                      |
+| 8    | Dashboard y reportes                         | Pendiente                      |
+| 9    | Piloto                                       | Pendiente                      |
 
 ## Fase 0 — Discovery + Foundation
 
@@ -119,7 +119,7 @@ depósitos, refrigerar desde fresco y vencimientos con job de fondo (el estado e
 
 ## Fase 5A — Pedidos + demanda comprometida + necesidades
 
-**Completa — esperando gate humano.** Pedido para una fecha y hora (zona de la empresa) → cantidad
+**Completa — aceptada.** Pedido para una fecha y hora (zona de la empresa) → cantidad
 pedida → stock físico → stock utilizable en esa fecha (`calculateProductAvailabilityAt`, Fase 4.5)
 → stock ya comprometido → disponible real → reserva por lote (FEFO, sin mover stock) → cantidad a
 producir → receta fijada → materias primas necesarias (demanda proyectada, sin reservar) → stock de
@@ -129,13 +129,22 @@ materias primas → faltantes a comprar. Estados `DRAFT`, `CONFIRMED`, `IN_PREPA
 producción prellenada desde una necesidad. Pantallas Comercial → Pedidos y Planificación →
 Necesidades. Ver [reports/FASE_5A_REPORTE.md](reports/FASE_5A_REPORTE.md). Quedan fuera:
 consolidar varios pedidos en una producción (`PRODUCTION_CONSOLIDATION`), reserva física de materia
-prima, señas (`ORDER_ADVANCE_PAYMENT`), planificación por capacidad y entrega/venta (Fase 5B). No se
-comienza Fase 5B sin aceptación humana.
+prima y planificación por capacidad. Señas y entrega/venta llegaron en Fase 5B.
 
 ## Fase 5B — Ventas + cobros + cuenta corriente + margen
 
-Ventas, precios, cliente, salida de stock por lote (FEFO), pagos, cuenta corriente y margen.
-**Prueba:** stock 100 → venta 20 → stock 80 → pago 50 % → saldo correcto → segundo pago → saldo 0.
+**Completa — esperando gate humano.** Pedido → una o varias ventas (entrega parcial y total
+consumiendo las reservas) y venta directa (FEFO sobre stock libre, Consumidor Final). Estado de la
+venta (borrador / entregada / descartada) separado del estado de cobro. Costo por lote específico y
+promedio de producto derivado (ADR-057). Listas de precios con prioridad y precio congelado al
+confirmar el pedido; pedidos de 5A sin precio hasta acordarlo. Override de precio con permiso y
+motivo. Margen sobre materiales con aviso de margen negativo. Cobros (de venta, al entregar, a
+cuenta), señas aplicadas solas, imputación manual, cuenta corriente con ledger (Debe / Haber /
+Saldo) y ajustes con motivo (política B). Límite de crédito sólo avisa. Orden global de locks
+(ADR-062), idempotencia y rollback probados. Pantallas Comercial → Ventas y Listas de precios,
+Finanzas → Cuentas a cobrar. Ver [reports/FASE_5B_REPORTE.md](reports/FASE_5B_REPORTE.md). Quedan
+fuera: devoluciones y notas de crédito, reembolsos, facturación, caja. No se comienza UX/DESIGN
+OPTIMIZATION sin aceptación humana.
 
 ## UX/DESIGN OPTIMIZATION (después de Fase 5B)
 

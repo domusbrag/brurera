@@ -7,11 +7,12 @@ import {
   CUSTOMER_TYPES,
   PERMISSIONS as P,
   type CustomerDto,
+  type PriceListDto,
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { useEffect, useState } from "react";
+import { apiFetch, fetchOptions } from "@/lib/api-client";
 import { formatMoney } from "@/lib/format";
 import { useCan, useCurrentUser } from "../user-context";
 import { EntityForm, toFormValues, toPayload, type FieldDef } from "./entity-form";
@@ -57,7 +58,10 @@ export function CustomerList() {
   );
 }
 
-const fields = (creating: boolean): FieldDef[] => [
+const fields = (
+  creating: boolean,
+  priceLists: { value: string; label: string }[] | null,
+): FieldDef[] => [
   ...(creating
     ? [
         {
@@ -93,18 +97,46 @@ const fields = (creating: boolean): FieldDef[] => [
       value: c,
       label: COMMERCIAL_CONDITION_LABELS[c],
     })),
-    hint: "La cuenta corriente se habilita en una fase posterior; hoy queda registrada.",
   },
-  { name: "creditLimit", label: "Límite de crédito", kind: "decimal", placeholder: "0,00" },
+  {
+    name: "creditLimit",
+    label: "Límite de crédito",
+    kind: "decimal",
+    placeholder: "0,00",
+    hint: "Sólo avisa al vender: no bloquea la venta.",
+  },
+  ...(priceLists
+    ? [
+        {
+          name: "defaultPriceListId",
+          label: "Lista de precios",
+          kind: "select" as const,
+          options: priceLists,
+          emptyOption: "Lista general de la empresa",
+          hint: "Sin lista propia se usa la lista general y, si no hay, el precio de cada producto.",
+        },
+      ]
+    : []),
   { name: "notes", label: "Observaciones", kind: "textarea" },
 ];
 
 export function CustomerForm({ id }: { id?: string }) {
   const router = useRouter();
+  const can = useCan();
   const { data, error } = useResource<CustomerDto>(id ? `${API}/${id}` : null);
+  const [priceLists, setPriceLists] = useState<{ value: string; label: string }[] | null>(null);
+  const [listsLoaded, setListsLoaded] = useState(!can(P.PRICE_LISTS_READ));
+  useEffect(() => {
+    if (!can(P.PRICE_LISTS_READ)) return;
+    fetchOptions<PriceListDto>("/api/price-lists")
+      .then((items) => setPriceLists(items.map((l) => ({ value: l.id, label: l.name }))))
+      .catch(() => setPriceLists(null))
+      .finally(() => setListsLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   if (id && error) return <ErrorState error={error} />;
-  if (id && !data) return <Loading />;
-  const defs = fields(!id);
+  if ((id && !data) || !listsLoaded) return <Loading />;
+  const defs = fields(!id, priceLists);
   return (
     <div className="page">
       <PageHeader
@@ -116,7 +148,12 @@ export function CustomerForm({ id }: { id?: string }) {
       />
       <EntityForm
         fields={defs}
-        initial={toFormValues(defs, data ?? { type: "RETAILER", commercialCondition: "CASH" })}
+        initial={toFormValues(
+          defs,
+          data
+            ? { ...data, defaultPriceListId: data.defaultPriceList?.id ?? null }
+            : { type: "RETAILER", commercialCondition: "CASH" },
+        )}
         submitLabel={id ? "Guardar cambios" : "Crear cliente"}
         cancelHref={id ? `${BASE}/${id}` : BASE}
         onSubmit={async (values) => {
@@ -160,7 +197,12 @@ export function CustomerDetail({ id }: { id: string }) {
                 Editar
               </Link>
             )}
-            {can(P.CUSTOMERS_DEACTIVATE) && (
+            {can(P.CUSTOMER_ACCOUNTS_READ) && (
+              <Link className="button" href={`/cuentas-a-cobrar/${id}`}>
+                Cuenta corriente
+              </Link>
+            )}
+            {can(P.CUSTOMERS_DEACTIVATE) && !data.walkIn && (
               <ActiveToggle
                 active={data.active}
                 endpoint={`${API}/${id}`}
@@ -183,11 +225,16 @@ export function CustomerDetail({ id }: { id: string }) {
             ["Localidad", [data.city, data.province, data.postalCode].filter(Boolean).join(", ")],
             ["Condición comercial", COMMERCIAL_CONDITION_LABELS[data.commercialCondition]],
             ["Límite de crédito", formatMoney(data.creditLimit, user.company.currencyCode)],
+            ["Lista de precios", data.defaultPriceList?.name ?? "Lista general de la empresa"],
             ["Observaciones", data.notes],
           ]}
         />
       </section>
-      <p className="notice">Ventas y cuenta corriente estarán disponibles en una fase posterior.</p>
+      {data.walkIn && (
+        <p className="notice">
+          Consumidor Final: el cliente de las ventas de mostrador. No se puede desactivar.
+        </p>
+      )}
       <AuditHistory entityType="customer" entityId={id} version={version} />
     </div>
   );

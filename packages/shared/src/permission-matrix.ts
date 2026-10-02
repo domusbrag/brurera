@@ -20,6 +20,10 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   purchases: "Compras",
   inventory: "Inventario",
   presentations: "Presentaciones de compra",
+  sales: "Ventas",
+  price_lists: "Listas de precios",
+  payments: "Cobros",
+  customer_accounts: "Cuenta corriente",
 };
 
 /**

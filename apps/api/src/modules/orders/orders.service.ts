@@ -31,6 +31,7 @@ import {
   type LineCoverageDto,
   type OrderDetailDto,
   type OrderLineInput,
+  type QuoteOrderInput,
   type OrderListItemDto,
   type OrderOperationResultDto,
   type Page,
@@ -51,6 +52,7 @@ import { loadUnits, unitOrThrow, type UnitRow } from "../recipes/recipes.data.js
 import {
   OPEN_REQUIREMENT,
   activeReservations,
+  orderAdvances,
   effectiveCoverage,
   findOrder,
   getOrderDetail,
@@ -73,7 +75,14 @@ import {
   type OrderPlan,
   type ResolvedLine,
 } from "./orders.plan.js";
-import { lockLots } from "./reservations.js";
+import {
+  priceLine,
+  priceListsFor,
+  pricedTotals,
+  resolvePrices,
+  type PricedLine,
+} from "../price-lists/pricing.js";
+import { lockLots, reservationRemaining } from "./reservations.js";
 
 /*
  * Pedidos de clientes (Fase 5A). Un pedido es un COMPROMISO FUTURO:
@@ -102,6 +111,20 @@ const cancelled = (order: OrderRow) =>
     409,
     "ORDER_CANCELLED",
     `El pedido ${order.internalCode} está cancelado y no se modifica.`,
+  );
+
+const delivered = (order: OrderRow) =>
+  new AppError(
+    409,
+    "ORDER_DELIVERED",
+    `El pedido ${order.internalCode} ya se entregó y no se modifica.`,
+  );
+
+const partiallyDelivered = (order: OrderRow) =>
+  new AppError(
+    409,
+    "ORDER_PARTIALLY_DELIVERED",
+    `El pedido ${order.internalCode} ya tiene entregas: lo pendiente se entrega o se cancela, no se replanifica.`,
   );
 
 const planLocked = (fields: string[]) =>
@@ -190,7 +213,8 @@ function toInstant(local: string, ctx: OperationContext) {
   return zonedLocalToInstant(local, ctx.timezone);
 }
 
-const lineInputsOf = (lines: readonly LineRow[]): OrderLineInput[] =>
+/** Líneas guardadas como entrada; `manualPrices`: reenvía los precios cargados a mano. */
+const lineInputsOf = (lines: readonly LineRow[], manualPrices = false): OrderLineInput[] =>
   lines.map((l) => ({
     id: l.id,
     productId: l.productId,
@@ -198,9 +222,22 @@ const lineInputsOf = (lines: readonly LineRow[]): OrderLineInput[] =>
     unitId: l.unitId,
     requestedConservation: l.requestedConservation,
     notes: l.notes,
+    priceOverrideReason: null,
+    ...(manualPrices && l.priceSource === "MANUAL"
+      ? {
+          unitPrice: l.quotedUnitPrice ?? undefined,
+          discountAmount: l.quotedDiscountAmount ?? undefined,
+          priceOverrideReason: l.priceOverrideReason,
+        }
+      : {}),
   }));
 
-const lineValues = (ctx: OperationContext, orderId: string, line: ResolvedLine) => ({
+const lineValues = (
+  ctx: OperationContext,
+  orderId: string,
+  line: ResolvedLine,
+  priced?: PricedLine | null,
+) => ({
   companyId: ctx.companyId,
   customerOrderId: orderId,
   productId: line.product.id,
@@ -211,7 +248,112 @@ const lineValues = (ctx: OperationContext, orderId: string, line: ResolvedLine) 
   requestedConservation: line.requestedConservation,
   notes: line.notes,
   sortOrder: line.index,
+  ...(priced === undefined ? {} : priceValues(priced)),
 });
+
+/** Columnas de cotización de una línea (null = sin precio). */
+const priceValues = (priced: PricedLine | null) => ({
+  quotedUnitPrice: priced?.unitPrice ?? null,
+  quotedDiscountAmount: priced?.discountAmount ?? null,
+  quotedNetAmount: priced?.netAmount ?? null,
+  priceSource: priced?.priceSource ?? null,
+  priceOverrideReason: priced?.priceOverrideReason ?? null,
+});
+
+/* ---------- Precios del pedido (Fase 5B, ADR-060) ---------- */
+
+/**
+ * Cotiza las líneas: precio vigente para el cliente salvo que `keep(prev)`
+ * conserve el precio ya cotizado de la línea existente. Un precio cargado
+ * distinto es un override (permiso + motivo).
+ */
+async function priceOrderLines(
+  db: Db,
+  ctx: OperationContext,
+  customerId: string,
+  lines: readonly ResolvedLine[],
+  opts: {
+    existing?: ReadonlyMap<string, LineRow>;
+    keep?: (prev: LineRow) => boolean;
+    permissions: Iterable<string>;
+    pathOf?: (line: ResolvedLine) => string;
+  },
+): Promise<PricedLine[]> {
+  const prices = await resolvePrices(
+    db,
+    ctx,
+    customerId,
+    lines.map((l) => l.product.id),
+  );
+  return lines.map((line) => {
+    const prev = line.id ? opts.existing?.get(line.id) : undefined;
+    const kept =
+      prev && prev.quotedUnitPrice !== null && prev.priceSource !== null && opts.keep?.(prev);
+    const current = prices.get(line.product.id)!;
+    const base = kept
+      ? {
+          unitPrice: prev.quotedUnitPrice!,
+          discountAmount: prev.quotedDiscountAmount,
+          source: prev.priceSource!,
+          reason: prev.priceOverrideReason,
+        }
+      : { unitPrice: current.unitPrice, discountAmount: "0", source: current.source };
+    return priceLine({
+      quantity: line.normalized,
+      base,
+      input: line.price,
+      permissions: opts.permissions,
+      path: opts.pathOf ? opts.pathOf(line) : `lines.${line.index}`,
+    });
+  });
+}
+
+/** Totales y lista vigente del pedido cotizado. */
+async function quoteTotals(
+  db: Db,
+  ctx: OperationContext,
+  customerId: string,
+  priced: readonly PricedLine[],
+) {
+  const { customerList, companyDefault } = await priceListsFor(db, ctx, customerId);
+  const totals = pricedTotals(priced);
+  return {
+    priceListId: (customerList ?? companyDefault)?.id ?? null,
+    quotedSubtotal: totals.subtotal,
+    quotedDiscountTotal: totals.discountTotal,
+    quotedTotal: totals.total,
+  };
+}
+
+/** Auditoría de cada precio cambiado a mano. */
+async function auditOverrides(
+  tx: Transaction,
+  ctx: OperationContext,
+  order: { id: string; internalCode: string },
+  lines: readonly ResolvedLine[],
+  priced: readonly PricedLine[],
+) {
+  for (const [i, p] of priced.entries()) {
+    const line = lines[i]!;
+    const explicit = line.price.unitPrice !== undefined || line.price.discountAmount !== undefined;
+    if (!p.overridden || !explicit) continue;
+    await recordAudit(tx, {
+      ...auditBase(ctx),
+      action: "SALE_PRICE_OVERRIDDEN",
+      entityType: "customer_order",
+      entityId: order.id,
+      metadata: {
+        code: order.internalCode,
+        product: line.product.name,
+        agreedUnitPrice: p.agreedUnitPrice,
+        agreedDiscountAmount: p.agreedDiscountAmount,
+        unitPrice: p.unitPrice,
+        discountAmount: p.discountAmount,
+        reason: p.priceOverrideReason,
+      },
+    });
+  }
+}
 
 const summarize = (lines: readonly ResolvedLine[]) =>
   lines.map((l) => `${l.normalized.toString()} ${l.saleUnit.symbol} ${l.product.name}`).join(", ");
@@ -358,6 +500,7 @@ export async function listOrders(
       eventName: order.eventName,
       products: group(lines, order.id),
       shortages: group(requirements, order.id),
+      pricingStatus: order.pricingStatus,
     })),
     total,
     query,
@@ -380,6 +523,10 @@ export async function createOrder(
     await assertCustomer(tx, ctx, input.customerId);
     const units = await loadUnits(tx, ctx);
     const lines = await resolveLines(tx, ctx, input.lines, units);
+    const priced = await priceOrderLines(tx, ctx, input.customerId, lines, {
+      permissions: viewer.permissions,
+    });
+    const quote = await quoteTotals(tx, ctx, input.customerId, priced);
     const requestedAt = toInstant(input.requestedAt, ctx);
     const code = await allocateCode(tx, ctx.companyId, "CUSTOMER_ORDER", async (c) => {
       const taken = await tx
@@ -403,10 +550,15 @@ export async function createOrder(
         eventName: input.eventName,
         priority: input.priority,
         notes: input.notes,
+        pricingStatus: "QUOTED",
+        ...quote,
         createdByUserId: ctx.userId,
       })
       .returning();
-    await tx.insert(customerOrderLines).values(lines.map((l) => lineValues(ctx, order!.id, l)));
+    await tx
+      .insert(customerOrderLines)
+      .values(lines.map((l, i) => lineValues(ctx, order!.id, l, priced[i]!)));
+    await auditOverrides(tx, ctx, order!, lines, priced);
     await recordAudit(tx, {
       ...auditBase(ctx),
       action: "ORDER_CREATED",
@@ -418,6 +570,7 @@ export async function createOrder(
         requestedAtLocal: input.requestedAt,
         timezone: ctx.timezone,
         lines: summarize(lines),
+        quotedTotal: quote.quotedTotal,
       },
     });
     return order!.id;
@@ -440,6 +593,7 @@ export async function updateOrder(
   await db.transaction(async (tx) => {
     const order = await findOrder(tx, ctx, id, true);
     if (order.status === "CANCELLED") throw cancelled(order);
+    if (order.status === "DELIVERED") throw delivered(order);
     const structural = (["customerId", "requestedAt", "lines"] as const).filter(
       (f) => input[f] !== undefined,
     );
@@ -454,9 +608,24 @@ export async function updateOrder(
     }
     if (input.requestedAt !== undefined) values.requestedAt = toInstant(input.requestedAt, ctx);
     let linesSummary: string | undefined;
-    if (input.lines !== undefined) {
+    if (order.status === "DRAFT" && (input.lines !== undefined || input.customerId !== undefined)) {
+      // Borrador: se recotiza con los precios vigentes del cliente (los cargados a mano se envían).
       const units = await loadUnits(tx, ctx);
-      const lines = await resolveLines(tx, ctx, input.lines, units);
+      const customerId = input.customerId ?? order.customerId;
+      const lines = await resolveLines(
+        tx,
+        ctx,
+        input.lines ?? lineInputsOf(await loadLines(tx, ctx, order.id), true),
+        units,
+      );
+      const priced = await priceOrderLines(tx, ctx, customerId, lines, {
+        permissions: viewer.permissions,
+      });
+      Object.assign(
+        values,
+        { pricingStatus: "QUOTED" },
+        await quoteTotals(tx, ctx, customerId, priced),
+      );
       await tx
         .delete(customerOrderLines)
         .where(
@@ -465,7 +634,10 @@ export async function updateOrder(
             eq(customerOrderLines.customerOrderId, order.id),
           ),
         );
-      await tx.insert(customerOrderLines).values(lines.map((l) => lineValues(ctx, order.id, l)));
+      await tx
+        .insert(customerOrderLines)
+        .values(lines.map((l, i) => lineValues(ctx, order.id, l, priced[i]!)));
+      await auditOverrides(tx, ctx, order, lines, priced);
       linesSummary = summarize(lines);
     }
     const [after] = await tx
@@ -758,11 +930,27 @@ export async function confirmOrder(
       lineRows.map((l) => l.id),
       revision,
     );
+    // Precio: se congela al confirmar. Lo cargado a mano se conserva; el resto,
+    // al precio vigente de hoy para el cliente (ADR-060).
+    const priced = await priceOrderLines(tx, ctx, order.customerId, lines, {
+      existing: new Map(lineRows.map((l) => [l.id, l])),
+      keep: (prev) => prev.priceSource === "MANUAL",
+      permissions: viewer.permissions,
+    });
+    for (const [i, row] of lineRows.entries()) {
+      await tx
+        .update(customerOrderLines)
+        .set({ ...priceValues(priced[i]!), updatedAt: new Date() })
+        .where(eq(customerOrderLines.id, row.id));
+    }
+    const quote = await quoteTotals(tx, ctx, order.customerId, priced);
     const now = new Date();
     await tx
       .update(customerOrders)
       .set({
         status: "CONFIRMED",
+        pricingStatus: "AGREED",
+        ...quote,
         coverageStatus: plan.coverage,
         planRevision: revision,
         confirmedAt: now,
@@ -781,6 +969,7 @@ export async function confirmOrder(
         planRevision: revision,
         coverage: plan.coverage,
         requestedAtLocal: plan.requestedAtLocal,
+        quotedTotal: quote.quotedTotal,
         reserved,
         toProduce: plan.lines
           .filter((p) => p.toProduce.plus(p.uncovered).gt(0))
@@ -822,6 +1011,8 @@ async function prepareReplan(
   lock: boolean,
 ): Promise<ReplanSetup> {
   if (order.status === "CANCELLED") throw cancelled(order);
+  if (order.status === "DELIVERED") throw delivered(order);
+  if (order.status === "PARTIALLY_DELIVERED") throw partiallyDelivered(order);
   if (!isDemand(order.status)) {
     throw new AppError(
       409,
@@ -1003,7 +1194,7 @@ export async function previewReplan(
     releasedLots: active.map((r) => ({
       code: lotCodes.get(r.productLotId) ?? "",
       product: productNames.get(r.productId) ?? "",
-      quantity: fmt(new D(r.quantity)),
+      quantity: fmt(reservationRemaining(r)),
       unit: unitSymbol(r.unitId),
     })),
     newLots: plan.lines.flatMap((p) =>
@@ -1094,7 +1285,9 @@ export async function replanOrder(
           reason: "ORDER_REPLANNED",
           planRevision: order.planRevision,
           reservations: toRelease.length,
-          quantity: toRelease.reduce((s, r) => s.plus(r.quantity), new D(0)).toString(),
+          quantity: toRelease
+            .reduce((s, r) => s.plus(reservationRemaining(r)), new D(0))
+            .toString(),
         },
       });
     }
@@ -1122,7 +1315,16 @@ export async function replanOrder(
       }
     }
 
-    // 3. Líneas: quitadas, modificadas y nuevas.
+    // 3. Líneas: quitadas, modificadas y nuevas. El precio acordado se conserva
+    //    (salvo cambio explícito); las líneas nuevas toman el precio vigente.
+    const priced =
+      order.pricingStatus === "UNPRICED"
+        ? null
+        : await priceOrderLines(tx, ctx, order.customerId, setup.lines, {
+            existing: new Map(setup.currentLines.map((l) => [l.id, l])),
+            keep: () => true,
+            permissions: viewer.permissions,
+          });
     const lineIds: string[] = [];
     for (const current of setup.currentLines) {
       if (!keptLineIds.has(current.id)) {
@@ -1132,8 +1334,8 @@ export async function replanOrder(
           .where(eq(customerOrderLines.id, current.id));
       }
     }
-    for (const line of setup.lines) {
-      const values = lineValues(ctx, order.id, line);
+    for (const [i, line] of setup.lines.entries()) {
+      const values = lineValues(ctx, order.id, line, priced ? priced[i]! : null);
       if (line.id) {
         await tx
           .update(customerOrderLines)
@@ -1144,6 +1346,7 @@ export async function replanOrder(
             requestedConservation: values.requestedConservation,
             notes: values.notes,
             sortOrder: values.sortOrder,
+            ...(priced ? priceValues(priced[i]!) : {}),
             updatedAt: now,
           })
           .where(eq(customerOrderLines.id, line.id));
@@ -1160,6 +1363,8 @@ export async function replanOrder(
       order.status === "READY" && plan.coverage !== "FULLY_COVERED"
         ? "IN_PREPARATION"
         : order.status;
+    const quote = priced ? await quoteTotals(tx, ctx, order.customerId, priced) : null;
+    if (priced) await auditOverrides(tx, ctx, order, setup.lines, priced);
     await tx
       .update(customerOrders)
       .set({
@@ -1167,6 +1372,13 @@ export async function replanOrder(
         coverageStatus: plan.coverage,
         planRevision: revision,
         status,
+        ...(quote
+          ? {
+              quotedSubtotal: quote.quotedSubtotal,
+              quotedDiscountTotal: quote.quotedDiscountTotal,
+              quotedTotal: quote.quotedTotal,
+            }
+          : {}),
         updatedAt: now,
       })
       .where(eq(customerOrders.id, order.id));
@@ -1212,6 +1424,7 @@ export async function cancelOrder(
     const order = await findOrder(tx, ctx, id, true);
     if (await alreadyApplied(tx, ctx, input.operationId, order.id, "CANCEL")) return true;
     if (order.status === "CANCELLED") throw cancelled(order);
+    if (order.status === "DELIVERED") throw delivered(order);
     if (order.status === "READY" && !input.confirmReady) {
       throw new AppError(
         409,
@@ -1228,6 +1441,7 @@ export async function cancelOrder(
       current.map((r) => r.productLotId),
     );
     const active = await activeReservations(tx, ctx, order.id, true);
+    const advance = (await orderAdvances(tx, ctx, order.id)).available;
     const now = new Date();
     if (active.length > 0) {
       await tx
@@ -1254,7 +1468,7 @@ export async function cancelOrder(
           reason: "ORDER_CANCELLED",
           planRevision: order.planRevision,
           reservations: active.length,
-          quantity: active.reduce((s, r) => s.plus(r.quantity), new D(0)).toString(),
+          quantity: active.reduce((s, r) => s.plus(reservationRemaining(r)), new D(0)).toString(),
         },
       });
     }
@@ -1292,11 +1506,23 @@ export async function cancelOrder(
         releasedReservations: active.length,
         cancelledRequirements: requirements.length,
         linkedProduction: requirements.filter((r) => r.linkedProductionOrderId).length,
+        ...(advance.gt(0) ? { advanceToCredit: advance.toFixed(2) } : {}),
       },
     });
     return false;
   });
-  return { order: await getOrderDetail(db, ctx, id, viewer), replayed };
+  const result = await getOrderDetail(db, ctx, id, viewer);
+  // La seña ya acreditó la cuenta al cobrarse: lo no aplicado queda como crédito a favor.
+  const available = (await orderAdvances(db, ctx, id)).available;
+  return {
+    order: result,
+    replayed,
+    warnings: available.gt(0)
+      ? [
+          `La seña sin aplicar ($ ${available.toFixed(2)}) queda como crédito a favor del cliente en su cuenta corriente.`,
+        ]
+      : [],
+  };
 }
 
 /* ---------- Preparación y listo ---------- */
@@ -1372,7 +1598,7 @@ export async function markReady(
           requested: l.normalizedQuantity,
           reserved: active
             .filter((r) => r.orderLineId === l.id)
-            .reduce((s, r) => s.plus(r.quantity), new D(0)),
+            .reduce((s, r) => s.plus(reservationRemaining(r)), new D(0)),
         })),
       );
     } catch (err) {
@@ -1389,6 +1615,97 @@ export async function markReady(
       entityType: "customer_order",
       entityId: order.id,
       metadata: { code: order.internalCode, from: order.status, planRevision: order.planRevision },
+    });
+  });
+  return getOrderDetail(db, ctx, id, viewer);
+}
+
+/* ---------- Cotizar (pedidos sin precio, Fase 5B) ---------- */
+
+/**
+ * Fija el precio acordado de un pedido confirmado que no lo tiene (pedidos
+ * creados antes de 5B): precio vigente del cliente salvo override explícito.
+ * Nunca se inventa: sin esto, el pedido no se entrega (ORDER_UNPRICED).
+ */
+export async function quoteOrder(
+  db: Database,
+  ctx: OperationContext,
+  id: string,
+  input: QuoteOrderInput,
+  viewer: OrderViewer,
+): Promise<OrderDetailDto> {
+  await db.transaction(async (tx) => {
+    const order = await findOrder(tx, ctx, id, true);
+    if (order.status === "CANCELLED") throw cancelled(order);
+    if (order.pricingStatus !== "UNPRICED") {
+      throw new AppError(
+        409,
+        "ORDER_ALREADY_PRICED",
+        `El pedido ${order.internalCode} ya tiene precio acordado.`,
+      );
+    }
+    if (!isDemand(order.status)) {
+      throw new AppError(
+        409,
+        "ORDER_NOT_CONFIRMED",
+        "Sólo se cotiza un pedido confirmado; un borrador toma precio al guardarlo.",
+      );
+    }
+    const lineRows = await loadLines(tx, ctx, order.id, true);
+    const byLine = new Map(input.lines.map((l, i) => [l.lineId, { ...l, index: i }]));
+    for (const [lineId, l] of byLine) {
+      if (!lineRows.some((r) => r.id === lineId)) {
+        throw invalidReference(`lines.${l.index}.lineId`, "La línea no es de este pedido");
+      }
+    }
+    const units = await loadUnits(tx, ctx);
+    const inputs = lineInputsOf(lineRows).map((l) => {
+      const price = byLine.get(l.id!);
+      return price
+        ? {
+            ...l,
+            unitPrice: price.unitPrice,
+            discountAmount: price.discountAmount,
+            priceOverrideReason: price.priceOverrideReason ?? null,
+          }
+        : l;
+    });
+    const lines = await resolveLines(tx, ctx, inputs, units);
+    const priced = await priceOrderLines(tx, ctx, order.customerId, lines, {
+      permissions: viewer.permissions,
+      pathOf: (line) => {
+        const i = byLine.get(line.id!)?.index;
+        return i === undefined ? `lines.${line.index}` : `lines.${i}`;
+      },
+    });
+    const now = new Date();
+    for (const [i, row] of lineRows.entries()) {
+      await tx
+        .update(customerOrderLines)
+        .set({ ...priceValues(priced[i]!), updatedAt: now })
+        .where(eq(customerOrderLines.id, row.id));
+    }
+    const quote = await quoteTotals(tx, ctx, order.customerId, priced);
+    await tx
+      .update(customerOrders)
+      .set({ pricingStatus: "AGREED", ...quote, updatedAt: now })
+      .where(eq(customerOrders.id, order.id));
+    await auditOverrides(tx, ctx, order, lines, priced);
+    await recordAudit(tx, {
+      ...auditBase(ctx),
+      action: "ORDER_QUOTED",
+      entityType: "customer_order",
+      entityId: order.id,
+      metadata: {
+        code: order.internalCode,
+        quotedTotal: quote.quotedTotal,
+        lines: lines
+          .map(
+            (l, i) =>
+              `${l.normalized.toString()} ${l.saleUnit.symbol} ${l.product.name} a $ ${priced[i]!.unitPrice}`,
+          )
+          .join(", "),
+      },
     });
   });
   return getOrderDetail(db, ctx, id, viewer);

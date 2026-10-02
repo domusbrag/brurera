@@ -94,7 +94,7 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | Productos | `products.create` | Dar de alta productos | ✅ | ✅ | — | — | — | — | — |
 | Productos | `products.update` | Modificar productos y precios | ✅ | ✅ | ✅ | — | — | — | — |
 | Productos | `products.deactivate` | Desactivar y reactivar productos | ✅ | ✅ | — | — | — | — | — |
-| Depósitos | `warehouses.read` | Ver depósitos | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
+| Depósitos | `warehouses.read` | Ver depósitos | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Depósitos | `warehouses.manage` | Crear, modificar y desactivar depósitos | ✅ | ✅ | — | — | — | — | — |
 | Recetas | `recipes.read` | Ver recetas, versiones y costo teórico | ✅ | ✅ | ✅ | — | — | ✅ | — |
 | Recetas | `recipes.create` | Crear recetas y nuevas versiones | ✅ | ✅ | — | — | — | ✅ | — |
@@ -140,6 +140,21 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | orders | `orders.ready` | Marcar pedidos como listos (sólo con cobertura completa) | ✅ | ✅ | — | — | — | — | ✅ |
 | order_planning | `order_planning.read` | Ver necesidades: producción y materias primas de pedidos, pedidos en riesgo | ✅ | ✅ | ✅ | — | — | ✅ | — |
 | order_planning | `order_production.create` | Crear órdenes de producción desde la necesidad de un pedido | ✅ | ✅ | — | — | — | ✅ | — |
+| Ventas | `sales.read` | Ver ventas y entregas (precios sólo con price_lists.read) | ✅ | ✅ | ✅ | ✅ | — | — | ✅ |
+| Ventas | `sales.create` | Crear ventas (borrador) | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Ventas | `sales.update` | Editar y descartar borradores de venta | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Ventas | `sales.post` | Confirmar entregas y ventas (sale el producto y se genera la deuda) | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Ventas | `sales.price_override` | Cambiar el precio o aplicar descuentos distintos de lo acordado (con motivo) | ✅ | ✅ | ✅ | — | — | — | — |
+| Ventas | `sales.cost.read` | Ver el costo material de las ventas y de los lotes vendidos | ✅ | ✅ | ✅ | — | — | — | — |
+| Ventas | `sales.margin.read` | Ver el margen sobre materiales de las ventas | ✅ | ✅ | ✅ | — | — | — | — |
+| Listas de precios | `price_lists.read` | Ver listas de precios y precios de venta | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Listas de precios | `price_lists.manage` | Crear y modificar listas de precios y sus precios | ✅ | ✅ | ✅ | — | — | — | — |
+| Cobros | `payments.read` | Ver cobros y señas | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Cobros | `payments.create` | Cargar cobros | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Cobros | `payments.post` | Registrar cobros y aplicarlos a ventas (mueve la cuenta corriente) | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Cuenta corriente | `customer_accounts.read` | Ver la cuenta corriente y el saldo de los clientes | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Cuenta corriente | `customer_accounts.adjust` | Registrar ajustes de cuenta corriente (con motivo) | ✅ | ✅ | ✅ | — | — | — | — |
+| Cobros | `order_advances.create` | Registrar señas (anticipos) de pedidos | ✅ | ✅ | ✅ | ✅ | — | — | — |
 
 - **ADMIN** — Administrador del sistema: Acceso global, incluida la administración técnica.
 - **OWNER** — Dueño: Acceso global al negocio.

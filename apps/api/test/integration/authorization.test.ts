@@ -216,6 +216,36 @@ ENDPOINTS.push(
   ["GET", "/api/planning/material-demand", [P.ORDER_PLANNING_READ]],
   ["GET", "/api/planning/orders-at-risk", [P.ORDER_PLANNING_READ]],
   ["GET", `/api/planning/requirements/${ANY_ID}`, [P.ORDER_PLANNING_READ]],
+  ["POST", `/api/orders/${ANY_ID}/quote`, [P.ORDERS_UPDATE, P.PRICE_LISTS_READ]],
+  // Fase 5B: ventas, listas de precios, cobros y cuenta corriente.
+  ["GET", "/api/sales", [P.SALES_READ]],
+  ["POST", "/api/sales", [P.SALES_CREATE]],
+  ["GET", `/api/sales/${ANY_ID}`, [P.SALES_READ]],
+  ["PATCH", `/api/sales/${ANY_ID}`, [P.SALES_UPDATE]],
+  ["GET", `/api/sales/${ANY_ID}/preview`, [P.SALES_READ]],
+  ["POST", `/api/sales/${ANY_ID}/post`, [P.SALES_POST]],
+  [
+    "POST",
+    `/api/sales/${ANY_ID}/post`,
+    [P.SALES_POST, P.PAYMENTS_CREATE, P.PAYMENTS_POST],
+    { initialPayment: { amount: "1", paymentMethod: "CASH", operationId: ANY_ID } },
+  ],
+  ["POST", `/api/sales/${ANY_ID}/cancel`, [P.SALES_UPDATE]],
+  ["GET", "/api/price-lists", [P.PRICE_LISTS_READ]],
+  ["GET", `/api/price-lists/resolve?productIds=${ANY_ID}`, [P.PRICE_LISTS_READ]],
+  ["GET", `/api/price-lists/${ANY_ID}`, [P.PRICE_LISTS_READ]],
+  ["POST", "/api/price-lists", [P.PRICE_LISTS_MANAGE]],
+  ["PATCH", `/api/price-lists/${ANY_ID}`, [P.PRICE_LISTS_MANAGE]],
+  ["PUT", `/api/price-lists/${ANY_ID}/items/${ANY_ID}`, [P.PRICE_LISTS_MANAGE]],
+  ["GET", "/api/payments", [P.PAYMENTS_READ]],
+  ["GET", `/api/payments/${ANY_ID}`, [P.PAYMENTS_READ]],
+  ["POST", `/api/sales/${ANY_ID}/payments`, [P.PAYMENTS_CREATE, P.PAYMENTS_POST]],
+  ["POST", `/api/orders/${ANY_ID}/advances`, [P.ORDER_ADVANCES_CREATE, P.PAYMENTS_POST]],
+  ["POST", `/api/customers/${ANY_ID}/payments`, [P.PAYMENTS_CREATE, P.PAYMENTS_POST]],
+  ["POST", `/api/payments/${ANY_ID}/applications`, [P.PAYMENTS_CREATE, P.PAYMENTS_POST]],
+  ["GET", `/api/customers/${ANY_ID}/account`, [P.CUSTOMER_ACCOUNTS_READ]],
+  ["POST", `/api/customers/${ANY_ID}/account/adjustments`, [P.CUSTOMER_ACCOUNTS_ADJUST]],
+  ["GET", "/api/customer-accounts", [P.CUSTOMER_ACCOUNTS_READ]],
   [
     "POST",
     "/api/production-orders",
@@ -281,7 +311,15 @@ describe("matriz de autorización (rol × endpoint)", () => {
 
   it("cubre todos los permisos del catálogo excepto dashboard.view", () => {
     const covered = new Set(ENDPOINTS.flatMap(([, , perms]) => perms));
-    const missing = Object.values(P).filter((p) => !covered.has(p) && p !== P.DASHBOARD_VIEW);
+    // Permisos de datos (qué campos se ven, si se puede cambiar un precio): no
+    // responden 403 por endpoint; se verifican en sales.test.ts.
+    const dataLevel: PermissionCode[] = [
+      P.DASHBOARD_VIEW,
+      P.SALES_PRICE_OVERRIDE,
+      P.SALES_COST_READ,
+      P.SALES_MARGIN_READ,
+    ];
+    const missing = Object.values(P).filter((p) => !covered.has(p) && !dataLevel.includes(p));
     expect(missing).toEqual([]);
   });
 

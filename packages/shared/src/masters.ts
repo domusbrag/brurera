@@ -162,6 +162,8 @@ const customerFields = {
   postalCode: optionalText(16),
   commercialCondition: z.enum(COMMERCIAL_CONDITIONS).default("CASH"),
   creditLimit: optionalMoneySchema(),
+  /** Lista de precios del cliente (Fase 5B); null = la lista general. */
+  defaultPriceListId: uuid().nullable().optional(),
   notes: optionalText(2000),
 };
 export const createCustomerSchema = z.object({ code: optionalCodeSchema(), ...customerFields });

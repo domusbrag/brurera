@@ -23,6 +23,7 @@ import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { OperationContext } from "../../lib/context.js";
 import { notFound } from "../../lib/db-errors.js";
 import { fixedMoney, fixedQty } from "../inventory/ledger.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Lecturas compartidas de lotes y perfiles de conservación (Fase 4.5).
@@ -110,7 +111,7 @@ export function selectLots(db: Db, ctx: OperationContext, where: SQL | undefined
       order: { id: productionOrders.id, code: productionOrders.internalCode },
       parentCode: sql<
         string | null
-      >`(select pl.lot_code from product_lots pl where pl.id = ${productLots.parentLotId})`,
+      >`(select pl.lot_code from product_lots pl where pl.id = ${qualified(productLots.parentLotId)})`,
       warehouse: { id: warehouses.id, code: warehouses.code, name: warehouses.name },
       unit: { id: unitsOfMeasure.id, code: unitsOfMeasure.code, symbol: unitsOfMeasure.symbol },
     })

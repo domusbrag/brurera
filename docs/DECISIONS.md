@@ -680,3 +680,127 @@ registrado en `customer_order_operations`: un reintento devuelve el mismo result
 (`replayed: true`); el mismo id en otra acción u otro pedido, `409 OPERATION_ID_REUSED`.
 **Consecuencias.** No hay consolidación de varios pedidos en una producción (deuda
 `PRODUCTION_CONSOLIDATION`). Las producciones normales siguen existiendo sin pedido.
+
+## ADR-057 — Producto terminado: costo por lote específico y promedio derivado
+
+**Contexto.** Hasta Fase 5A el producto terminado tenía `moving_average_cost` (promedio móvil) y
+las salidas por lote (merma, transformación) valorizaban al costo del lote sin recalcular el
+promedio, así que después de una merma `moving_average_cost ≠ valor / cantidad`. Una venta tiene
+que costear lo que realmente salió.
+**Decisión.** El costo de una venta es la suma del valor retirado de los lotes asignados
+(`lotOutflow`: cantidad × costo del lote, o el remanente exacto si el lote se vacía). Nunca receta,
+costo esperado ni promedio. `product_inventory_costs.moving_average_cost` se renombra a
+`average_material_cost` y pasa a ser **derivado**: `round(inventory_value / quantity, 6)` (null con
+cantidad 0), recalculado después de toda entrada o salida (producción, transformación, merma,
+venta) y custodiado por trigger (`inventory_cost_derived`). La migración 0010 lo recalcula para los
+datos existentes. Materias primas siguen con promedio ponderado móvil.
+**Consecuencias.** No conviven dos "costos promedio" con semánticas distintas. El historial de
+costo de producto registra el promedio derivado antes/después. Probado: 80 del lote A (400) + 40
+del lote B (500) = 52.000 (no 54.000) y el remanente 80 kg / 38.000 / 475.
+
+## ADR-058 — Venta: estado de la venta y estado de cobro separados; POSTED inmutable
+
+**Contexto.** Entregar y cobrar son hechos distintos que ocurren en momentos distintos.
+**Decisión.** `Sale` (`VTA-0001`) con `status` DRAFT / POSTED / CANCELLED y `payment_status`
+UNPAID / PARTIALLY_PAID / PAID (derivado de Σ aplicaciones; trigger `sales_guard`). DRAFT es
+editable y no toca stock, reservas ni cuenta corriente; tiene vista previa (GET, no escribe).
+POSTED es la entrega: movimientos `SALE` por lote, `sale_lot_allocations` con costo congelado,
+margen, deuda `SALE_DEBIT`, señas aplicadas y cobro inicial opcional, en una transacción. Una venta
+POSTED sólo cambia `paid_amount` / `payment_status`. Sólo un borrador se descarta (CANCELLED).
+"Margen sobre materiales" = neto − costo material de los lotes; un margen negativo se permite con
+el aviso "Precio inferior al costo material de los lotes seleccionados." Consumidor Final
+(`CONS-FINAL`, `is_walk_in`) por empresa para el mostrador; no se puede desactivar.
+**Consecuencias.** Devoluciones, reversión de ventas y notas de crédito quedan fuera (deuda
+`SALE_RETURN`, `SALE_REVERSAL`, `CREDIT_NOTE`). La venta directa nunca toma stock comprometido:
+FEFO sobre físico − reservas activas, o `409 INSUFFICIENT_FREE_PRODUCT_STOCK`.
+
+## ADR-059 — Pedido → una o varias ventas; entrega parcial consumiendo la reserva
+
+**Contexto.** Un pedido se entrega en uno o varios momentos y ya tiene lotes reservados (ADR-050).
+**Decisión.** `sales.source_order_id`; un pedido `READY` o `PARTIALLY_DELIVERED` admite ventas
+cuyas líneas apuntan a sus líneas. Pendiente = pedido − Σ ventas POSTED de la línea; superarlo es
+`409 DELIVERY_EXCEEDS_PENDING`. Al confirmar se consumen primero las reservas activas de la línea
+(FEFO entre los lotes reservados, en el depósito de cada lote) y sólo lo que falte sale de stock
+libre FEFO del depósito de la venta. La reserva acumula `fulfilled_quantity` y pasa a `FULFILLED`
+al cumplirse (comprometido = Σ `quantity − fulfilled_quantity`). El pedido queda
+`PARTIALLY_DELIVERED` o `DELIVERED`; al entregarse completo se liberan las reservas sobrantes
+(`ORDER_DELIVERED`) y las necesidades abiertas pasan a `SATISFIED`. `DELIVERED` es terminal;
+`PARTIALLY_DELIVERED` no se replanifica pero se puede cancelar el remanente. El descuento acordado
+se prorratea en las entregas parciales.
+**Consecuencias.** Nada se borra: la historia de reservas y entregas queda completa.
+
+## ADR-060 — Precios: prioridad, congelado al confirmar, override con permiso
+
+**Contexto.** Hasta 5A sólo existía `products.sale_price` y el pedido mostraba un precio
+informativo sin congelar.
+**Decisión.** Listas de precios (`LP-0001`) con una sola lista general por empresa y
+`customers.default_price_list_id`. Prioridad: precio acordado del pedido → lista del cliente →
+lista general → precio del producto; cada línea guarda `price_source`. El borrador de pedido se
+cotiza al guardarlo (`QUOTED`) y confirmar congela precio, descuento y total (`AGREED`); un replan
+conserva el precio de las líneas existentes. Los pedidos de 5A quedan `UNPRICED` (no se inventan
+precios) y exigen "Acordar precio" explícito antes de la primera entrega (`409 ORDER_UNPRICED`).
+Cambiar un precio (en pedido o venta) exige `sales.price_override`
+(`403 PRICE_OVERRIDE_FORBIDDEN`), motivo (`422 PRICE_OVERRIDE_REASON_REQUIRED`) y queda auditado
+(`SALE_PRICE_OVERRIDDEN`, origen `MANUAL`). Neto de línea = round2(cantidad × precio) − descuento.
+**Consecuencias.** Cambiar una lista no altera pedidos confirmados ni ventas entregadas.
+
+## ADR-061 — Cobros, señas y cuenta corriente con ledger; errores con ajuste (política B)
+
+**Contexto.** Hace falta saber cuánto debe cada cliente, cobrar en distintos momentos y registrar
+señas antes de la entrega.
+**Decisión.** Ledger append-only `customer_account_movements` (SALE_DEBIT, PAYMENT_CREDIT,
+ADJUSTMENT_DEBIT, ADJUSTMENT_CREDIT; signo + debe / − a favor) con proyección
+`customer_account_balances` custodiada por trigger (mismo patrón que stock). Un cobro
+(`COB-0001`) nace registrado y genera su crédito; aplicarlo a una venta
+(`customer_payment_applications`) no mueve la cuenta, sólo lo cobrado de la venta. Tipos: cobro de
+venta, seña de pedido (se aplica sola, la más antigua primero, al entregar; el excedente queda a
+favor) y cobro a cuenta (se imputa a mano). `PAYMENT_EXCEEDS_SALE_BALANCE` y
+`PAYMENT_EXCEEDS_UNAPPLIED` protegen las imputaciones. Un cobro mal cargado no se anula: se corrige
+con un ajuste con motivo (`customer_accounts.adjust`). El límite de crédito sólo avisa
+(`credit_limit_exceeded`, auditoría `CUSTOMER_CREDIT_LIMIT_EXCEEDED`).
+**Consecuencias.** No hay reembolsos ni anulación de cobros (deuda `PAYMENT_REFUND`) ni
+conciliación con caja/bancos (Fase 6). Las imputaciones manuales y los ajustes no tienen clave de
+idempotencia: un doble clic duplicaría el ajuste (el botón se deshabilita mientras procesa; deuda
+documentada).
+
+## ADR-062 — Orden global de locks, idempotencia y rollback de ventas y cobros
+
+**Contexto.** Ventas, cobros, pedidos, producción y operaciones de lote tocan las mismas filas en
+paralelo.
+**Decisión.** Orden global (extiende ADR-034/042/053): pedido → líneas del pedido → venta → líneas
+de venta → lotes (por id) → saldos de lote (por id) → reservas → costos de producto (por id) →
+saldos de producto (por producto:depósito) → saldo de cuenta del cliente → pagos (por id). La venta
+directa usa el mismo orden sin pedido; cobro de una venta: venta → cuenta; seña: pedido
+(`FOR SHARE`) → cuenta; imputación manual: venta → pago. Confirmar una venta es una transacción:
+cualquier falla revierte todo (probado inyectando un error al registrar la deuda). Confirmar es
+idempotente por estado con la venta bloqueada: `[200, 409, 409]` (`SALE_ALREADY_POSTED`). Los
+cobros llevan `operationId` único por empresa: el reintento devuelve el mismo cobro
+(`replayed: true`, 200); el mismo id con otro destino, monto o medio es `409 OPERATION_ID_REUSED`.
+**Consecuencias.** Probado en paralelo: 70 + 70 sobre 100 libres, entrega del pedido + mostrador,
+confirmar un pedido mientras se vende, dos cobros que superan el pendiente, el mismo cobro
+reintentado tres veces, cobros/señas/ventas del mismo cliente y cinco confirmaciones simultáneas,
+sin deadlocks.
+
+## ADR-063 — Idempotencia de imputaciones manuales y ajustes de cuenta (cierre de Fase 5B)
+
+**Contexto.** Cobros y señas ya eran idempotentes (ADR-062), pero la imputación manual
+(`POST /payments/:id/applications`) y el ajuste de cuenta (`POST /customers/:id/account/adjustments`)
+dependían de que la UI deshabilitara el botón: un reintento de red o un doble envío podía
+imputar o ajustar dos veces.
+**Decisión.** Mismo patrón que `customer_payments`, sin una segunda arquitectura: el
+`operationId` del intento (obligatorio en la API) se guarda en la fila que produce la consecuencia
+(`customer_payment_applications.operation_id` y `customer_account_movements.operation_id`, migración
+0011), con índice único parcial (`company_id`, `operation_id`) y, en el ledger, un CHECK que lo
+limita a los ajustes. Se inserta en la misma transacción que la consecuencia, así un rollback no
+deja el id "quemado". El reintento se detecta después de los locks (imputación: venta → cobro;
+ajuste: cuenta del cliente), así los intentos simultáneos se serializan y el segundo ve la fila
+confirmada; si dos intentos con el mismo id no comparten lock (otro destino), el índice único los
+frena y la API responde `409 OPERATION_ID_REUSED`. Huella comparada: imputación = cobro, venta y
+monto; ajuste = cliente, tipo (débito/crédito), monto y motivo. Las notas no forman parte (no
+cambian la consecuencia; un reintento con otra nota es replay). Reintento idéntico: `200` con
+`replayed: true`, sin segunda auditoría. La UI genera un id por intento y lo renueva sólo después
+de un éxito.
+**Consecuencias.** Probado: reintento, 5 envíos simultáneos (una sola imputación de $20.000; un
+solo ajuste: $100.000 → $80.000), reuso con otro monto / tipo / motivo / venta / cliente, rollback
+con falla inyectada después de la fila y reintento posterior con el mismo id, mismo id en otra
+empresa sin interferencia. Las filas históricas quedan con `operation_id` nulo.
