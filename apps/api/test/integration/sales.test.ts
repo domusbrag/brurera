@@ -14,7 +14,7 @@ import {
   type TestContext,
 } from "./helpers.js";
 import { dec, ok } from "./inventory-fixtures.js";
-import { reconciliationProblems } from "./lot-fixtures.js";
+import { produce, reconciliationProblems } from "./lot-fixtures.js";
 import {
   buildOrderWorld,
   cancel,
@@ -570,6 +570,54 @@ describe("pedidos anteriores a 5B, cancelación con seña y límite de crédito 
     });
     expect(rejected.statusCode).toBe(422);
     expect((await ok(api.get(`/api/sales/${tooMuch.id}`))).status).toBe("DRAFT");
+    await invariants();
+  });
+});
+
+describe("cambios posteriores de precio y costo; seña mayor que la venta (§99–§101)", () => {
+  let w: OrderWorld;
+  beforeAll(async () => {
+    w = await buildOrderWorld(api, " K");
+    await twoLotsWithDifferentCost(api, w);
+  });
+
+  it("el pedido conserva precio y lote reservado aunque cambien la lista y el costo", async () => {
+    const list = await priceList(api, "Catering K", { [w.panFrances]: "800" });
+    await ok(api.patch(`/api/customers/${w.customerId}`, { defaultPriceListId: list.id }));
+    const order = await readyOrder(w, "10");
+    expect(order.reservations.map((r: { lot: { code: string } }) => r.lot.code)).toHaveLength(1);
+    // Después de confirmar: la lista sube a 900 y entra un lote nuevo mucho más caro.
+    await ok(api.put(`/api/price-lists/${list.id}/items/${w.panFrances}`, { unitPrice: "900" }));
+    await produce(api, w, "100", { harinaCost: "3000" });
+    const { sale } = await ok(
+      postSale(api, (await ok(saleFromOrder(api, w, await orderOf(api, order.id)), 201)).id),
+    );
+    expect(dec(sale.lines[0].price.unitPrice)).toBe("800");
+    expect(dec(sale.amounts.total)).toBe("8000");
+    // 10 kg del lote A reservado (678,20/kg), no el promedio con el lote nuevo.
+    expect(dec(sale.materialCost)).toBe("6782");
+    // Una venta directa nueva usa el precio vigente.
+    const direct = await postedSale(api, w, [{ productId: w.panFrances, quantity: "1" }], {
+      customerId: w.customerId,
+    });
+    expect(dec(direct.lines[0].price.unitPrice)).toBe("900");
+    await invariants();
+  });
+
+  it("seña de 12.000 para una venta de 9.000 (lista ya en 900): PAGADA y 3.000 a favor", async () => {
+    const before = dec((await accountOf(api, w.customerId)).balance)!;
+    const order = await readyOrder(w, "10");
+    await ok(advance(api, order.id, "12000"), 201);
+    const { sale } = await ok(
+      postSale(api, (await ok(saleFromOrder(api, w, await orderOf(api, order.id)), 201)).id),
+    );
+    expect(dec(sale.amounts.total)).toBe("9000");
+    expect(dec(sale.amounts.paid)).toBe("9000");
+    expect(sale.paymentStatus).toBe("PAID");
+    const after = await orderOf(api, order.id);
+    expect(dec(after.commercial.advances.available)).toBe("3000");
+    const account = await accountOf(api, w.customerId);
+    expect(Number(dec(account.balance)) - Number(before)).toBe(-3000);
     await invariants();
   });
 });

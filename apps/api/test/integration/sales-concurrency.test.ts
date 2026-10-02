@@ -272,3 +272,49 @@ describe("rollback: si algo falla a mitad de la confirmación no queda nada", ()
     await invariants();
   });
 });
+
+describe("rollback de un cobro: si falla la imputación no queda nada", () => {
+  it("ni cobro, ni movimiento de cuenta, ni aplicación, ni auditoría", async () => {
+    const w = await buildOrderWorld(api, " C6");
+    await produce(api, w, "100");
+    const sale = await postedSale(api, w, [{ productId: w.panFrances, quantity: "10" }], {
+      customerId: w.customerId,
+    });
+    const tables = [
+      "customer_payments",
+      "customer_account_movements",
+      "customer_payment_applications",
+      "audit_logs",
+    ];
+    const snapshot = async () => ({
+      counts: Object.fromEntries(await Promise.all(tables.map(async (t) => [t, await count(t)]))),
+      balance: (await accountOf(api, w.customerId)).balance,
+      sale: (await ok(api.get(`/api/sales/${sale.id}`))).amounts,
+    });
+    const before = await snapshot();
+    await db().execute(
+      sql.raw(`
+      create or replace function test_fail_application() returns trigger language plpgsql as $$
+      begin raise exception 'falla inyectada'; end $$;
+      create trigger test_fail_application before insert on customer_payment_applications
+        for each row execute function test_fail_application();
+    `),
+    );
+    const opId = randomUUID();
+    try {
+      const res = await pay(api, sale.id, "1000", opId);
+      expect(res.statusCode).toBe(500);
+    } finally {
+      await db().execute(
+        sql.raw(`
+        drop trigger test_fail_application on customer_payment_applications;
+        drop function test_fail_application();
+      `),
+      );
+    }
+    expect(await snapshot()).toEqual(before);
+    // El reintento con el mismo operationId se registra normalmente (no quedó a medias).
+    expect((await pay(api, sale.id, "1000", opId)).statusCode).toBe(201);
+    await invariants();
+  });
+});

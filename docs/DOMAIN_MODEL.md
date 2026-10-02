@@ -14,7 +14,7 @@ Convenciones:
   operaciones explícitas).
 - Estados de documentos como enums con transiciones validadas; nunca banderas booleanas sueltas.
 
-## Diagrama ER — Fases 0 a 5A (implementado)
+## Diagrama ER — Fases 0 a 5B (implementado)
 
 ```mermaid
 erDiagram
@@ -105,20 +105,29 @@ erDiagram
     RAW_MATERIAL ||--o{ ORDER_MATERIAL_REQUIREMENT : ""
     ORDER_PRODUCTION_REQUIREMENT |o--o{ PRODUCTION_ORDER : "source_order_requirement_id"
     CUSTOMER_ORDER ||--o{ CUSTOMER_ORDER_OPERATION : "idempotencia"
+    PRICE_LIST ||--o{ PRICE_LIST_ITEM : ""
+    PRICE_LIST |o--o{ CUSTOMER : "lista del cliente"
+    CUSTOMER ||--o{ SALE : ""
+    CUSTOMER_ORDER |o--o{ SALE : "una o varias entregas"
+    SALE ||--|{ SALE_LINE : ""
+    CUSTOMER_ORDER_LINE |o--o{ SALE_LINE : "entrega"
+    SALE_LINE ||--|{ SALE_LOT_ALLOCATION : "lote y costo"
+    PRODUCT_LOT ||--o{ SALE_LOT_ALLOCATION : ""
+    PRODUCT_LOT_RESERVATION |o--o{ SALE_LOT_ALLOCATION : "consume"
+    STOCK_MOVEMENT ||--o| SALE_LOT_ALLOCATION : "SALE"
+    CUSTOMER ||--o{ CUSTOMER_PAYMENT : "cobros y señas"
+    CUSTOMER_ORDER |o--o{ CUSTOMER_PAYMENT : "seña"
+    CUSTOMER_PAYMENT ||--o{ CUSTOMER_PAYMENT_APPLICATION : "imputación"
+    SALE ||--o{ CUSTOMER_PAYMENT_APPLICATION : ""
+    CUSTOMER ||--o{ CUSTOMER_ACCOUNT_MOVEMENT : "ledger"
+    CUSTOMER ||--o| CUSTOMER_ACCOUNT_BALANCE : "saldo"
 ```
 
 ## Diagrama ER — fases futuras (previsto)
 
 ```mermaid
 erDiagram
-    CUSTOMER ||--o{ SALE : ""
-    PRICE_LIST ||--o{ CUSTOMER : "predeterminada"
-    PRICE_LIST ||--o{ PRICE_LIST_ITEM : ""
-    SALE ||--|{ SALE_ITEM : ""
-    PRODUCT ||--o{ SALE_ITEM : ""
     SALE ||--o| INVOICE : ""
-
-    CUSTOMER ||--o{ CUSTOMER_ACCOUNT_MOVEMENT : ""
     SUPPLIER ||--o{ SUPPLIER_ACCOUNT_MOVEMENT : ""
     CASH_ACCOUNT ||--o{ CASH_MOVEMENT : ""
     EXPENSE_CATEGORY ||--o{ EXPENSE : ""
@@ -468,9 +477,11 @@ empezó la preparación, marcó listo o canceló. No se borra.
 
 **Ciclo de vida** (`status`): `DRAFT → CONFIRMED → IN_PREPARATION → READY`; `READY →
 IN_PREPARATION` (volver a preparación o replan que deja de cubrir); cualquiera salvo `CANCELLED` →
-`CANCELLED` (terminal; `READY` sólo con confirmación explícita). No hay `DELIVERED`: la entrega
-convierte el pedido en venta en Fase 5B. Sólo `CONFIRMED`, `IN_PREPARATION` y `READY` son demanda.
-`READY` exige cobertura completa.
+`CANCELLED` (terminal; `READY` sólo con confirmación explícita). Fase 5B agrega `READY →
+PARTIALLY_DELIVERED → DELIVERED` (o `READY → DELIVERED`) por las ventas del pedido; `DELIVERED` es
+terminal y `PARTIALLY_DELIVERED` admite cancelar el remanente. Son demanda `CONFIRMED`,
+`IN_PREPARATION`, `READY` y `PARTIALLY_DELIVERED` (por lo pendiente). `READY` exige cobertura
+completa.
 
 **Cobertura** (`coverage_status`, separada del estado): `FULLY_COVERED` (todo reservado),
 `PARTIALLY_COVERED` (algo reservado, falta producir), `NOT_COVERED` (nada reservado),
@@ -489,8 +500,9 @@ conservación pedida; `COMMITTED` = Σ reservas activas de otros pedidos sobre e
 
 **Reserva** (`product_lot_reservations`, ADR-050): pedido, línea, lote, cantidad (unidad de venta),
 `plan_revision`, estado `ACTIVE` → `RELEASED` (cancelación o replan) / `INVALIDATED` (lote
-bloqueado o merma) / `FULFILLED` (Fase 5B), motivo y fechas. No mueve stock ni se borra. Σ activas
-≤ saldo del lote; ningún lote bloqueado con reservas activas.
+bloqueado o merma) / `FULFILLED` (entregada en Fase 5B), motivo y fechas. No mueve stock ni se
+borra. `fulfilled_quantity` (Fase 5B) acumula lo entregado; comprometido = Σ (`quantity −
+fulfilled_quantity`) de las activas ≤ saldo del lote; ningún lote bloqueado con reservas activas.
 
 **Necesidad de producción** (`order_production_requirements`): línea, producto, cantidad, receta y
 versión vigentes al confirmar o replanificar (fijadas; una versión nueva sólo entra con un replan,
@@ -512,17 +524,52 @@ completarla la deja `SATISFIED` y el lote nuevo aparece como stock nuevo para un
 `plan_revision` y vuelve a planificar con los cambios; la historia se conserva. Calidad y merma
 invalidan reservas y dejan el pedido `NEEDS_REPLAN`; lo comprometido no se transforma (ADR-054).
 
-## Ventas y cuentas (Fases 5B–6)
+## Ventas, precios, cobros y cuenta corriente (Fase 5B, implementado)
 
-- `Sale` (`DRAFT`/`CONFIRMED`/`PARTIALLY_PAID`/`PAID`/`CANCELLED`) + `SaleItem`. Confirmar descuenta
-  stock una sola vez; cancelar genera movimientos inversos.
-- `PriceList` + `PriceListItem`; cada cliente con lista predeterminada.
-- `CustomerAccountMovement` (`SALE`, `PAYMENT`, `CREDIT_NOTE`, `ADJUSTMENT`) y
-  `SupplierAccountMovement` (`PURCHASE`, `PAYMENT`, `DEBIT`, `CREDIT`, `ADJUSTMENT`): el saldo es la
-  suma del ledger.
+**Lista de precios** (`price_lists`, `price_list_items`): código `LP-0001`, nombre, activa, una sola
+general por empresa (`is_default`); precio por producto en su unidad de venta. El cliente tiene
+`default_price_list_id` opcional. Prioridad (`resolvePrices`, ADR-060): precio acordado del pedido
+→ lista del cliente → lista general → `products.sale_price`; cada línea guarda `price_source`
+(`ORDER_QUOTE`, `CUSTOMER_PRICE_LIST`, `DEFAULT_PRICE_LIST`, `PRODUCT_PRICE`, `MANUAL`).
+
+**Precio del pedido**: `pricing_status` `UNPRICED` (pedidos de 5A) / `QUOTED` (borrador cotizado) /
+`AGREED` (congelado al confirmar), lista usada, subtotal, descuentos y total; por línea precio,
+descuento, neto, origen y motivo si es `MANUAL`.
+
+**Venta** (`sales`): `VTA-0001`, cliente (Consumidor Final por defecto en la venta directa), pedido
+opcional, depósito, `status` `DRAFT → POSTED` o `DRAFT → CANCELLED`, `payment_status` `UNPAID` /
+`PARTIALLY_PAID` / `PAID` (derivado de Σ aplicaciones), `sale_date`, lista, subtotal, descuentos,
+total, cobrado, costo material, margen y %, `credit_limit_exceeded`, quién/cuándo. Línea
+(`sale_lines`): línea de pedido opcional, producto, cantidad (unidad + normalizada), precio,
+descuento, neto, origen, precio acordado de referencia, motivo de override, costo material, costo
+promedio de lotes (informativo) y margen. **Asignación** (`sale_lot_allocations`): lote, reserva
+consumida (opcional), cantidad, costo unitario y costo del lote, movimiento `SALE`.
+
+**Costo de venta** (ADR-057): Σ valor retirado de los lotes (identificación específica). Promedio
+del producto = valor / cantidad, derivado. **Margen sobre materiales** = neto − costo material; %
+= margen / neto × 100 (null con neto 0).
+
+**Asignación de lotes** (`allocateSaleLine`, ADR-059): venta de pedido: reservas activas de la
+línea por FEFO; si no alcanzan, stock libre FEFO del depósito. Venta directa: FEFO sobre lotes
+disponibles, válidos ahora y con la conservación pedida, sólo sobre físico − reservas activas.
+
+**Cobro** (`customer_payments`): `COB-0001`, cliente, `kind` `ORDER_ADVANCE` (seña, con pedido) /
+`SALE_PAYMENT` (con venta) / `ON_ACCOUNT`, fecha, monto, medio (`CASH`, `TRANSFER`, `DEBIT_CARD`,
+`CREDIT_CARD`, `OTHER`), referencia, notas, `operation_id`. Inmutable. **Imputación**
+(`customer_payment_applications`): cobro, venta, monto, origen (`ADVANCE_AUTO`, `SALE_PAYMENT`,
+`MANUAL`); Σ por venta ≤ total, Σ por cobro ≤ monto.
+
+**Cuenta corriente** (ADR-061): `customer_account_movements` (`SALE_DEBIT`, `PAYMENT_CREDIT`,
+`ADJUSTMENT_DEBIT`, `ADJUSTMENT_CREDIT`; `signed_amount` + debe / − a favor, `balance_after`) y
+`customer_account_balances`. Saldo = Σ movimientos. Imputar no mueve la cuenta. Errores: ajuste
+con motivo (política B).
+
+## Cuentas de proveedores, caja y gastos (Fase 6)
+
+- `SupplierAccountMovement` (`PURCHASE`, `PAYMENT`, `DEBIT`, `CREDIT`, `ADJUSTMENT`): el saldo es
+  la suma del ledger.
 - `CashAccount` + `CashMovement` (`SALE_INCOME`, `CUSTOMER_PAYMENT`, `SUPPLIER_PAYMENT`, `EXPENSE`,
-  `ADJUSTMENT`, `OTHER_INCOME`, `OTHER_EXPENSE`), medios de pago (efectivo, transferencia, débito,
-  crédito, cuenta corriente, otro). Resumen diario.
+  `ADJUSTMENT`, `OTHER_INCOME`, `OTHER_EXPENSE`), medios de pago. Resumen diario.
 - `Expense` + `ExpenseCategory`.
 
 ## Facturación (Fase 7)
@@ -533,22 +580,25 @@ integración fiscal argentina (`ArgentinaFiscalInvoiceProvider`) es un milestone
 
 ## Invariantes críticas
 
-| Área         | Invariante                                                                                                  | Cómo se garantiza / testea                                                                                                                                                                                                     |
-| ------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Auditoría    | Las operaciones sensibles registran actor y timestamp. El log no se altera.                                 | **Fase 0:** trigger que rechaza UPDATE/DELETE. **Fase 1:** cada alta/cambio/baja de maestro audita en la misma transacción (tests por entidad).                                                                                |
-| Seguridad    | Autorización validada en backend por permiso.                                                               | **Fase 0/1:** matriz rol × endpoint verificada contra la API (`authorization.test.ts`).                                                                                                                                        |
-| Tenancy      | Ningún dato cruza empresas.                                                                                 | **Fase 1:** empresa tomada solo de la sesión; FKs compuestas; tests Empresa A/B (leer, modificar, inferir, referenciar).                                                                                                       |
-| Maestros     | Nada se borra; se desactiva. Usuario ≠ empleado.                                                            | **Fase 1:** sin endpoints DELETE; tests de desactivación y de baja de empleado con acceso.                                                                                                                                     |
-| Unidades     | Solo se convierte dentro de la misma raíz; masa ↔ volumen se rechaza.                                       | **Fase 1:** `@bakery/domain` con decimal.js; tests unitarios e integración (422 `INCOMPATIBLE_UNITS`).                                                                                                                         |
-| Inventario   | Todo cambio de stock tiene un `StockMovement`; el stock nunca es negativo.                                  | **Fase 3:** ledger append-only y saldos/costo custodiados por triggers, CHECK ≥ 0, `INSUFFICIENT_STOCK`; `inventory-invariants.test.ts` (1–3, 7, 21).                                                                          |
-| Producción   | Completar genera consumo + salida en una única transacción.                                                 | **Fase 4:** `completeOrder` en una transacción con locks en orden fijo; test §73 fuerza una falla después de los consumos (trigger temporal) y verifica que nada cambió; idempotencia `[200, 409, 409]`.                       |
-| Recetas      | Una versión publicada es inmutable; una vigente y un borrador por receta.                                   | **Fase 2:** triggers en la base + índices únicos parciales; tests de integración (v1 intacta tras v2, UPDATE/DELETE directos rechazados).                                                                                      |
-| Costo        | Falta de costo ≠ costo cero; el snapshot no cambia con los costos.                                          | **Fase 2:** dominio devuelve `INCOMPLETE`/null; snapshots append-only por trigger; unit, integración y E2E de costo incompleto. **Fase 3:** el snapshot tampoco cambia con el promedio de compras (test §62, E2E pasos 16–17). |
-| Compras      | Una recepción confirmada afecta stock una sola vez y no se modifica.                                        | **Fase 3:** estado verificado con lock + único `(company_id, source_line_id)` + triggers de inmutabilidad; tests de doble confirmación, rollback y concurrencia.                                                               |
-| Ventas       | Una venta confirmada afecta stock una sola vez.                                                             | Fase 5B: ídem.                                                                                                                                                                                                                 |
-| Costos       | Producciones históricas conservan snapshot de costos.                                                       | **Fase 4:** costos esperado y real son columnas de la orden, inmutables tras completar (trigger `production_orders_guard`); tests de UPDATE directo rechazado.                                                                 |
-| Lotes        | Σ lotes = saldo agregado = costo del producto; todo movimiento de producto tiene lote; un lote no se borra. | **Fase 4.5:** check `stock_movements_product_lot`, triggers `product_lots_guard` y `product_lot_balances_guard`, `reconciliationProblems` después de cada operación en `product-lots.test.ts`, migración con BLOCKER.          |
-| Conservación | Transformar no cambia cantidad total, valor ni promedio; lo descongelado no se recongela.                   | **Fase 4.5:** `LOT_TRANSFORMATION_OUT/IN` al costo del lote; dominio `assertTransformation`; tests §52–53.                                                                                                                     |
-| Reservas     | Σ reservas activas ≤ saldo del lote; lote bloqueado sin reservas activas; reservar no mueve stock.          | **Fase 5A:** triggers `product_lot_reservations_capacity`, `product_lot_balances_reserved`, `product_lots_blocked_reserved`; locks ADR-053; concurrencia 70 + 70 sobre 100 (`orders-access.test.ts`).                          |
-| Pedidos      | Confirmar y replanificar son atómicos e idempotentes; la historia de reservas y necesidades no se borra.    | **Fase 5A:** una transacción por operación; `customer_order_operations`; triggers de guarda (sin DELETE, reservas y necesidades inmutables salvo estado); test de rollback con falla inyectada.                                |
-| Caja         | Todo movimiento financiero relevante es trazable a su origen.                                               | Fase 6: referencia obligatoria salvo movimientos manuales con motivo.                                                                                                                                                          |
+| Área         | Invariante                                                                                                  | Cómo se garantiza / testea                                                                                                                                                                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auditoría    | Las operaciones sensibles registran actor y timestamp. El log no se altera.                                 | **Fase 0:** trigger que rechaza UPDATE/DELETE. **Fase 1:** cada alta/cambio/baja de maestro audita en la misma transacción (tests por entidad).                                                                                                                                                            |
+| Seguridad    | Autorización validada en backend por permiso.                                                               | **Fase 0/1:** matriz rol × endpoint verificada contra la API (`authorization.test.ts`).                                                                                                                                                                                                                    |
+| Tenancy      | Ningún dato cruza empresas.                                                                                 | **Fase 1:** empresa tomada solo de la sesión; FKs compuestas; tests Empresa A/B (leer, modificar, inferir, referenciar).                                                                                                                                                                                   |
+| Maestros     | Nada se borra; se desactiva. Usuario ≠ empleado.                                                            | **Fase 1:** sin endpoints DELETE; tests de desactivación y de baja de empleado con acceso.                                                                                                                                                                                                                 |
+| Unidades     | Solo se convierte dentro de la misma raíz; masa ↔ volumen se rechaza.                                       | **Fase 1:** `@bakery/domain` con decimal.js; tests unitarios e integración (422 `INCOMPATIBLE_UNITS`).                                                                                                                                                                                                     |
+| Inventario   | Todo cambio de stock tiene un `StockMovement`; el stock nunca es negativo.                                  | **Fase 3:** ledger append-only y saldos/costo custodiados por triggers, CHECK ≥ 0, `INSUFFICIENT_STOCK`; `inventory-invariants.test.ts` (1–3, 7, 21).                                                                                                                                                      |
+| Producción   | Completar genera consumo + salida en una única transacción.                                                 | **Fase 4:** `completeOrder` en una transacción con locks en orden fijo; test §73 fuerza una falla después de los consumos (trigger temporal) y verifica que nada cambió; idempotencia `[200, 409, 409]`.                                                                                                   |
+| Recetas      | Una versión publicada es inmutable; una vigente y un borrador por receta.                                   | **Fase 2:** triggers en la base + índices únicos parciales; tests de integración (v1 intacta tras v2, UPDATE/DELETE directos rechazados).                                                                                                                                                                  |
+| Costo        | Falta de costo ≠ costo cero; el snapshot no cambia con los costos.                                          | **Fase 2:** dominio devuelve `INCOMPLETE`/null; snapshots append-only por trigger; unit, integración y E2E de costo incompleto. **Fase 3:** el snapshot tampoco cambia con el promedio de compras (test §62, E2E pasos 16–17).                                                                             |
+| Compras      | Una recepción confirmada afecta stock una sola vez y no se modifica.                                        | **Fase 3:** estado verificado con lock + único `(company_id, source_line_id)` + triggers de inmutabilidad; tests de doble confirmación, rollback y concurrencia.                                                                                                                                           |
+| Ventas       | Una venta confirmada afecta stock una sola vez; su costo es el de los lotes que salieron.                   | **Fase 5B:** posteo con lock de la venta + estado verificado después de bloquear (`[200, 409×4]`), `SALE` por lote con una asignación por movimiento y un solo débito por venta (índices únicos), triggers de inmutabilidad; concurrencia 70 + 70 y reserva ↔ venta directa (`sales-concurrency.test.ts`). |
+| Precios      | El precio de un pedido se congela al confirmarlo; cambiarlo exige permiso y motivo.                         | **Fase 5B:** prioridad acordado → lista del cliente → lista general → producto (`resolveUnitPrice`); pedidos viejos `UNPRICED` hasta acordar precio; override 403/422 y auditado.                                                                                                                          |
+| Cobros       | Un cobro no se aplica dos veces ni por más de lo pendiente; la seña se aplica sola al entregar.             | **Fase 5B:** `customer_payment_applications` con triggers de capacidad, idempotencia por `operationId` (monto y medio incluidos), cobros paralelos `[201, 422]`.                                                                                                                                           |
+| Cuenta cte.  | Saldo = Σ movimientos; nada se borra, se ajusta.                                                            | **Fase 5B:** ledger `customer_account_movements` append-only con saldo corrido y lock de cuenta; ajustes con motivo y permiso propio (política B); operaciones mezcladas en paralelo dan el saldo exacto.                                                                                                  |
+| Costos       | Producciones históricas conservan snapshot de costos.                                                       | **Fase 4:** costos esperado y real son columnas de la orden, inmutables tras completar (trigger `production_orders_guard`); tests de UPDATE directo rechazado.                                                                                                                                             |
+| Lotes        | Σ lotes = saldo agregado = costo del producto; todo movimiento de producto tiene lote; un lote no se borra. | **Fase 4.5:** check `stock_movements_product_lot`, triggers `product_lots_guard` y `product_lot_balances_guard`, `reconciliationProblems` después de cada operación en `product-lots.test.ts`, migración con BLOCKER.                                                                                      |
+| Conservación | Transformar no cambia cantidad total, valor ni promedio; lo descongelado no se recongela.                   | **Fase 4.5:** `LOT_TRANSFORMATION_OUT/IN` al costo del lote; dominio `assertTransformation`; tests §52–53.                                                                                                                                                                                                 |
+| Reservas     | Σ reservas activas ≤ saldo del lote; lote bloqueado sin reservas activas; reservar no mueve stock.          | **Fase 5A:** triggers `product_lot_reservations_capacity`, `product_lot_balances_reserved`, `product_lots_blocked_reserved`; locks ADR-053; concurrencia 70 + 70 sobre 100 (`orders-access.test.ts`).                                                                                                      |
+| Pedidos      | Confirmar y replanificar son atómicos e idempotentes; la historia de reservas y necesidades no se borra.    | **Fase 5A:** una transacción por operación; `customer_order_operations`; triggers de guarda (sin DELETE, reservas y necesidades inmutables salvo estado); test de rollback con falla inyectada.                                                                                                            |
+| Caja         | Todo movimiento financiero relevante es trazable a su origen.                                               | Fase 6: referencia obligatoria salvo movimientos manuales con motivo.                                                                                                                                                                                                                                      |

@@ -1079,3 +1079,34 @@ h2 {
 .wall-clock input[type="time"] {
   flex: 0 1 7rem;
 }
+
+/* ---------- Ventas y listas de precios (Fase 5B) ---------- */
+
+.line-editor input,
+.line-editor select {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--color-surface);
+}
+
+.line-editor td > select,
+.line-editor td > input {
+  width: 100%;
+}
+
+.line-editor input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.line-editor .inline-fields input {
+  width: 7rem;
+}
+
+.line-editor td > .inline-fields + input {
+  width: 100%;
+  margin-top: 0.4rem;
+}

@@ -42,8 +42,53 @@ costos, precios, reportes, auditoría y configuración empresarial.
 ## Estado
 
 Fases 0 (fundación), 1 (maestros), 2 (recetas + costo teórico), 3 (compras + inventario), 4
-(producción) y 4.5 (lotes, conservación y vida útil) aceptadas; Fase 5A (pedidos, demanda
-comprometida y necesidades) implementada y esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+(producción), 4.5 (lotes, conservación y vida útil) y 5A (pedidos, demanda comprometida y
+necesidades) aceptadas; Fase 5B (ventas, entrega, cobros, cuenta corriente y margen) implementada y
+esperando gate humano. Ver [ROADMAP](ROADMAP.md).
+
+### Ventas, entrega, cobros, cuenta corriente y margen (Fase 5B)
+
+Una venta es la **operación comercial concretada**: el producto salió de lotes concretos, el
+cliente debe (o pagó) y queda el margen sobre materiales de esos lotes.
+
+- **Listas de precios** (Comercial → Listas de precios): una lista general y listas por cliente,
+  con precio por producto. El precio de una venta o pedido sale, en orden, del **precio acordado
+  del pedido**, la **lista del cliente**, la **lista general** o el **precio del producto**; la
+  pantalla dice de dónde salió. La lista del cliente se asigna en su ficha.
+- **Pedidos con precio**: al guardarlo se cotiza con el precio vigente y al confirmarlo el precio
+  queda **acordado** (cambiar la lista después no lo toca). Los pedidos cargados antes de esta fase
+  quedan "Sin precio acordado" y piden **Acordar precio** antes de entregarse.
+- **Seña**: "Registrar seña" en el pedido. Queda como crédito del cliente y se aplica sola a la
+  venta cuando se entrega. Si el pedido se cancela, la seña queda a favor del cliente (se avisa).
+- **Entregar y vender** (pedido listo o entregado parcialmente): una línea por producto pendiente,
+  al precio acordado; se puede entregar menos (**entrega parcial**). Guardar crea un borrador que no
+  mueve nada.
+- **Venta directa** (Comercial → Ventas → Nueva venta): Consumidor Final por defecto, productos,
+  precio vigente. "Se utilizarán los lotes más próximos a vencer"; nunca se vende lo reservado para
+  pedidos.
+- **Vista previa** antes de entregar: qué lotes salen (primero los reservados del pedido), costo
+  material real, **margen sobre materiales**, seña que se aplica, saldo del cliente después y
+  avisos. **Confirmar entrega y venta** descuenta los lotes, registra la deuda y aplica la seña,
+  todo junto o nada; opcionalmente se cobra en el momento. Una venta entregada no se modifica; un
+  borrador se puede descartar.
+- **Cambiar un precio** requiere permiso y un motivo; queda "Precio modificado" con el vigente al
+  lado y en el historial. Si el precio queda por debajo del costo de los lotes, se avisa "Precio
+  inferior al costo material de los lotes seleccionados." sin bloquear.
+- **Cobros**: desde la venta (no puede superar el pendiente), al confirmar la entrega, o **a cuenta**
+  desde la cuenta corriente y después **imputados** a las ventas pendientes. Estado de cobro: sin
+  cobrar, cobro parcial, cobrada.
+- **Cuenta corriente** (Finanzas → Cuentas a cobrar): clientes que deben o tienen saldo a favor;
+  por cliente, saldo ("Debe $X" / "Sin saldo" / "A favor $X"), ventas pendientes, cobros sin
+  imputar y movimientos con **Debe / Haber / Saldo**. Un cobro mal cargado se corrige con un
+  **ajuste** con motivo; nunca se borra.
+- **Límite de crédito**: si una venta lo supera se avisa en la vista previa y queda registrado, pero
+  no se bloquea.
+- Costos y márgenes sólo los ven quienes tienen permiso (la API no los envía); Depósito ve qué
+  salió sin importes.
+
+Fuera de esta fase: devoluciones y notas de crédito, reembolsos y anulación de cobros, facturación
+fiscal e impuestos, caja y conciliación bancaria (Fase 6), margen con costos indirectos, elegir lotes
+a mano en la venta.
 
 ### Pedidos, demanda comprometida y necesidades (Fase 5A)
 
@@ -54,8 +99,8 @@ falta comprar. Nada de esto mueve el inventario físico.
 - **Cargar un pedido** (Comercial → Pedidos → Nuevo pedido): cliente, fecha y hora de entrega o
   retiro **en la hora de la empresa** (se muestra la zona), retiro o entrega (con dirección),
   evento, prioridad (normal, alta, urgente), productos con cantidad, unidad y conservación pedida
-  (indistinto, fresco, refrigerado, congelado, descongelado) y notas. El precio actual del producto
-  se muestra como referencia; el precio final es de Fase 5B.
+  (indistinto, fresco, refrigerado, congelado, descongelado) y notas. Desde Fase 5B el precio se
+  cotiza al guardar y queda acordado al confirmar.
 - **Vista previa explicada** mientras se carga: por producto, stock físico, stock válido para la
   fecha, ya comprometido con otros pedidos, disponible, cuánto se reservaría y cuánto falta
   producir, con la explicación en palabras ("Hay 700 kg; 300 vencen antes de la fecha…"), los lotes
@@ -86,10 +131,9 @@ falta comprar. Nada de esto mueve el inventario físico.
 - Stock → Productos terminados agrega **Comprometido** y **Disponible ahora**; el detalle del lote,
   comprometido, libre y los pedidos que lo reservan.
 
-Producción ve los pedidos sin los datos de contacto del cliente. Fuera de esta fase: venta y
-entrega, cobros, señas (`ORDER_ADVANCE_PAYMENT`, Fase 5B; se puede anotar en notas), cuenta
-corriente, precio final y margen, reserva física de materia prima, producción consolidada de varios
-pedidos, planificación por capacidad y rutas de reparto.
+Producción ve los pedidos sin los datos de contacto del cliente. Venta, entrega, señas y cobros
+llegan en Fase 5B (arriba). Fuera de alcance: reserva física de materia prima, producción
+consolidada de varios pedidos, planificación por capacidad y rutas de reparto.
 
 ### Lotes, conservación y vida útil (Fase 4.5)
 
@@ -233,8 +277,8 @@ llegó en Fase 4.
 | Compras                 | Borrador → Recibida → Pendiente/Parcial/Pagada. Recepción genera stock y actualiza costo (promedio ponderado móvil).                                                              |
 | Producción              | `ProductionOrder` (DRAFT/PLANNED/IN_PROGRESS/COMPLETED/CANCELLED). Completar = consumo + salida + snapshot de costos, en una transacción.                                         |
 | Mermas                  | Materia prima o producto, motivo, cantidad, responsable. Genera movimientos.                                                                                                      |
-| Ventas                  | DRAFT/CONFIRMED/PARTIALLY_PAID/PAID/CANCELLED. Confirmar descuenta stock una sola vez. Corrección por cancelación controlada.                                                     |
-| Listas de precios       | Modelo preparado para varias listas; MVP con una principal.                                                                                                                       |
+| Ventas                  | Borrador / Entregada / Descartada, con estado de cobro aparte (sin cobrar, parcial, cobrada). Confirmar descuenta los lotes una sola vez; una venta entregada no se modifica.     |
+| Listas de precios       | Lista general + listas por cliente; precio acordado del pedido → lista del cliente → general → precio del producto.                                                               |
 | Cuentas corrientes      | Ledger de clientes (`CustomerAccountMovement`) y de proveedores (`SupplierAccountMovement`).                                                                                      |
 | Caja                    | `CashAccount`, `CashMovement`, medios de pago, resumen diario.                                                                                                                    |
 | Gastos                  | Categorías, registro y reporte.                                                                                                                                                   |

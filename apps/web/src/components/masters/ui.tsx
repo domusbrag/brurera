@@ -262,6 +262,7 @@ const FIELD_LABELS: Record<string, string> = {
   saleUnitId: "Unidad de venta",
   preferredSupplierId: "Proveedor preferido",
   creditLimit: "Límite de crédito",
+  defaultPriceListId: "Lista de precios",
   commercialCondition: "Condición comercial",
   type: "Tipo",
   firstName: "Nombre",

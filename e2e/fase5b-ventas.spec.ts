@@ -11,6 +11,8 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from "@
  * - Mostrador: Consumidor Final por defecto, lotes FEFO en la vista previa,
  *   precio cambiado con motivo, margen negativo avisado y cobro en el momento.
  * - Listas de precios: alta, precio por producto y asignación al cliente.
+ * - Seña y cancelación: el pedido se cancela, libera sus lotes y la seña
+ *   queda como crédito a favor del cliente.
  */
 
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
@@ -133,7 +135,15 @@ async function apiWorld(request: APIRequestContext, run: string) {
   await call(request, "put", `/api/products/${product.id}/conservation`, {
     defaultInitialState: "FRESH",
     nearExpiryMinutes: 1440,
-    states: [{ state: "FRESH", enabled: true, shelfLifeMinutes: 2880, allowedAsInitial: true, notes: null }],
+    states: [
+      {
+        state: "FRESH",
+        enabled: true,
+        shelfLifeMinutes: 2880,
+        allowedAsInitial: true,
+        notes: null,
+      },
+    ],
   });
   const warehouses = await call<{ items: { id: string; name: string }[] }>(
     request,
@@ -179,6 +189,17 @@ async function apiWorld(request: APIRequestContext, run: string) {
     );
     return done.productLot;
   };
+  const confirmedOrder = async (quantity: string) => {
+    const created = await call<{ id: string; code: string }>(request, "post", "/api/orders", {
+      customerId: customer.id,
+      requestedAt: `${tomorrow}T10:00`,
+      lines: [{ productId: product.id, quantity }],
+    });
+    await call(request, "post", `/api/orders/${created.id}/confirm`, {
+      operationId: randomUUID(),
+    });
+    return created;
+  };
   const readyOrder = async (quantity: string) => {
     const created = await call<{ id: string; code: string }>(request, "post", "/api/orders", {
       customerId: customer.id,
@@ -203,6 +224,7 @@ async function apiWorld(request: APIRequestContext, run: string) {
     customerId: customer.id,
     customerName,
     produce,
+    confirmedOrder,
     readyOrder,
     priceList,
     assignList: (listId: string) =>
@@ -263,10 +285,7 @@ test("Fase 5B: pedido con seña, entrega parcial, cobro, entrega final y cuenta 
   await expect(summaryValue(preview, "Seña que se aplica")).toHaveText("$20.000,00");
 
   await page.getByRole("button", { name: "Confirmar entrega y venta" }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Confirmar entrega y venta" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "Confirmar entrega y venta" }).click();
   await expect(heading).toContainText("Entregada");
   await expect(heading).toContainText("Cobro parcial");
   await expect(page.getByTestId("sale-pending")).toHaveText("$40.000,00");
@@ -292,10 +311,7 @@ test("Fase 5B: pedido con seña, entrega parcial, cobro, entrega final y cuenta 
   await page.getByRole("button", { name: "Guardar y ver la entrega" }).click();
   await expect(heading).toContainText("Borrador");
   await page.getByRole("button", { name: "Confirmar entrega y venta" }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Confirmar entrega y venta" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "Confirmar entrega y venta" }).click();
   await expect(heading).toContainText("Entregada");
   await expect(heading).toContainText("Sin cobrar");
   await page.getByRole("link", { name: order.code }).click();
@@ -327,7 +343,9 @@ test("Fase 5B: pedido con seña, entrega parcial, cobro, entrega final y cuenta 
   await onAccount.getByLabel("Monto").fill("36000");
   await onAccount.getByRole("button", { name: "Registrar cobro" }).click();
   await expect(page.getByTestId("account-balance")).toHaveText("Sin saldo");
-  await section(page, "Cobros con crédito sin imputar").getByRole("button", { name: "Imputar" }).click();
+  await section(page, "Cobros con crédito sin imputar")
+    .getByRole("button", { name: "Imputar" })
+    .click();
   await page.getByRole("dialog").getByRole("button", { name: "Imputar", exact: true }).click();
   await expect(page.getByText("Ventas pendientes de cobro")).toHaveCount(0);
   await expect(page.locator("main")).not.toContainText(UUID);
@@ -465,6 +483,46 @@ test("Fase 5B: lista de precios, asignación al cliente y ajuste de cuenta", asy
   await expect(
     page.getByRole("table", { name: "Movimientos de la cuenta corriente" }),
   ).toContainText("Bonificación por demora");
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("Fase 5B: cancelar un pedido con seña deja la seña como crédito a favor", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const run = `${Date.now().toString(36)}${testInfo.project.name[0]}`;
+  const consoleErrors = trackConsoleErrors(page);
+  await login(page);
+  const world = await apiWorld(page.request, run);
+  await world.produce("50");
+  const order = await world.confirmedOrder("20");
+  const heading = page.getByRole("heading", { level: 1 });
+
+  await page.goto(`/pedidos/${order.id}`);
+  await expect(section(page, /^Lotes reservados$/).locator("tbody tr")).toHaveCount(1);
+  await page.getByRole("button", { name: "Registrar seña" }).click();
+  const advanceDialog = page.getByRole("dialog");
+  await advanceDialog.getByLabel("Monto").fill("10000");
+  await advanceDialog.getByLabel("Medio de pago").selectOption("CASH");
+  await advanceDialog.getByRole("button", { name: "Registrar cobro" }).click();
+  await expect(page.getByTestId("advance-available")).toHaveText("$10.000,00");
+
+  await page.getByRole("button", { name: "Cancelar pedido", exact: true }).click();
+  const cancelDialog = page.getByRole("dialog");
+  await expect(cancelDialog).toContainText(
+    "La seña de $10.000,00 queda como crédito a favor del cliente.",
+  );
+  await cancelDialog.getByLabel("Motivo").fill("Se suspendió el evento");
+  await cancelDialog.getByRole("button", { name: "Cancelar pedido", exact: true }).click();
+  await expect(heading).toContainText("Cancelado");
+  await expect(section(page, /^Lotes reservados$/)).toContainText("No hay lotes reservados.");
+  await expect(page.getByTestId("advance-available")).toHaveText("$10.000,00");
+
+  // La seña no desaparece: la cuenta corriente muestra el crédito a favor.
+  await page.goto(`/cuentas-a-cobrar/${world.customerId}`);
+  await expect(page.getByTestId("account-balance")).toContainText("$10.000,00");
+  await expect(page.getByTestId("account-balance")).toContainText(/a favor/i);
 
   expect(consoleErrors).toEqual([]);
 });

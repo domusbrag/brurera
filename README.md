@@ -3,14 +3,14 @@
 ERP vertical para panificadoras: proveedores → compras → materias primas → stock → recetas →
 producción → productos → ventas → clientes → cobros. Monolito modular en TypeScript.
 
-> Estado: **Fase 5A (pedidos, demanda comprometida y necesidades)**, pendiente de aceptación.
-> Sobre la fundación, los maestros, las recetas con costo teórico, las compras e inventario, la
-> producción y los lotes con conservación y vida útil (Fases 0 a 4.5), existen pedidos de
-> clientes para una fecha y hora: muestran qué stock sirve para esa fecha, qué ya está
-> comprometido y qué falta producir; al confirmarse reservan lotes por FEFO (sin mover stock),
-> registran la producción necesaria con la receta fijada y proyectan la materia prima. Necesidades
-> agrega la demanda de todos los pedidos. Ventas, cobros y finanzas llegan en fases siguientes (ver
-> [docs/ROADMAP.md](docs/ROADMAP.md)).
+> Estado: **Fase 5B (ventas, entrega, cobros y cuenta corriente)**, pendiente de aceptación.
+> Sobre la fundación, los maestros, las recetas, las compras e inventario, la producción, los
+> lotes (Fases 0 a 4.5) y los pedidos con demanda comprometida (Fase 5A), existen ventas desde un
+> pedido (entrega parcial o total) o directas de mostrador: descuentan stock por lote con el costo
+> real de cada lote y muestran el margen sobre materiales. Hay listas de precios con prioridad,
+> precio congelado al confirmar un pedido, señas que se aplican solas al entregar, cobros,
+> cuenta corriente del cliente con ajustes y cuentas a cobrar. Caja y finanzas llegan en fases
+> siguientes (ver [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Requisitos
 
@@ -49,7 +49,9 @@ Cada fase agrega migraciones y permisos nuevos (Fase 3: tablas de compras e inve
 permisos `purchases.*`, `inventory.*` y `presentations.*`; Fase 4: migración `0007_production` y
 los permisos `production_orders.*` y `production.cost.read`; Fase 4.5: `0008_product_lots` y
 `product_lots.*`; Fase 5A: `0009_customer_orders` y los permisos `orders.*`, `order_planning.read`
-y `order_production.create`). Después de traer cambios, en una base que ya existía:
+y `order_production.create`; Fase 5B: `0010_sales_payments` y los permisos `sales.*`,
+`price_lists.*`, `payments.*` y `customer_accounts.*`; la migración crea el cliente "Consumidor
+Final" de cada empresa y deja los pedidos viejos "sin precio" hasta acordarlo). Después de traer cambios, en una base que ya existía:
 
 ```bash
 pnpm bootstrap                    # o, con la base ya levantada:

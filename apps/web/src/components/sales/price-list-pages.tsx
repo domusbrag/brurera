@@ -120,7 +120,7 @@ export function PriceListDetail({ id }: { id: string }) {
           Precio por unidad de venta. Los pedidos ya confirmados conservan su precio acordado.
         </p>
         <div className="table-wrap">
-          <table className="table" aria-label="Precios de la lista">
+          <table className="table line-editor" aria-label="Precios de la lista">
             <thead>
               <tr>
                 <th scope="col">Producto</th>

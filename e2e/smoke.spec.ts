@@ -51,7 +51,7 @@ test("admin ingresa, ve el shell, navega y sale", async ({ page }) => {
   if (await menuButton.isVisible()) await menuButton.click();
   await page.getByRole("link", { name: "Ventas" }).click();
   await expect(page).toHaveURL(/\/ventas$/);
-  await expect(page.getByText("Disponible en próxima etapa")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Ventas" })).toBeVisible();
 
   await page.getByRole("button", { name: "Salir" }).click();
   await expect(page).toHaveURL(/\/login$/);

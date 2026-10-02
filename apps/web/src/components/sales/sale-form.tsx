@@ -392,7 +392,7 @@ function SaleForm({
 
         <h2 className="section-title">Productos</h2>
         <div className="table-wrap">
-          <table className="table" aria-label="Productos de la venta">
+          <table className="table line-editor" aria-label="Productos de la venta">
             <thead>
               <tr>
                 <th scope="col">Producto</th>
