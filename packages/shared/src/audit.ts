@@ -94,6 +94,19 @@ export const AUDIT_ACTION_LABELS = {
   PRODUCT_LOT_WASTE_RECORDED: "Merma de lote registrada",
   PRODUCT_LOT_BLOCKED: "Lote bloqueado por calidad",
   PRODUCT_LOT_UNBLOCKED: "Lote desbloqueado",
+
+  ORDER_CREATED: "Pedido creado",
+  ORDER_UPDATED: "Pedido modificado",
+  ORDER_CONFIRMED: "Pedido confirmado",
+  ORDER_REPLANNED: "Cobertura del pedido recalculada",
+  ORDER_CANCELLED: "Pedido cancelado",
+  ORDER_PREPARATION_STARTED: "Pedido en preparación",
+  ORDER_MARKED_READY: "Pedido listo",
+  LOT_RESERVED: "Lote reservado para el pedido",
+  LOT_RESERVATION_RELEASED: "Reserva liberada",
+  LOT_RESERVATION_INVALIDATED: "Reserva invalidada (el lote ya no la cubre)",
+  ORDER_PRODUCTION_REQUIREMENT_CREATED: "Necesidad de producción registrada",
+  PRODUCTION_ORDER_CREATED_FROM_ORDER: "Orden de producción creada desde el pedido",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;

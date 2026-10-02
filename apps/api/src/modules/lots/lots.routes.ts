@@ -88,7 +88,13 @@ export async function lotRoutes(app: FastifyInstance, { db }: { db: Database }) 
 
   /* ---- Lote ---- */
   app.get("/product-lots/:id", { preHandler: requirePermission(P.PRODUCT_LOTS_READ) }, (req) =>
-    lots.getLot(db, operationContext(req), lotId(req.params), canSeeCosts(req)),
+    lots.getLot(
+      db,
+      operationContext(req),
+      lotId(req.params),
+      canSeeCosts(req),
+      req.auth?.permissions ?? [],
+    ),
   );
   app.post(
     "/product-lots/:id/transform",

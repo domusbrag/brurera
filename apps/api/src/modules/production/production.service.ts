@@ -46,6 +46,12 @@ import { AppError } from "../../lib/errors.js";
 import { likePattern, pageWindow, toPage } from "../../lib/listing.js";
 import { recordAudit } from "../audit/audit.service.js";
 import { createProductionLot } from "../lots/lots.service.js";
+import {
+  claimRequirement,
+  linkRequirement,
+  reopenRequirementOf,
+  satisfyRequirementOf,
+} from "../orders/requirements.js";
 import { selectMovements } from "../inventory/inventory.service.js";
 import {
   fixedMoney,
@@ -424,6 +430,10 @@ async function insertOrder(
 ) {
   {
     const { product, recipe } = await resolveProduct(tx, ctx, input.productId);
+    // Desde la necesidad de un pedido (Fase 5A): pendiente, con receta y del mismo producto.
+    const claim = input.sourceOrderRequirementId
+      ? await claimRequirement(tx, ctx, input.sourceOrderRequirementId, product.id)
+      : null;
     const version = await resolveVersion(
       tx,
       ctx,
@@ -463,12 +473,21 @@ async function insertOrder(
           batchCode: input.batchCode,
           responsibleEmployeeId: input.responsibleEmployeeId,
           notes: input.notes,
+          sourceOrderRequirementId: claim?.requirement.id ?? null,
           createdByUserId: ctx.userId,
         })
         .returning(),
       UNIQUE,
     );
     if (!order) throw new Error("Alta de orden sin fila");
+    if (claim) {
+      await linkRequirement(tx, ctx, claim, {
+        id: order.id,
+        code,
+        quantity: order.plannedOutputNormalized,
+        scheduledFor: order.scheduledFor,
+      });
+    }
     await recordAudit(tx, {
       ...auditBase(ctx),
       action: "PRODUCTION_ORDER_CREATED",
@@ -481,6 +500,7 @@ async function insertOrder(
         recipeVersionId: version.id,
         versionNumber: version.versionNumber,
         scheduledFor: order.scheduledFor,
+        ...(claim ? { customerOrder: claim.order.internalCode } : {}),
         plannedOutputQuantity: order.plannedOutputQuantity,
         plannedOutputNormalized: order.plannedOutputNormalized,
       },
@@ -1149,6 +1169,7 @@ export async function cancelOrder(
         cancelReason: reason ?? null,
       })
       .where(eq(productionOrders.id, id));
+    await reopenRequirementOf(tx, ctx, id);
     await recordAudit(tx, {
       ...auditBase(ctx),
       action: "PRODUCTION_ORDER_CANCELLED",
@@ -1373,6 +1394,7 @@ export async function completeOrder(
         outputMovementId: output.movement.id,
       })
       .where(eq(productionOrders.id, id));
+    await satisfyRequirementOf(tx, ctx, id);
     await recordAudit(tx, {
       ...auditBase(ctx),
       action: "PRODUCTION_ORDER_COMPLETED",

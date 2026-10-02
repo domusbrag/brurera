@@ -130,6 +130,16 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | product_conservation | `product_conservation.read` | Ver la conservación y vida útil configuradas de los productos | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
 | product_conservation | `product_conservation.manage` | Configurar conservación, vida útil y estado inicial de los productos | ✅ | ✅ | — | — | — | — | — |
 | Inventario | `inventory.expiry.read` | Ver productos terminados próximos a vencer | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
+| orders | `orders.read` | Ver pedidos de clientes, su cobertura, reservas y necesidades | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| orders | `orders.create` | Crear pedidos (borrador) | ✅ | ✅ | — | ✅ | — | — | — |
+| orders | `orders.update` | Editar borradores y datos no planificados de pedidos (contacto, notas) | ✅ | ✅ | — | ✅ | — | — | — |
+| orders | `orders.confirm` | Confirmar pedidos (reserva lotes y genera necesidades de producción) | ✅ | ✅ | — | ✅ | — | — | — |
+| orders | `orders.replan` | Modificar pedidos confirmados y recalcular su cobertura | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| orders | `orders.cancel` | Cancelar pedidos (libera sus reservas) | ✅ | ✅ | — | ✅ | — | — | — |
+| orders | `orders.prepare` | Pasar pedidos a preparación | ✅ | ✅ | — | — | — | ✅ | — |
+| orders | `orders.ready` | Marcar pedidos como listos (sólo con cobertura completa) | ✅ | ✅ | — | — | — | — | ✅ |
+| order_planning | `order_planning.read` | Ver necesidades: producción y materias primas de pedidos, pedidos en riesgo | ✅ | ✅ | ✅ | — | — | ✅ | — |
+| order_planning | `order_production.create` | Crear órdenes de producción desde la necesidad de un pedido | ✅ | ✅ | — | — | — | ✅ | — |
 
 - **ADMIN** — Administrador del sistema: Acceso global, incluida la administración técnica.
 - **OWNER** — Dueño: Acceso global al negocio.

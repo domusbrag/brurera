@@ -13,7 +13,9 @@ import {
   type ProductionPlan,
 } from "@bakery/domain";
 import {
+  customerOrders,
   employees,
+  orderProductionRequirements,
   productionMaterialLines,
   productionOrders,
   productLots,
@@ -639,6 +641,27 @@ export async function getOrder(
           )
       : [];
 
+  const [sourceOrder] = order.sourceOrderRequirementId
+    ? await db
+        .select({
+          requirementId: orderProductionRequirements.id,
+          orderId: customerOrders.id,
+          orderCode: customerOrders.internalCode,
+          requestedAt: customerOrders.requestedAt,
+        })
+        .from(orderProductionRequirements)
+        .innerJoin(
+          customerOrders,
+          eq(customerOrders.id, orderProductionRequirements.customerOrderId),
+        )
+        .where(
+          and(
+            eq(orderProductionRequirements.companyId, ctx.companyId),
+            eq(orderProductionRequirements.id, order.sourceOrderRequirementId),
+          ),
+        )
+    : [];
+
   const dto: ProductionOrderDto = {
     id: order.id,
     code: order.internalCode,
@@ -683,6 +706,9 @@ export async function getOrder(
     batchCode: order.batchCode,
     productLot: rootLot
       ? { ...rootLot, usableUntil: rootLot.usableUntil?.toISOString() ?? null }
+      : null,
+    sourceOrder: sourceOrder
+      ? { ...sourceOrder, requestedAt: sourceOrder.requestedAt.toISOString() }
       : null,
     responsible: responsible ? { id: responsible.id, name: responsible.name } : null,
     notes: order.notes,

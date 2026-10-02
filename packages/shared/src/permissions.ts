@@ -93,6 +93,17 @@ export const PERMISSIONS = {
   PRODUCT_CONSERVATION_READ: "product_conservation.read",
   PRODUCT_CONSERVATION_MANAGE: "product_conservation.manage",
   INVENTORY_EXPIRY_READ: "inventory.expiry.read",
+
+  ORDERS_READ: "orders.read",
+  ORDERS_CREATE: "orders.create",
+  ORDERS_UPDATE: "orders.update",
+  ORDERS_CONFIRM: "orders.confirm",
+  ORDERS_REPLAN: "orders.replan",
+  ORDERS_CANCEL: "orders.cancel",
+  ORDERS_PREPARE: "orders.prepare",
+  ORDERS_READY: "orders.ready",
+  ORDER_PLANNING_READ: "order_planning.read",
+  ORDER_PRODUCTION_CREATE: "order_production.create",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -343,6 +354,49 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     code: P.INVENTORY_EXPIRY_READ,
     module: "inventory",
     description: "Ver productos terminados próximos a vencer",
+  },
+
+  {
+    code: P.ORDERS_READ,
+    module: "orders",
+    description: "Ver pedidos de clientes, su cobertura, reservas y necesidades",
+  },
+  { code: P.ORDERS_CREATE, module: "orders", description: "Crear pedidos (borrador)" },
+  {
+    code: P.ORDERS_UPDATE,
+    module: "orders",
+    description: "Editar borradores y datos no planificados de pedidos (contacto, notas)",
+  },
+  {
+    code: P.ORDERS_CONFIRM,
+    module: "orders",
+    description: "Confirmar pedidos (reserva lotes y genera necesidades de producción)",
+  },
+  {
+    code: P.ORDERS_REPLAN,
+    module: "orders",
+    description: "Modificar pedidos confirmados y recalcular su cobertura",
+  },
+  {
+    code: P.ORDERS_CANCEL,
+    module: "orders",
+    description: "Cancelar pedidos (libera sus reservas)",
+  },
+  { code: P.ORDERS_PREPARE, module: "orders", description: "Pasar pedidos a preparación" },
+  {
+    code: P.ORDERS_READY,
+    module: "orders",
+    description: "Marcar pedidos como listos (sólo con cobertura completa)",
+  },
+  {
+    code: P.ORDER_PLANNING_READ,
+    module: "order_planning",
+    description: "Ver necesidades: producción y materias primas de pedidos, pedidos en riesgo",
+  },
+  {
+    code: P.ORDER_PRODUCTION_CREATE,
+    module: "order_planning",
+    description: "Crear órdenes de producción desde la necesidad de un pedido",
   },
 ];
 
