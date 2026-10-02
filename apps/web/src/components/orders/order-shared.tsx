@@ -141,11 +141,11 @@ export function LineCoverage({
           <dd>{formatQuantity(line.physical, unit)}</dd>
         </div>
         <div>
-          <dt>Sirve para la fecha</dt>
+          <dt>Stock válido para la fecha</dt>
           <dd>{formatQuantity(line.eligible, unit)}</dd>
         </div>
         <div>
-          <dt>Comprometido con otros pedidos</dt>
+          <dt>Ya comprometido</dt>
           <dd>{formatQuantity(line.committed, unit)}</dd>
         </div>
         <div>
@@ -153,7 +153,7 @@ export function LineCoverage({
           <dd>{formatQuantity(line.available, unit)}</dd>
         </div>
         <div>
-          <dt>Se reserva</dt>
+          <dt>Reservado para este pedido</dt>
           <dd>
             <strong>{formatQuantity(line.reserve, unit)}</strong>
           </dd>
@@ -198,10 +198,10 @@ export function LineCoverage({
                     Físico
                   </th>
                   <th scope="col" className="num">
-                    Comprometido
+                    Ya comprometido
                   </th>
                   <th scope="col" className="num">
-                    Se reserva
+                    Reservado aquí
                   </th>
                   <th scope="col">Para la fecha</th>
                 </tr>
@@ -269,7 +269,7 @@ export function MaterialProjection({ materials }: { materials: MaterialProjectio
               Stock
             </th>
             <th scope="col" className="num">
-              Faltante proyectado
+              Falta comprar
             </th>
             <th scope="col" className="hide-md">
               Proveedor sugerido

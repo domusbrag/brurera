@@ -285,13 +285,13 @@ function MaterialNeedsTable({
                 Stock actual
               </th>
               <th scope="col" className="num">
-                Necesitan los pedidos
+                Necesidad comprometida
               </th>
               <th scope="col" className="num hide-sm">
                 Queda
               </th>
               <th scope="col" className="num">
-                Faltante
+                Falta comprar
               </th>
               <th scope="col" className="hide-md">
                 Proveedor sugerido

@@ -165,7 +165,7 @@ export function OrderList() {
             ),
         },
         {
-          header: "Faltante",
+          header: "Falta producir",
           cell: (o) =>
             o.shortages.length > 0 ? (
               <span className="text-negative">{summary(o.shortages)}</span>
@@ -365,7 +365,7 @@ export function OrderDetail({ id }: { id: string }) {
           <OrderRequirements order={data} />
           {data.status !== "CANCELLED" && (
             <section className="panel" aria-labelledby="materials-title">
-              <h2 id="materials-title">Materias primas para lo que falta producir</h2>
+              <h2 id="materials-title">Materias primas necesarias</h2>
               <p className="muted small">
                 Proyección: no reserva materia prima. Se compara con el stock actual y con lo que
                 necesitan los demás pedidos confirmados.
@@ -405,10 +405,10 @@ function OrderLines({ order }: { order: OrderDetailDto }) {
                 Conservación
               </th>
               <th scope="col" className="num">
-                Reservado
+                Reservado para este pedido
               </th>
               <th scope="col" className="num">
-                A producir
+                Falta producir
               </th>
               <th scope="col" className="num hide-md">
                 Sin cubrir
@@ -426,7 +426,7 @@ function OrderLines({ order }: { order: OrderDetailDto }) {
                     {gt0(l.newlyAvailable) && order.status !== "CANCELLED" && (
                       <span
                         className="badge badge--info"
-                        title="Recalculá la cobertura para usarlo"
+                        title="Actualizá la cobertura para usarlo"
                       >
                         {" "}
                         Hay {formatQuantity(l.newlyAvailable, unit)} nuevos
@@ -686,8 +686,8 @@ function RefreshCoverage({
   const [operationId, renew] = useOperationId();
   return (
     <ConfirmAction
-      label="Recalcular cobertura"
-      title={`¿Recalcular la cobertura del pedido ${order.code}?`}
+      label="Actualizar cobertura"
+      title={`¿Actualizar la cobertura del pedido ${order.code}?`}
       message={
         <>
           Se liberan las reservas actuales y se vuelve a reservar con el stock de hoy, sin cambiar
@@ -695,7 +695,7 @@ function RefreshCoverage({
           historial). Para ver antes el resultado, usá «Modificar pedido».
         </>
       }
-      confirmLabel="Recalcular cobertura"
+      confirmLabel="Actualizar cobertura"
       onConfirm={async () => {
         const result = await apiFetch<OrderOperationResultDto>(`/api/orders/${order.id}/replan`, {
           method: "POST",

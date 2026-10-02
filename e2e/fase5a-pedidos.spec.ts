@@ -218,6 +218,18 @@ async function apiWorld(request: APIRequestContext, run: string) {
     });
     return created;
   };
+  const freeze = (lotId: string, quantity: string) =>
+    call<{ childLot: { id: string; code: string } }>(
+      request,
+      "post",
+      `/api/product-lots/${lotId}/transform`,
+      { targetState: "FROZEN", quantity, operationId: randomUUID() },
+    );
+  /** Fecha de calendario de la empresa dentro de `days` días. */
+  const dayIn = (days: number) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(
+      new Date(Date.now() + days * 86_400_000),
+    );
   return {
     productId: product.id,
     productName,
@@ -226,6 +238,8 @@ async function apiWorld(request: APIRequestContext, run: string) {
     tomorrow,
     produce,
     order,
+    freeze,
+    dayIn,
   };
 }
 
@@ -262,7 +276,7 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(preview.getByRole("heading", { level: 2 })).toContainText("Cobertura parcial");
   const line = preview.getByTestId("line-coverage");
   await expect(summaryValue(line, "Stock físico")).toHaveText("300 kg");
-  await expect(summaryValue(line, "Se reserva")).toHaveText("300 kg");
+  await expect(summaryValue(line, "Reservado para este pedido")).toHaveText("300 kg");
   await expect(summaryValue(line, "Falta producir")).toHaveText("200 kg");
   await expect(preview).toContainText("no reserva nada");
   await expect(preview).toContainText(world.harinaName);
@@ -285,14 +299,34 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   const requirement = section(page, "Producción necesaria").locator("tbody tr");
   await expect(requirement).toContainText("200 kg");
   await expect(requirement).toContainText("Pendiente");
-  await expect(section(page, "Materias primas para lo que falta producir")).toContainText(
-    world.harinaName,
-  );
+  await expect(section(page, "Materias primas necesarias")).toContainText(world.harinaName);
   await expect(
-    section(page, "Materias primas para lo que falta producir").getByRole("row", {
+    section(page, "Materias primas necesarias").getByRole("row", {
       name: new RegExp(world.harinaName),
     }),
   ).toContainText("150 kg");
+
+  // Un segundo pedido para la misma fecha no reutiliza lo ya comprometido.
+  await openSection(page, "Pedidos");
+  await page.getByRole("link", { name: "Nuevo pedido" }).click();
+  await selectByText(page.getByRole("combobox", { name: "Cliente" }), world.customerName);
+  await page.getByLabel("Entrega o retiro").fill(world.tomorrow);
+  await page.getByLabel("Hora", { exact: true }).fill("10:00");
+  await selectByText(page.getByRole("combobox", { name: "Producto 1" }), world.productName);
+  await page.getByLabel("Cantidad 1").fill("200");
+  const second = section(page, /^Cobertura para el/).getByTestId("line-coverage");
+  await expect(summaryValue(second, "Ya comprometido")).toHaveText("300 kg");
+  await expect(summaryValue(second, /^Disponible$/)).toHaveText("0 kg");
+  await expect(summaryValue(second, "Reservado para este pedido")).toHaveText("0 kg");
+  await expect(summaryValue(second, "Falta producir")).toHaveText("200 kg");
+  await page.getByRole("link", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Buscar" }).fill(orderCode);
+  await page
+    .getByRole("row")
+    .filter({ hasText: orderCode })
+    .getByRole("link", { name: orderCode })
+    .click();
+  await expect(heading).toContainText("Confirmado");
 
   // Orden de producción prellenada desde la necesidad, vinculada al pedido.
   await requirement.getByRole("link", { name: "Crear orden de producción" }).click();
@@ -310,6 +344,10 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(section(page, "Producción necesaria").locator("tbody tr")).toContainText(
     "Orden de producción creada",
   );
+  const audit = section(page, /^Historial$/);
+  await expect(audit).toContainText("Pedido confirmado");
+  await expect(audit).toContainText("Lote reservado para el pedido");
+  await expect(audit).toContainText("Orden de producción creada desde el pedido");
 
   // Lote: comprometido, libre y el pedido que lo reserva.
   await section(page, "Lotes reservados").getByRole("link", { name: lot.code }).click();
@@ -351,7 +389,7 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   expect(consoleErrors).toEqual([]);
 });
 
-test("Fase 5A: stock liberado, modificar con antes/después, listo y cancelar listo", async ({
+test("Fase 5A: stock liberado, cambiar fecha con antes/después, listo y cancelar listo", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
@@ -359,12 +397,14 @@ test("Fase 5A: stock liberado, modificar con antes/después, listo y cancelar li
   const consoleErrors = trackConsoleErrors(page);
   await login(page);
   const world = await apiWorld(page.request, run);
-  await world.produce("300");
+  // 150 kg frescos (2 días) + 150 kg congelados (30 días).
+  const fresh = await world.produce("300");
+  const { childLot: frozen } = await world.freeze(fresh.id, "150");
   const first = await world.order("200");
   const second = await world.order("200");
   const heading = page.getByRole("heading", { level: 1 });
 
-  // Cancelar el primero libera 200 kg; el segundo no se reescribe solo.
+  // Cancelar el primero libera 200 kg (FEFO: los 150 frescos y 50 congelados); el segundo no se reescribe solo.
   await page.goto(`/pedidos/${first.id}`);
   await expect(heading).toContainText(first.code);
   await page.getByRole("button", { name: "Cancelar pedido", exact: true }).click();
@@ -379,9 +419,10 @@ test("Fase 5A: stock liberado, modificar con antes/después, listo y cancelar li
     "Hay nuevo stock disponible — recalcular cobertura",
   );
 
-  // Modificar: 150 kg. La comparación muestra que ya no hace falta producir.
+  // Pasar la entrega a dentro de 3 días (lo fresco ya no sirve) y 150 kg: alcanza lo congelado.
   await page.getByRole("link", { name: "Modificar pedido" }).click();
   await expect(heading).toContainText(`Modificar pedido ${second.code}`);
+  await page.getByLabel("Entrega o retiro").fill(world.dayIn(3));
   await page.getByLabel("Cantidad 1").fill("150");
   const comparison = page.getByTestId("replan-comparison");
   await expect(summaryValue(comparison, /^Cobertura nueva/)).toHaveText("Cubierto");
@@ -389,11 +430,23 @@ test("Fase 5A: stock liberado, modificar con antes/después, listo y cancelar li
   await expect(production.getByRole("row", { name: new RegExp(world.productName) })).toContainText(
     "100 kg",
   );
-  await expect(comparison).toContainText("Reservas que se liberan");
+  await expect(summaryValue(comparison, "Entrega")).toHaveText(`${shown(world.dayIn(3))} 10:00`);
+  await expect(comparison).toContainText(`${frozen.code}: 100 kg`);
+  await expect(
+    comparison.getByRole("listitem").filter({ hasText: new RegExp(`^${fresh.code}:`) }),
+  ).toHaveCount(0);
   await expect(comparison).toContainText("Reservas nuevas");
+  await expect(
+    comparison.getByRole("heading", { name: "Reservas nuevas" }).locator("xpath=.."),
+  ).toContainText(`${frozen.code}: 50 kg`);
   await page.getByRole("button", { name: "Aplicar cambios" }).click();
   await expect(heading).toContainText("Cubierto");
   await expect(page.locator("dl.details")).toContainText("Revisión 2");
+  await expect(page.locator("main")).toContainText(`Retira el ${shown(world.dayIn(3))} 10:00`);
+  const kept = section(page, "Lotes reservados").locator("tbody tr");
+  await expect(kept).toHaveCount(1);
+  await expect(kept).toContainText(frozen.code);
+  await expect(kept).toContainText("150 kg");
   await expect(section(page, "Producción necesaria")).toContainText("No hace falta producir");
 
   // Listo (todo reservado) y cancelar un pedido listo pide confirmación explícita.
@@ -461,7 +514,7 @@ test("Fase 5A: lo reservado no se transforma y bloquear el lote deja el pedido p
   await expect(reservations.locator("tbody tr").first()).toContainText("Invalidado");
 
   // Recalcular: sin el lote bloqueado, hay que producir los 80 kg.
-  await confirmDialog(page, "Recalcular cobertura");
+  await confirmDialog(page, "Actualizar cobertura");
   await expect(heading).toContainText("Sin cobertura");
   await expect(section(page, "Producción necesaria").locator("tbody tr")).toContainText("80 kg");
   await expect(page.locator("main")).not.toContainText(UUID);
