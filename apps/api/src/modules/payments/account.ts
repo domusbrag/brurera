@@ -67,6 +67,8 @@ export interface AccountMovementRequest {
   paymentId?: string | null;
   reason?: string | null;
   notes?: string | null;
+  /** Sólo ajustes: id del intento (idempotencia). */
+  operationId?: string | null;
 }
 
 /**
@@ -95,6 +97,7 @@ export async function postAccountMovement(
       paymentId: req.paymentId ?? null,
       reason: req.reason ?? null,
       notes: req.notes ?? null,
+      operationId: req.operationId ?? null,
       actorUserId: ctx.userId,
     })
     .returning();
@@ -149,6 +152,8 @@ export async function applyToSale(
     paymentId: string;
     amount: InstanceType<typeof D>;
     origin: "ADVANCE_AUTO" | "SALE_PAYMENT" | "MANUAL";
+    /** Sólo imputación manual: id del intento (idempotencia). */
+    operationId?: string;
   },
 ) {
   await tx.insert(customerPaymentApplications).values({
@@ -158,6 +163,7 @@ export async function applyToSale(
     customerId: args.sale.customerId,
     amount: args.amount.toFixed(2),
     origin: args.origin,
+    operationId: args.operationId ?? null,
     createdByUserId: ctx.userId,
   });
   const paid = new D(args.sale.paidAmount).plus(args.amount);

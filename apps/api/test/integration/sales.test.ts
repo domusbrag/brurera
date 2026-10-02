@@ -24,7 +24,9 @@ import {
 } from "./order-fixtures.js";
 import {
   accountOf,
+  adjust,
   advance,
+  applyTo,
   draftSale,
   pay,
   postSale,
@@ -446,18 +448,11 @@ describe("pedido: precio congelado, seña, entrega parcial y total (§96–§97)
     const paymentId = res.json().payment.id;
     expect(dec(res.json().payment.unapplied)).toBe("130000");
     expect(dec((await accountOf(api, w.customerId)).balance)).toBe("0");
-    const tooMuch = await api.post(`/api/payments/${paymentId}/applications`, {
-      saleId: sales[0],
-      amount: "70000.01",
-    });
+    const tooMuch = await applyTo(api, paymentId, sales[0]!, "70000.01");
     expect(tooMuch.statusCode).toBe(422);
     expect(tooMuch.json().error.code).toBe("PAYMENT_EXCEEDS_SALE_BALANCE");
-    await ok(
-      api.post(`/api/payments/${paymentId}/applications`, { saleId: sales[0], amount: "70000" }),
-    );
-    await ok(
-      api.post(`/api/payments/${paymentId}/applications`, { saleId: sales[1], amount: "60000" }),
-    );
+    await ok(applyTo(api, paymentId, sales[0]!, "70000"), 201);
+    await ok(applyTo(api, paymentId, sales[1]!, "60000"), 201);
     for (const id of sales) {
       expect((await ok(api.get(`/api/sales/${id}`))).paymentStatus).toBe("PAID");
     }
@@ -470,10 +465,10 @@ describe("pedido: precio congelado, seña, entrega parcial y total (§96–§97)
   });
 
   it("ajuste de cuenta: sólo con permiso, con motivo, deja movimiento", async () => {
-    const body = { direction: "CREDIT", amount: "500", reason: "Bonificación por demora" };
-    const denied = await seller.post(`/api/customers/${w.customerId}/account/adjustments`, body);
+    const body = { direction: "CREDIT", amount: "500", reason: "Bonificación por demora" } as const;
+    const denied = await adjust(seller, w.customerId, body);
     expect(denied.statusCode).toBe(403);
-    await ok(api.post(`/api/customers/${w.customerId}/account/adjustments`, body), 201);
+    await ok(adjust(api, w.customerId, body), 201);
     const account = await accountOf(api, w.customerId);
     expect(dec(account.balance)).toBe("-500");
     expect(account.movements.items[0]).toMatchObject({

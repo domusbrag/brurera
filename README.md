@@ -49,7 +49,7 @@ Cada fase agrega migraciones y permisos nuevos (Fase 3: tablas de compras e inve
 permisos `purchases.*`, `inventory.*` y `presentations.*`; Fase 4: migración `0007_production` y
 los permisos `production_orders.*` y `production.cost.read`; Fase 4.5: `0008_product_lots` y
 `product_lots.*`; Fase 5A: `0009_customer_orders` y los permisos `orders.*`, `order_planning.read`
-y `order_production.create`; Fase 5B: `0010_sales_payments` y los permisos `sales.*`,
+y `order_production.create`; Fase 5B: `0010_sales_payments` y `0011_idempotent_applications_adjustments`, y los permisos `sales.*`,
 `price_lists.*`, `payments.*` y `customer_accounts.*`; la migración crea el cliente "Consumidor
 Final" de cada empresa y deja los pedidos viejos "sin precio" hasta acordarlo). Después de traer cambios, en una base que ya existía:
 

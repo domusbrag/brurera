@@ -157,7 +157,9 @@ replayed: true`; el mismo id en otra operación → `409 OPERATION_ID_REUSED`. "
   la cuenta y aplica las señas disponibles en la misma transacción. Cobros e imputaciones bloquean
   la cuenta del cliente; la capacidad de cada cobro y de cada venta la custodian triggers. La
   vista previa usa la misma asignación sin locks y no escribe. Costo y margen sólo salen en la
-  respuesta con `sales.cost.read` / `sales.margin.read`.
+  respuesta con `sales.cost.read` / `sales.margin.read`. Cobros, señas, imputaciones manuales y
+  ajustes son idempotentes por `operationId` guardado en la fila que produce la consecuencia
+  (ADR-063).
 - **Visibilidad de costos:** las rutas de inventario calculan `canSeeCosts` con el permiso
   `inventory.cost.read`; sin él, promedio, valor de inventario, costo unitario y valor de los
   movimientos y costo de la última compra vienen en `null`, e `GET /api/inventory/costs/:id`

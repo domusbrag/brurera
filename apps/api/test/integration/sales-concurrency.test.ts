@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ADMIN,
+  ADMIN_B,
   clientFor,
   createTestContext,
   type ApiClient,
@@ -13,7 +14,9 @@ import { produce, reconciliationProblems } from "./lot-fixtures.js";
 import { buildOrderWorld, confirmedOrder, orderOf, type OrderWorld } from "./order-fixtures.js";
 import {
   accountOf,
+  adjust,
   advance,
+  applyTo,
   draftSale,
   pay,
   postSale,
@@ -315,6 +318,203 @@ describe("rollback de un cobro: si falla la imputación no queda nada", () => {
     expect(await snapshot()).toEqual(before);
     // El reintento con el mismo operationId se registra normalmente (no quedó a medias).
     expect((await pay(api, sale.id, "1000", opId)).statusCode).toBe(201);
+    await invariants();
+  });
+});
+
+/*
+ * Cierre de Fase 5B (ADR-063): imputación manual y ajuste de cuenta son
+ * idempotentes por operationId, en la misma transacción que su consecuencia.
+ */
+describe("idempotencia de imputaciones manuales y ajustes de cuenta", () => {
+  let w: OrderWorld;
+  const price = { unitPrice: "1250", priceOverrideReason: "Precio de prueba" };
+
+  async function auditCount(action: string) {
+    const { rows } = await db().execute<{ n: number }>(
+      sql`select count(*)::int as n from audit_logs where action = ${action}`,
+    );
+    return Number(rows[0]!.n);
+  }
+
+  /** Venta de $50.000 al cliente y un cobro a cuenta de $50.000 sin imputar. */
+  async function saleAndPayment() {
+    const sale = await postedSale(api, w, [{ productId: w.panFrances, quantity: "40", ...price }], {
+      customerId: w.customerId,
+    });
+    expect(dec(sale.amounts.total)).toBe("50000");
+    const res = await api.post(`/api/customers/${w.customerId}/payments`, {
+      amount: "50000",
+      paymentMethod: "CASH",
+      operationId: randomUUID(),
+    });
+    expect(res.statusCode).toBe(201);
+    return { sale, paymentId: res.json().payment.id as string };
+  }
+
+  beforeAll(async () => {
+    w = await buildOrderWorld(api, " C7");
+    for (let i = 0; i < 3; i++) await produce(api, w, "100");
+  });
+
+  it("C1/C5 imputación: reintento idéntico = replay; otro monto u otra venta = OPERATION_ID_REUSED", async () => {
+    const { sale, paymentId } = await saleAndPayment();
+    const other = await postedSale(api, w, [{ productId: w.panFrances, quantity: "1" }], {
+      customerId: w.customerId,
+    });
+    const opId = randomUUID();
+    const audits = await auditCount("PAYMENT_APPLIED");
+    const first = await applyTo(api, paymentId, sale.id, "20000", opId);
+    expect(first.statusCode).toBe(201);
+    expect(first.json().replayed).toBe(false);
+    const again = await applyTo(api, paymentId, sale.id, "20000", opId);
+    expect(again.statusCode).toBe(200);
+    expect(again.json().replayed).toBe(true);
+    const before = await count("customer_payment_applications");
+    for (const reuse of [
+      applyTo(api, paymentId, sale.id, "30000", opId),
+      applyTo(api, paymentId, other.id, "20000", opId),
+    ]) {
+      const res = await reuse;
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe("OPERATION_ID_REUSED");
+    }
+    expect(await count("customer_payment_applications")).toBe(before);
+    expect(await auditCount("PAYMENT_APPLIED")).toBe(audits + 1);
+    expect(dec((await ok(api.get(`/api/sales/${sale.id}`))).amounts.paid)).toBe("20000");
+    await invariants();
+  });
+
+  it("C2 imputación: 5 envíos simultáneos del mismo intento = una sola imputación de $20.000", async () => {
+    const { sale, paymentId } = await saleAndPayment();
+    const opId = randomUUID();
+    const before = await count("customer_payment_applications");
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map(() => applyTo(api, paymentId, sale.id, "20000", opId)),
+    );
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 200, 200, 200, 201]);
+    expect(await count("customer_payment_applications")).toBe(before + 1);
+    expect(dec((await ok(api.get(`/api/sales/${sale.id}`))).amounts.paid)).toBe("20000");
+    expect(dec((await ok(api.get(`/api/payments/${paymentId}`))).unapplied)).toBe("30000");
+    await invariants();
+  });
+
+  it("C3/C5 ajuste: reintento idéntico = replay; otro monto, tipo o motivo = OPERATION_ID_REUSED", async () => {
+    const body = { direction: "CREDIT", amount: "20000", reason: "Bonificación" } as const;
+    const opId = randomUUID();
+    const audits = await auditCount("CUSTOMER_ACCOUNT_ADJUSTED");
+    const start = dec((await accountOf(api, w.customerId)).balance)!;
+    const first = await adjust(api, w.customerId, body, opId);
+    expect(first.statusCode).toBe(201);
+    expect(first.json().replayed).toBe(false);
+    // Las notas no son parte de la huella: un reintento con otra nota sigue siendo replay.
+    const again = await adjust(api, w.customerId, { ...body, notes: "reintento" }, opId);
+    expect(again.statusCode).toBe(200);
+    expect(again.json().replayed).toBe(true);
+    const before = await count("customer_account_movements");
+    for (const changed of [
+      { ...body, amount: "30000" },
+      { ...body, direction: "DEBIT" as const },
+      { ...body, reason: "Otro motivo" },
+    ]) {
+      const res = await adjust(api, w.customerId, changed, opId);
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe("OPERATION_ID_REUSED");
+    }
+    const otherCustomer = await adjust(api, w.otherCustomerId, body, opId);
+    expect(otherCustomer.statusCode).toBe(409);
+    expect(await count("customer_account_movements")).toBe(before);
+    expect(await auditCount("CUSTOMER_ACCOUNT_ADJUSTED")).toBe(audits + 1);
+    expect(Number(dec((await accountOf(api, w.customerId)).balance)) - Number(start)).toBe(-20000);
+    await invariants();
+  });
+
+  it("C4 ajuste: saldo $100.000 y 5 créditos simultáneos de $20.000 con el mismo id = saldo $80.000", async () => {
+    const c = await ok(
+      api.post("/api/customers", {
+        type: "RETAILER",
+        legalName: `Cliente ajuste C7 ${randomUUID()}`,
+      }),
+      201,
+    );
+    await postedSale(api, w, [{ productId: w.panFrances, quantity: "80", ...price }], {
+      customerId: c.id,
+    });
+    expect(dec((await accountOf(api, c.id)).balance)).toBe("100000");
+    const opId = randomUUID();
+    const body = { direction: "CREDIT", amount: "20000", reason: "Bonificación" } as const;
+    const results = await Promise.all([1, 2, 3, 4, 5].map(() => adjust(api, c.id, body, opId)));
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 200, 200, 200, 201]);
+    const account = await accountOf(api, c.id);
+    expect(dec(account.balance)).toBe("80000");
+    expect(
+      account.movements.items.filter((m: { type: string }) => m.type === "ADJUSTMENT_CREDIT"),
+    ).toHaveLength(1);
+    await invariants();
+  });
+
+  it("C6 rollback: una falla después de la imputación o del movimiento no deja el id quemado", async () => {
+    const { sale, paymentId } = await saleAndPayment();
+    const tables = ["customer_payment_applications", "customer_account_movements", "audit_logs"];
+    const counts = async () =>
+      Object.fromEntries(await Promise.all(tables.map(async (t) => [t, await count(t)])));
+    const before = await counts();
+    const balance = (await accountOf(api, w.customerId)).balance;
+    await db().execute(
+      sql.raw(`
+      create or replace function test_fail_closure_audit() returns trigger language plpgsql as $$
+      begin
+        if new.action in ('PAYMENT_APPLIED', 'CUSTOMER_ACCOUNT_ADJUSTED') then
+          raise exception 'falla inyectada';
+        end if;
+        return new;
+      end $$;
+      create trigger test_fail_closure_audit before insert on audit_logs
+        for each row execute function test_fail_closure_audit();
+    `),
+    );
+    const applyOp = randomUUID();
+    const adjustOp = randomUUID();
+    const body = { direction: "DEBIT", amount: "1000", reason: "Corrección" } as const;
+    try {
+      expect((await applyTo(api, paymentId, sale.id, "20000", applyOp)).statusCode).toBe(500);
+      expect((await adjust(api, w.customerId, body, adjustOp)).statusCode).toBe(500);
+    } finally {
+      await db().execute(
+        sql.raw(`
+        drop trigger test_fail_closure_audit on audit_logs;
+        drop function test_fail_closure_audit();
+      `),
+      );
+    }
+    expect(await counts()).toEqual(before);
+    expect((await accountOf(api, w.customerId)).balance).toBe(balance);
+    expect(dec((await ok(api.get(`/api/sales/${sale.id}`))).amounts.paid)).toBe("0");
+    // El mismo id se usa normalmente después del rollback.
+    expect((await applyTo(api, paymentId, sale.id, "20000", applyOp)).statusCode).toBe(201);
+    expect((await adjust(api, w.customerId, body, adjustOp)).statusCode).toBe(201);
+    await invariants();
+  });
+
+  it("C7 empresas: el mismo operationId en otra empresa no interfiere ni hace replay", async () => {
+    const apiB = await clientFor(ctx.app, ADMIN_B);
+    const wB = await buildOrderWorld(apiB, " C7B");
+    const opId = randomUUID();
+    const body = { direction: "CREDIT", amount: "700", reason: "Bonificación" } as const;
+    expect((await adjust(api, w.customerId, body, opId)).statusCode).toBe(201);
+    // Empresa B usa el mismo id para su propio ajuste: se registra (no es replay de A).
+    const inB = await adjust(apiB, wB.customerId, body, opId);
+    expect(inB.statusCode).toBe(201);
+    expect(inB.json().replayed).toBe(false);
+    expect(dec((await accountOf(apiB, wB.customerId)).balance)).toBe("-700");
+    // B no puede imputar ni ajustar en A, ni siquiera reusando el id.
+    const { sale, paymentId } = await saleAndPayment();
+    // La venta de A no existe para B (referencia inválida) y nada cambia en A.
+    const crossApply = await applyTo(apiB, paymentId, sale.id, "100", opId);
+    expect(crossApply.statusCode).toBe(422);
+    expect(crossApply.json().error.code).toBe("INVALID_REFERENCE");
+    expect((await adjust(apiB, w.customerId, body, opId)).statusCode).toBe(404);
+    expect(dec((await ok(api.get(`/api/sales/${sale.id}`))).amounts.paid)).toBe("0");
     await invariants();
   });
 });

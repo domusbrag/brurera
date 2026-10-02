@@ -70,12 +70,15 @@ export async function paymentRoutes(app: FastifyInstance, { db }: { db: Database
       ),
     ),
   );
-  app.post("/payments/:id/applications", post, (req) =>
-    payments.applyPayment(
-      db,
-      operationContext(req),
-      idParam(req.params, "Cobro"),
-      parseInput(applyPaymentSchema, req.body),
+  app.post("/payments/:id/applications", post, async (req, reply) =>
+    created(
+      reply,
+      await payments.applyPayment(
+        db,
+        operationContext(req),
+        idParam(req.params, "Cobro"),
+        parseInput(applyPaymentSchema, req.body),
+      ),
     ),
   );
   app.get(
@@ -93,19 +96,17 @@ export async function paymentRoutes(app: FastifyInstance, { db }: { db: Database
   app.post(
     "/customers/:id/account/adjustments",
     { preHandler: requirePermission(P.CUSTOMER_ACCOUNTS_ADJUST) },
-    async (req, reply) =>
-      reply
-        .status(201)
-        .send(
-          await payments.adjustAccount(
-            db,
-            operationContext(req),
-            idParam(req.params, "Cliente"),
-            parseInput(accountAdjustmentSchema, req.body),
-            perms(req),
-            parseInput(accountMovementsQuerySchema, {}),
-          ),
-        ),
+    async (req, reply) => {
+      const account = await payments.adjustAccount(
+        db,
+        operationContext(req),
+        idParam(req.params, "Cliente"),
+        parseInput(accountAdjustmentSchema, req.body),
+        perms(req),
+        parseInput(accountMovementsQuerySchema, {}),
+      );
+      return reply.status(account.replayed ? 200 : 201).send(account);
+    },
   );
   app.get(
     "/customer-accounts",

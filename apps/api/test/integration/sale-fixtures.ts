@@ -101,6 +101,23 @@ export const advance = (
     operationId,
   });
 
+/** Imputación manual de un cobro a una venta. */
+export const applyTo = (
+  api: ApiClient,
+  paymentId: string,
+  saleId: string,
+  amount: string,
+  operationId: string = randomUUID(),
+) => api.post(`/api/payments/${paymentId}/applications`, { saleId, amount, operationId });
+
+/** Ajuste de cuenta corriente (política B). */
+export const adjust = (
+  api: ApiClient,
+  customerId: string,
+  body: { direction: "DEBIT" | "CREDIT"; amount: string; reason: string; notes?: string },
+  operationId: string = randomUUID(),
+) => api.post(`/api/customers/${customerId}/account/adjustments`, { ...body, operationId });
+
 export const accountOf = (api: ApiClient, customerId: string) =>
   ok(api.get(`/api/customers/${customerId}/account`));
 

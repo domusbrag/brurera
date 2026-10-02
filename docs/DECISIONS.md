@@ -780,3 +780,28 @@ cobros llevan `operationId` único por empresa: el reintento devuelve el mismo c
 confirmar un pedido mientras se vende, dos cobros que superan el pendiente, el mismo cobro
 reintentado tres veces, cobros/señas/ventas del mismo cliente y cinco confirmaciones simultáneas,
 sin deadlocks.
+
+## ADR-063 — Idempotencia de imputaciones manuales y ajustes de cuenta (cierre de Fase 5B)
+
+**Contexto.** Cobros y señas ya eran idempotentes (ADR-062), pero la imputación manual
+(`POST /payments/:id/applications`) y el ajuste de cuenta (`POST /customers/:id/account/adjustments`)
+dependían de que la UI deshabilitara el botón: un reintento de red o un doble envío podía
+imputar o ajustar dos veces.
+**Decisión.** Mismo patrón que `customer_payments`, sin una segunda arquitectura: el
+`operationId` del intento (obligatorio en la API) se guarda en la fila que produce la consecuencia
+(`customer_payment_applications.operation_id` y `customer_account_movements.operation_id`, migración
+0011), con índice único parcial (`company_id`, `operation_id`) y, en el ledger, un CHECK que lo
+limita a los ajustes. Se inserta en la misma transacción que la consecuencia, así un rollback no
+deja el id "quemado". El reintento se detecta después de los locks (imputación: venta → cobro;
+ajuste: cuenta del cliente), así los intentos simultáneos se serializan y el segundo ve la fila
+confirmada; si dos intentos con el mismo id no comparten lock (otro destino), el índice único los
+frena y la API responde `409 OPERATION_ID_REUSED`. Huella comparada: imputación = cobro, venta y
+monto; ajuste = cliente, tipo (débito/crédito), monto y motivo. Las notas no forman parte (no
+cambian la consecuencia; un reintento con otra nota es replay). Reintento idéntico: `200` con
+`replayed: true`, sin segunda auditoría. La UI genera un id por intento y lo renueva sólo después
+de un éxito.
+**Consecuencias.** Probado: reintento, 5 envíos simultáneos (una sola imputación de $20.000; un
+solo ajuste: $100.000 → $80.000), reuso con otro monto / tipo / motivo / venta / cliente, rollback
+con falla inyectada después de la fila y reintento posterior con el mismo id, mismo id en otra
+empresa sin interferencia. Las filas históricas quedan con `operation_id` nulo.
+

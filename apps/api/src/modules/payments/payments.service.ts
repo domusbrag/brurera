@@ -35,7 +35,7 @@ import {
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { auditBase, type OperationContext } from "../../lib/context.js";
-import { invalidReference, notFound } from "../../lib/db-errors.js";
+import { invalidReference, mapUniqueViolations, notFound } from "../../lib/db-errors.js";
 import { AppError } from "../../lib/errors.js";
 import { likePattern, pageWindow, toPage } from "../../lib/listing.js";
 import { loadPeople, personOf } from "../../lib/people.js";
@@ -59,7 +59,10 @@ import { qualified } from "../../lib/sql.js";
  * - Un cobro mal cargado no se anula: se corrige con un ajuste autorizado
  *   (política B).
  * - Idempotencia: operationId único por empresa; reintentar devuelve el mismo
- *   cobro (replayed) y un id usado para otra cosa es OPERATION_ID_REUSED.
+ *   cobro (replayed) y un id usado para otra cosa es OPERATION_ID_REUSED. Lo
+ *   mismo para la imputación manual y el ajuste (ADR-063): el operationId se
+ *   guarda en la fila que produce la consecuencia (aplicación o movimiento), con
+ *   índice único parcial por empresa, en la misma transacción.
  *
  * Locks (ADR-062): cobro de una venta: venta → cuenta; seña: pedido (FOR SHARE)
  * → cuenta; imputación manual: venta → pago; cobro a cuenta y ajuste: cuenta.
@@ -68,12 +71,22 @@ import { qualified } from "../../lib/sql.js";
 type Db = Database | Transaction;
 type PaymentRow = typeof customerPayments.$inferSelect;
 
-const operationReused = () =>
+const operationReused = (what = "otro cobro") =>
   new AppError(
     409,
     "OPERATION_ID_REUSED",
-    "Ese identificador de operación ya se usó para otro cobro. Reintentá desde la pantalla.",
+    `Ese identificador de operación ya se usó para ${what}. Reintentá desde la pantalla.`,
   );
+
+/**
+ * Red de la base: dos intentos con el mismo operationId que no se serializan por
+ * el mismo lock (otro destino) chocan con el índice único → el id está reusado.
+ */
+const reusedOnConflict = <T>(what: string, operation: Promise<T>) =>
+  mapUniqueViolations(operation, {
+    customer_payment_applications_operation_uq: () => operationReused(what),
+    customer_account_movements_operation_uq: () => operationReused(what),
+  });
 
 async function findPayment(db: Db, ctx: OperationContext, id: string, lock = false) {
   const query = db
@@ -340,62 +353,88 @@ export async function applyPayment(
   paymentId: string,
   input: ApplyPaymentInput,
 ): Promise<PaymentResultDto> {
-  await db.transaction(async (tx) => {
-    // Venta → pago (ADR-062).
-    const sale = await findSale(tx, ctx, input.saleId, true).catch(() => {
-      throw invalidReference("saleId", "Venta inexistente");
-    });
-    const payment = await findPayment(tx, ctx, paymentId, true);
-    if (payment.customerId !== sale.customerId) {
-      throw invalidReference("saleId", "La venta es de otro cliente");
-    }
-    if (sale.status !== "POSTED") {
-      throw new AppError(409, "SALE_NOT_POSTED", "Sólo se imputa a una venta confirmada.");
-    }
-    const amount = new D(input.amount);
-    const due = saleBalanceDue(sale.total, sale.paidAmount);
-    if (amount.gt(due)) {
-      throw new AppError(
-        422,
-        "PAYMENT_EXCEEDS_SALE_BALANCE",
-        `El pendiente de la venta es $ ${due.toFixed(2)}.`,
-        [{ path: "amount", message: `Pendiente: $ ${due.toFixed(2)}` }],
-      );
-    }
-    const unapplied = new D(payment.amount).minus(await paymentApplied(tx, ctx, payment.id));
-    if (amount.gt(unapplied)) {
-      throw new AppError(
-        422,
-        "PAYMENT_EXCEEDS_UNAPPLIED",
-        `Al cobro ${payment.internalCode} le quedan $ ${unapplied.toFixed(2)} sin imputar.`,
-        [{ path: "amount", message: `Sin imputar: $ ${unapplied.toFixed(2)}` }],
-      );
-    }
-    await applyToSale(tx, ctx, {
-      sale: {
-        id: sale.id,
-        customerId: sale.customerId,
-        total: sale.total,
-        paidAmount: sale.paidAmount,
-      },
-      paymentId: payment.id,
-      amount,
-      origin: "MANUAL",
-    });
-    await recordAudit(tx, {
-      ...auditBase(ctx),
-      action: "PAYMENT_APPLIED",
-      entityType: "sale",
-      entityId: sale.id,
-      metadata: {
-        code: sale.internalCode,
-        payment: payment.internalCode,
-        amount: amount.toFixed(2),
+  const replayed = await reusedOnConflict(
+    "otra imputación",
+    db.transaction(async (tx) => {
+      // Venta → pago (ADR-062).
+      const sale = await findSale(tx, ctx, input.saleId, true).catch(() => {
+        throw invalidReference("saleId", "Venta inexistente");
+      });
+      const payment = await findPayment(tx, ctx, paymentId, true);
+      // Después de los locks: un reintento concurrente ya ve la imputación confirmada.
+      const [existing] = await tx
+        .select()
+        .from(customerPaymentApplications)
+        .where(
+          and(
+            eq(customerPaymentApplications.companyId, ctx.companyId),
+            eq(customerPaymentApplications.operationId, input.operationId),
+          ),
+        );
+      if (existing) {
+        // Huella: cobro, venta y monto (lo que cambia la consecuencia).
+        if (
+          existing.paymentId !== payment.id ||
+          existing.saleId !== sale.id ||
+          !new D(existing.amount).eq(input.amount)
+        ) {
+          throw operationReused("otra imputación");
+        }
+        return true;
+      }
+      if (payment.customerId !== sale.customerId) {
+        throw invalidReference("saleId", "La venta es de otro cliente");
+      }
+      if (sale.status !== "POSTED") {
+        throw new AppError(409, "SALE_NOT_POSTED", "Sólo se imputa a una venta confirmada.");
+      }
+      const amount = new D(input.amount);
+      const due = saleBalanceDue(sale.total, sale.paidAmount);
+      if (amount.gt(due)) {
+        throw new AppError(
+          422,
+          "PAYMENT_EXCEEDS_SALE_BALANCE",
+          `El pendiente de la venta es $ ${due.toFixed(2)}.`,
+          [{ path: "amount", message: `Pendiente: $ ${due.toFixed(2)}` }],
+        );
+      }
+      const unapplied = new D(payment.amount).minus(await paymentApplied(tx, ctx, payment.id));
+      if (amount.gt(unapplied)) {
+        throw new AppError(
+          422,
+          "PAYMENT_EXCEEDS_UNAPPLIED",
+          `Al cobro ${payment.internalCode} le quedan $ ${unapplied.toFixed(2)} sin imputar.`,
+          [{ path: "amount", message: `Sin imputar: $ ${unapplied.toFixed(2)}` }],
+        );
+      }
+      await applyToSale(tx, ctx, {
+        sale: {
+          id: sale.id,
+          customerId: sale.customerId,
+          total: sale.total,
+          paidAmount: sale.paidAmount,
+        },
+        paymentId: payment.id,
+        amount,
         origin: "MANUAL",
-      },
-    });
-  });
-  return { payment: await getPayment(db, ctx, paymentId), replayed: false, warnings: [] };
+        operationId: input.operationId,
+      });
+      await recordAudit(tx, {
+        ...auditBase(ctx),
+        action: "PAYMENT_APPLIED",
+        entityType: "sale",
+        entityId: sale.id,
+        metadata: {
+          code: sale.internalCode,
+          payment: payment.internalCode,
+          amount: amount.toFixed(2),
+          origin: "MANUAL",
+        },
+      });
+      return false;
+    }),
+  );
+  return { payment: await getPayment(db, ctx, paymentId), replayed, warnings: [] };
 }
 
 /* ---------- Ajuste de cuenta (política B) ---------- */
@@ -408,32 +447,61 @@ export async function adjustAccount(
   permissions: Iterable<string>,
   query: z.infer<typeof accountMovementsQuerySchema>,
 ): Promise<CustomerAccountDto> {
-  await db.transaction(async (tx) => {
-    const customer = await assertCustomer(tx, ctx, customerId);
-    const result = await postAccountMovement(tx, ctx, {
-      customerId,
-      movementType: input.direction === "DEBIT" ? "ADJUSTMENT_DEBIT" : "ADJUSTMENT_CREDIT",
-      amount: new D(input.amount).toFixed(2),
-      occurredAt: new Date(),
-      reason: input.reason,
-      notes: input.notes,
-    });
-    await recordAudit(tx, {
-      ...auditBase(ctx),
-      action: "CUSTOMER_ACCOUNT_ADJUSTED",
-      entityType: "customer",
-      entityId: customerId,
-      metadata: {
-        code: customer.internalCode,
-        direction: input.direction,
+  const replayed = await reusedOnConflict(
+    "otro ajuste",
+    db.transaction(async (tx) => {
+      const customer = await assertCustomer(tx, ctx, customerId);
+      const movementType = input.direction === "DEBIT" ? "ADJUSTMENT_DEBIT" : "ADJUSTMENT_CREDIT";
+      await lockAccount(tx, ctx, customerId);
+      // Después del lock de la cuenta: un reintento concurrente ya ve el ajuste confirmado.
+      const [existing] = await tx
+        .select()
+        .from(customerAccountMovements)
+        .where(
+          and(
+            eq(customerAccountMovements.companyId, ctx.companyId),
+            eq(customerAccountMovements.operationId, input.operationId),
+          ),
+        );
+      if (existing) {
+        // Huella: cliente, tipo, monto y motivo (las notas no cambian la consecuencia).
+        if (
+          existing.customerId !== customerId ||
+          existing.movementType !== movementType ||
+          !new D(existing.signedAmount).abs().eq(input.amount) ||
+          existing.reason !== input.reason
+        ) {
+          throw operationReused("otro ajuste");
+        }
+        return true;
+      }
+      const result = await postAccountMovement(tx, ctx, {
+        customerId,
+        movementType,
         amount: new D(input.amount).toFixed(2),
+        occurredAt: new Date(),
         reason: input.reason,
-        balanceBefore: result.before.toFixed(2),
-        balanceAfter: result.after.toFixed(2),
-      },
-    });
-  });
-  return getCustomerAccount(db, ctx, customerId, query, permissions);
+        notes: input.notes,
+        operationId: input.operationId,
+      });
+      await recordAudit(tx, {
+        ...auditBase(ctx),
+        action: "CUSTOMER_ACCOUNT_ADJUSTED",
+        entityType: "customer",
+        entityId: customerId,
+        metadata: {
+          code: customer.internalCode,
+          direction: input.direction,
+          amount: new D(input.amount).toFixed(2),
+          reason: input.reason,
+          balanceBefore: result.before.toFixed(2),
+          balanceAfter: result.after.toFixed(2),
+        },
+      });
+      return false;
+    }),
+  );
+  return { ...(await getCustomerAccount(db, ctx, customerId, query, permissions)), replayed };
 }
 
 /* ---------- Lecturas ---------- */

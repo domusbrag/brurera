@@ -23,7 +23,13 @@ import {
 } from "../masters/ui";
 import { formatWallClock } from "../orders/order-shared";
 import { useCurrentUser } from "../user-context";
-import { PaymentDialog, RECEIVABLES_BASE, SALES_BASE, Warnings } from "./sale-shared";
+import {
+  PaymentDialog,
+  RECEIVABLES_BASE,
+  SALES_BASE,
+  Warnings,
+  useOperationId,
+} from "./sale-shared";
 
 /*
  * Cuentas a cobrar y cuenta corriente del cliente (Fase 5B). El saldo es la
@@ -348,6 +354,8 @@ function ApplyPayment({
   const sale = sales.find((s) => s.id === saleId);
   const suggested = sale ? D.min(new D(sale.pending), new D(payment.unapplied)).toFixed(2) : "";
   const [amount, setAmount] = useState(suggested);
+  // Un id por intento: un reintento (red, doble envío) no imputa dos veces.
+  const [operationId, renew] = useOperationId();
   return (
     <ConfirmAction
       label="Imputar"
@@ -357,8 +365,9 @@ function ApplyPayment({
       onConfirm={async () => {
         await apiFetch(`/api/payments/${payment.id}/applications`, {
           method: "POST",
-          body: { saleId, amount: toDecimal(amount) },
+          body: { saleId, amount: toDecimal(amount), operationId },
         });
+        renew();
         onDone();
       }}
     >
@@ -410,6 +419,8 @@ function AdjustAccount({
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Un id por intento: un reintento (red, doble envío) no duplica el ajuste.
+  const [operationId, renew] = useOperationId();
 
   async function submit() {
     setError(null);
@@ -425,8 +436,9 @@ function AdjustAccount({
     try {
       await apiFetch(`/api/customers/${customerId}/account/adjustments`, {
         method: "POST",
-        body: { direction, amount: toDecimal(amount), reason: reason.trim() },
+        body: { direction, amount: toDecimal(amount), reason: reason.trim(), operationId },
       });
+      renew();
       setAmount("");
       setReason("");
       dialogRef.current?.close();

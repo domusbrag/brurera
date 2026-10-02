@@ -188,6 +188,8 @@ export type OnAccountPaymentInput = z.infer<typeof onAccountPaymentSchema>;
 export const applyPaymentSchema = z.object({
   saleId: uuid(),
   amount: positiveMoney(),
+  /** Uno por intento: reintentar con el mismo id no duplica la imputación. */
+  operationId: uuid(),
 });
 export type ApplyPaymentInput = z.infer<typeof applyPaymentSchema>;
 
@@ -197,6 +199,8 @@ export const accountAdjustmentSchema = z.object({
   amount: positiveMoney(),
   reason: requiredText(500),
   notes: optionalText(1000),
+  /** Uno por intento: reintentar con el mismo id no duplica el ajuste. */
+  operationId: uuid(),
 });
 export type AccountAdjustmentInput = z.infer<typeof accountAdjustmentSchema>;
 
@@ -562,6 +566,8 @@ export interface CustomerAccountDto {
   };
   canAdjust: boolean;
   canRegisterPayment: boolean;
+  /** Sólo en la respuesta de un ajuste: true si fue un reintento del mismo ajuste. */
+  replayed?: boolean;
 }
 
 export interface ReceivableDto {

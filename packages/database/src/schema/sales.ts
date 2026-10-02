@@ -492,12 +492,17 @@ export const customerPaymentApplications = pgTable(
     customerId: uuid().notNull(),
     amount: money().notNull(),
     origin: paymentApplicationOrigin().notNull(),
+    /** Imputación manual: id del intento (idempotencia, único por empresa). */
+    operationId: uuid(),
     createdByUserId: uuid().references(() => users.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
   },
   (t) => [
     index("customer_payment_applications_sale_idx").on(t.companyId, t.saleId),
     index("customer_payment_applications_payment_idx").on(t.companyId, t.paymentId),
+    uniqueIndex("customer_payment_applications_operation_uq")
+      .on(t.companyId, t.operationId)
+      .where(sql`${t.operationId} is not null`),
     foreignKey({
       name: "customer_payment_applications_payment_fk",
       columns: [t.companyId, t.paymentId, t.customerId],
@@ -540,6 +545,8 @@ export const customerAccountMovements = pgTable(
     paymentId: uuid(),
     reason: text(),
     notes: text(),
+    /** Ajuste: id del intento (idempotencia, único por empresa). */
+    operationId: uuid(),
     actorUserId: uuid().references(() => users.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
   },
@@ -552,6 +559,13 @@ export const customerAccountMovements = pgTable(
     uniqueIndex("customer_account_movements_payment_uq")
       .on(t.companyId, t.paymentId)
       .where(sql`${t.movementType} = 'PAYMENT_CREDIT'`),
+    uniqueIndex("customer_account_movements_operation_uq")
+      .on(t.companyId, t.operationId)
+      .where(sql`${t.operationId} is not null`),
+    check(
+      "customer_account_movements_operation_adjustment",
+      sql`${t.operationId} is null or ${t.movementType} in ('ADJUSTMENT_DEBIT', 'ADJUSTMENT_CREDIT')`,
+    ),
     index("customer_account_movements_customer_idx").on(t.companyId, t.customerId, t.sequence),
     index("customer_account_movements_customer_date_idx").on(
       t.companyId,
