@@ -1773,10 +1773,9 @@ a.card:hover {
 .lines__head,
 .line {
   display: grid;
-  grid-template-columns: minmax(14rem, 3fr) minmax(7rem, 1fr) minmax(7rem, 1.1fr) minmax(
-      7rem,
-      1fr
-    ) minmax(6.5rem, 1fr) 2.5rem;
+  grid-template-columns:
+    minmax(14rem, 3fr) minmax(7rem, 1fr) minmax(7rem, 1.1fr) minmax(7rem, 1fr)
+    minmax(6.5rem, 1fr) 2.5rem;
   gap: var(--space-2) var(--space-3);
   align-items: start;
 }
@@ -1788,10 +1787,9 @@ a.card:hover {
 
 .lines--no-discount .lines__head,
 .lines--no-discount .line {
-  grid-template-columns: minmax(14rem, 3fr) minmax(7rem, 1fr) minmax(7rem, 1.1fr) minmax(
-      6.5rem,
-      1fr
-    ) 2.5rem;
+  grid-template-columns:
+    minmax(14rem, 3fr) minmax(7rem, 1fr) minmax(7rem, 1.1fr) minmax(6.5rem, 1fr)
+    2.5rem;
 }
 
 .lines__head {
@@ -2252,4 +2250,56 @@ a.attention__item:hover {
   .is-busy {
     transition: none;
   }
+}
+
+/* ---------- Pedidos ---------- */
+@media (min-width: 1025px) {
+  .ped-lines--no-price .lines--no-discount .lines__head,
+  .ped-lines--no-price .lines--no-discount .line {
+    grid-template-columns: minmax(14rem, 3fr) minmax(9rem, 1.2fr) minmax(8rem, 1fr) 2.5rem;
+  }
+}
+
+/* Enlaces con forma de botón: sin subrayado y con el color del botón, también en tablas. */
+a.button:hover,
+a.attention__item:hover,
+a.filter-chip:hover {
+  text-decoration: none;
+}
+
+.table a.button {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.table a.button--primary {
+  color: var(--color-primary-contrast);
+}
+
+/* ---------- Maestros, equipo y configuración ---------- */
+/* Grupo de checkboxes (roles) sin el marco del fieldset del navegador. */
+.mx-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.mx-fieldset legend {
+  margin-bottom: var(--space-2);
+}
+
+/* Matriz de roles: la descripción del permiso es el encabezado de fila. */
+.matrix .mx-matrix__permission {
+  font-weight: normal;
+  text-align: left;
+}
+
+.matrix tbody th[scope="rowgroup"] {
+  background: var(--color-bg);
+  text-align: left;
+}
+
+.matrix td {
+  text-align: center;
 }

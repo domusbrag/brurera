@@ -4,6 +4,7 @@ import {
   AUDIT_ACTION_LABELS,
   PERMISSIONS,
   STOCK_MOVEMENT_TYPE_LABELS,
+  SYSTEM_ROLES,
   type AuditLogItemDto,
   type Page,
 } from "@bakery/shared";
@@ -282,11 +283,7 @@ export function ConfirmAction({
     }
   }
 
-  const openerClass = danger
-    ? "button--danger"
-    : variant === "primary"
-      ? "button--primary"
-      : "";
+  const openerClass = danger ? "button--danger" : variant === "primary" ? "button--primary" : "";
   return (
     <>
       <button
@@ -441,7 +438,38 @@ const FIELD_LABELS: Record<string, string> = {
   responsibleEmployeeId: "Responsable",
   batchCode: "Lote",
   actualOutput: "Salida real",
+  fulfillmentType: "Modalidad",
+  deliveryAddress: "Dirección de entrega",
+  contactPhone: "Teléfono de contacto",
+  eventName: "Evento",
+  priority: "Prioridad",
+  customerId: "Cliente",
+  requestedAt: "Fecha de entrega",
+  warehouseId: "Depósito",
+  isDefault: "Lista general",
+  code: "Código",
+  currency: "Moneda",
+  unitPrice: "Precio",
+  defaultInitialState: "Estado inicial",
+  nearExpiryMinutes: "Aviso de vencimiento",
+  baseUnitId: "Unidad base",
+  magnitude: "Magnitud",
+  factor: "Factor",
+  terminationDate: "Fecha de egreso",
 };
+
+const ROLE_NAMES: Record<string, string> = Object.fromEntries(
+  SYSTEM_ROLES.map((r) => [r.code, r.name]),
+);
+
+/** Clave sin rótulo ("deliveryAddress" → "delivery address"): nunca mostrar camelCase crudo. */
+function humanizeKey(key: string): string {
+  return key
+    .replace(/Id$/, "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .toLowerCase();
+}
 
 /** Detalle de un evento de una orden de producción (OP-0001…). */
 function describeProduction(metadata: Record<string, unknown>): string | null {
@@ -547,7 +575,7 @@ function describeChanges(metadata: Record<string, unknown>): string | null {
     return `Presentación “${metadata.presentation}”`;
   }
   if (changes && typeof changes === "object") {
-    const fields = Object.keys(changes).map((k) => FIELD_LABELS[k] ?? k);
+    const fields = Object.keys(changes).map((k) => FIELD_LABELS[k] ?? humanizeKey(k));
     if (typeof metadata.lines === "number" && typeof metadata.number === "string")
       fields.push("líneas");
     if (fields.length > 0) return `Cambió: ${[...new Set(fields)].join(", ")}`;
@@ -557,8 +585,10 @@ function describeChanges(metadata: Record<string, unknown>): string | null {
       typeof metadata.total === "string" ? ` · ${formatMoney(metadata.total, currency)}` : "";
     return `Compra ${metadata.number}${total}`;
   }
-  if (Array.isArray(metadata.to)) return `Roles: ${(metadata.to as string[]).join(", ")}`;
-  if (typeof metadata.terminationDate === "string") return `Egreso: ${metadata.terminationDate}`;
+  if (Array.isArray(metadata.to))
+    return `Roles: ${(metadata.to as string[]).map((code) => ROLE_NAMES[code] ?? code).join(", ")}`;
+  if (typeof metadata.terminationDate === "string")
+    return `Egreso: ${formatDate(metadata.terminationDate)}`;
   return null;
 }
 

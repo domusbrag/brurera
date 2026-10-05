@@ -59,7 +59,14 @@ export function compatibleUnits(units: UnitDto[], unitId: string): UnitDto[] {
 }
 
 /** "Necesario / disponible / diferencia" por materia prima en el depósito de origen. */
-export function AvailabilityTable({ availability }: { availability: ProductionAvailabilityDto }) {
+export function AvailabilityTable({
+  availability,
+  buyInNewTab = false,
+}: {
+  availability: ProductionAvailabilityDto;
+  /** En un formulario sin guardar: "Comprar" abre otra pestaña para no perder lo cargado. */
+  buyInNewTab?: boolean;
+}) {
   const can = useCan();
   const short = availability.lines.filter((l) => l.status === "SHORT");
   const canBuy = can(P.PURCHASES_CREATE);
@@ -121,8 +128,12 @@ export function AvailabilityTable({ availability }: { availability: ProductionAv
                           {" "}
                           <Link
                             href={listPath("/compras/nueva", { rawMaterialId: l.rawMaterial.id })}
+                            {...(buyInNewTab ? { target: "_blank", rel: "noopener" } : {})}
                           >
                             Comprar
+                            {buyInNewTab && (
+                              <span className="sr-only"> (se abre en otra pestaña)</span>
+                            )}
                           </Link>
                         </>
                       )}

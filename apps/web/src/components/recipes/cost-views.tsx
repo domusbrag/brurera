@@ -17,7 +17,6 @@ import { StatusBadge } from "../ui/status";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import {
-  formatDecimal,
   formatMoney,
   formatPercent,
   formatQuantity,
@@ -349,8 +348,8 @@ export function DiffView({ diff }: { diff: RecipeVersionDiffDto }) {
       )}
       {diff.waste && (
         <li>
-          Merma teórica: {diff.waste.from === null ? "—" : `${formatDecimal(diff.waste.from)} %`} →{" "}
-          {diff.waste.to === null ? "—" : `${formatDecimal(diff.waste.to)} %`}
+          Merma teórica: {diff.waste.from === null ? "sin merma" : formatPercent(diff.waste.from)} →{" "}
+          {diff.waste.to === null ? "sin merma" : formatPercent(diff.waste.to)}
         </li>
       )}
       {diff.instructionsChanged && <li>Instrucciones modificadas</li>}
@@ -378,7 +377,13 @@ export function PublishVersionButton({
   return (
     <ConfirmAction
       label="Publicar"
+      variant="primary"
       title={`¿Publicar la versión ${versionNumber}?`}
+      validate={() =>
+        incomplete && !acknowledged
+          ? "El costo está incompleto: marcá «Publicar igual, con el costo incompleto» para continuar."
+          : null
+      }
       confirmLabel="Publicar versión"
       message={
         <>

@@ -103,7 +103,11 @@ export function LineField({
     <div
       className={`line__field ${product ? "line__field--product" : ""} ${amount ? "line__amount" : ""}`}
     >
-      {htmlFor ? <label htmlFor={htmlFor}>{label}</label> : <label aria-hidden="true">{label}</label>}
+      {htmlFor ? (
+        <label htmlFor={htmlFor}>{label}</label>
+      ) : (
+        <label aria-hidden="true">{label}</label>
+      )}
       {children}
     </div>
   );

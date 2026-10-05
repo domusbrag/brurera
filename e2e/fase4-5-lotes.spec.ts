@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
-import { openSection, selectByText, summaryValue } from "./support";
+import { crumb, openSection, selectByText, summaryValue } from "./support";
 
 /*
  * Fase 4.5: lotes, conservación y vida útil contra la aplicación construida y la
@@ -231,7 +231,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(heading).toContainText("Completada");
 
   // La orden muestra su lote; el lote, su origen y vencimiento.
-  const lotLink = page.locator("dl.details").getByRole("link", { name: /LOT-\d{8}-\d{3}/ });
+  const lotLink = page.locator("dl.metrics").getByRole("link", { name: /LOT-\d{8}-\d{3}/ });
   const lotCode = (await lotLink.textContent())!.trim();
   await lotLink.click();
   await expect(heading).toContainText(`Lote ${lotCode}`);
@@ -283,7 +283,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(history).toContainText("Merma de lote registrada");
 
   // Stock del producto: 95 kg físicos por estado, lotes FEFO y disponibilidad a 3 días.
-  await page.getByRole("link", { name: `← ${pan}` }).click();
+  await crumb(page, `${pan}`).click();
   const stock = section(page, "Existencias");
   await expect(summaryValue(stock, "Stock físico")).toHaveText("95 kg");
   await expect(summaryValue(stock, "Utilizable ahora")).toHaveText("95 kg");
@@ -313,7 +313,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(availability).toContainText("75 kg vencen antes de la fecha");
 
   // Listado de productos terminados con columnas por conservación.
-  await page.getByRole("link", { name: "← Stock de productos terminados" }).click();
+  await crumb(page, "Stock de productos terminados").click();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);
   const row = page.getByRole("row").filter({ hasText: pan });
@@ -370,7 +370,7 @@ test("Fase 4.5: lote de vida corta en Próximos a vencer y fuera de la disponibi
 
   await row.getByRole("link", { name: lot.code, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Próximo a vencer");
-  await page.getByRole("link", { name: `← ${world.productName}` }).click();
+  await crumb(page, `${world.productName}`).click();
   const availability = section(page, "Disponibilidad a una fecha");
   // Por defecto mira dentro de dos días: el lote ya venció para entonces.
   await expect(summaryValue(availability, /^Utilizable el/)).toHaveText("0 kg");

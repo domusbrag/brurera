@@ -136,7 +136,7 @@ const orderUnpriced = (order: OrderRow) =>
   new AppError(
     409,
     "ORDER_UNPRICED",
-    `El pedido ${order.internalCode} no tiene precio acordado: cotizalo antes de entregar.`,
+    `El pedido ${order.internalCode} no tiene precio acordado: usá «Acordar precio» antes de entregar.`,
   );
 
 /* ---------- Borrador ---------- */

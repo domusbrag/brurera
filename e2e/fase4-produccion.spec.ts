@@ -165,7 +165,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   // Planificar: fija receta, cantidades, costo esperado y asigna lote.
   await confirmIn(page, "Planificar producción");
   await expect(heading).toContainText("Planificada");
-  await expect(page.locator("dl.details")).toContainText(/LOT-\d{8}-\d{3}/);
+  await expect(page.locator("dl.metrics")).toContainText(/LOT-\d{8}-\d{3}/);
   await expect(summaryValue(section(page, "Costo material"), "Costo esperado")).toContainText(
     "$75.500,00",
   );

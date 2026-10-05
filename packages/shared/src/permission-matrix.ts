@@ -24,6 +24,11 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   price_lists: "Listas de precios",
   payments: "Cobros",
   customer_accounts: "Cuenta corriente",
+  production: "Producción",
+  product_lots: "Lotes",
+  product_conservation: "Conservación de productos",
+  orders: "Pedidos",
+  order_planning: "Planificación de pedidos",
 };
 
 /**

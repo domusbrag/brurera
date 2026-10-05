@@ -97,9 +97,9 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByLabel("Razón social").fill(`Molino ${run} S.A.`);
   await page.getByRole("button", { name: "Crear proveedor" }).click();
   await expect(page.getByRole("heading", { name: `Molino ${run} S.A.` })).toBeVisible();
-  await expect(
-    page.getByText("Cuenta corriente y pagos estarán disponibles en una fase posterior."),
-  ).toBeVisible();
+  // Desde el proveedor se llega a sus compras (sin avisos de fases futuras).
+  await expect(page.getByRole("link", { name: "Ver compras" })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("fase posterior");
 
   // 8. Unidad derivada: bolsa de 25 kg, y prueba de conversión
   await page.goto("/configuracion/unidades/nuevo");

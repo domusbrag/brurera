@@ -220,7 +220,9 @@ export function EditSale({ id }: { id: string }) {
       </section>
     );
   }
-  return <SaleForm catalog={catalog} catalogError={catalogError} order={order ?? null} sale={sale} />;
+  return (
+    <SaleForm catalog={catalog} catalogError={catalogError} order={order ?? null} sale={sale} />
+  );
 }
 
 function linesFromOrder(order: OrderDetailDto): LineDraft[] {
@@ -839,11 +841,7 @@ function SaleForm({
             </div>
           )}
           {!showNotes ? (
-            <button
-              type="button"
-              className="link-button small"
-              onClick={() => setShowNotes(true)}
-            >
+            <button type="button" className="link-button small" onClick={() => setShowNotes(true)}>
               Agregar una nota
             </button>
           ) : (
@@ -951,7 +949,9 @@ function SaleForm({
               {fromOrder ? "Total (con el descuento acordado prorrateado)" : "Total"}
             </div>
             <div className="total-bar__amount" data-testid="draft-total" aria-live="polite">
-              {!seePrices ? "—" : totalText ?? (filled.length > 0 ? "Calculando…" : formatMoney("0", currency))}
+              {!seePrices
+                ? "—"
+                : (totalText ?? (filled.length > 0 ? "Calculando…" : formatMoney("0", currency)))}
             </div>
           </div>
           <div className="actions">

@@ -111,7 +111,11 @@ test("UX: cada rol ve sólo lo que puede usar", async ({ page }, testInfo) => {
   await login(page, warehouseEmail, PASSWORD);
   const warehouse = (await menuLabels(page)).map((l) => l.trim());
   expect(warehouse).toEqual(
-    expect.arrayContaining(["Stock de materias primas", "Productos terminados", "Próximos a vencer"]),
+    expect.arrayContaining([
+      "Stock de materias primas",
+      "Productos terminados",
+      "Próximos a vencer",
+    ]),
   );
   expect(warehouse).not.toContain("Listas de precios");
   expect(warehouse).not.toContain("Cuentas a cobrar");
@@ -154,7 +158,10 @@ test("UX: errores en lenguaje humano, sin códigos internos", async ({ page }) =
 
   // Formulario incompleto: el error está en el campo, con texto y sin códigos.
   await page.goto("/clientes/nuevo");
-  await page.getByRole("button", { name: /^(Guardar|Crear)/ }).first().click();
+  await page
+    .getByRole("button", { name: /^(Guardar|Crear)/ })
+    .first()
+    .click();
   const main = page.locator("main");
   await expect(main.locator("[aria-invalid='true']").first()).toBeVisible();
   await expect(main).not.toContainText("VALIDATION_ERROR");

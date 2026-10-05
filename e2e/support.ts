@@ -41,3 +41,10 @@ export function summaryValue(scope: Locator, label: string | RegExp): Locator {
     .filter({ has: scope.page().locator("dt", { hasText: label }) })
     .locator("dd");
 }
+
+/** Enlace de la miga de pan (ubicación) del encabezado de la página. */
+export function crumb(page: Page, name: string): Locator {
+  return page
+    .getByRole("navigation", { name: "Ubicación" })
+    .getByRole("link", { name, exact: true });
+}

@@ -305,7 +305,7 @@ function MasterListInner<T extends { id: string }>({
                 </tbody>
               </table>
             </div>
-            {(data.total > data.pageSize || page > 1) ? (
+            {data.total > data.pageSize || page > 1 ? (
               <nav className="pagination" aria-label="Páginas">
                 <span>
                   {data.total} {data.total === 1 ? "resultado" : "resultados"} · página {data.page}{" "}

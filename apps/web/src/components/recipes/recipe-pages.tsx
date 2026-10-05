@@ -12,9 +12,11 @@ import {
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
-import { formatDateTime, formatDecimal, formatQuantity, formatUnitCost } from "@/lib/format";
+import { formatDateTime, formatPercent, formatQuantity, formatUnitCost } from "@/lib/format";
+import { describeError } from "@/lib/errors";
+import { StatusBadge as StatusTag } from "../ui/status";
 import { useCan, useCurrentUser } from "../user-context";
 import { MasterList } from "../masters/master-list";
 import {
@@ -57,14 +59,25 @@ export function RecipeList() {
       statusLabels={{ active: "Activas", inactive: "Inactivas" }}
       columns={[
         { header: "Producto", cell: (r) => <Link href={`${BASE}/${r.id}`}>{r.product.name}</Link> },
-        { header: "Receta", cell: (r) => r.name, className: "hide-md" },
+        {
+          header: "Receta",
+          cell: (r) => (r.name === r.product.name ? null : r.name),
+          className: "hide-md",
+        },
         {
           header: "Versión vigente",
           cell: (r) =>
             r.activeVersion ? (
-              `v${r.activeVersion.versionNumber}`
+              <>
+                v{r.activeVersion.versionNumber}{" "}
+                {r.draftVersion && (
+                  <span className="cost-source">borrador v{r.draftVersion.versionNumber}</span>
+                )}
+              </>
+            ) : r.draftVersion ? (
+              <VersionStatusBadge status="DRAFT" />
             ) : (
-              <span className="badge badge--off">Sin vigente</span>
+              <StatusTag tone="neutral">Sin vigente</StatusTag>
             ),
         },
         {
@@ -72,48 +85,28 @@ export function RecipeList() {
           cell: (r) =>
             r.activeVersion
               ? formatQuantity(r.activeVersion.yieldQuantity, r.activeVersion.yieldUnit.symbol)
-              : "—",
+              : null,
           className: "num hide-md",
         },
         {
-          header: "Costo teórico actual",
+          header: "Costo teórico por unidad",
           cell: (r) =>
-            r.currentCost?.unitCost
-              ? formatUnitCost(
-                  r.currentCost.unitCost,
-                  r.currentCost.currency,
-                  r.product.saleUnit.symbol,
-                )
-              : "—",
+            !r.currentCost ? null : r.currentCost.status === "INCOMPLETE" ||
+              !r.currentCost.unitCost ? (
+              <StatusTag tone="warning">{COST_STATUS_LABELS.INCOMPLETE}</StatusTag>
+            ) : (
+              formatUnitCost(
+                r.currentCost.unitCost,
+                r.currentCost.currency,
+                r.product.saleUnit.symbol,
+              )
+            ),
           className: "num",
         },
         {
-          header: "Estado del costo",
-          cell: (r) =>
-            !r.currentCost ? (
-              "—"
-            ) : r.currentCost.status === "COMPLETE" ? (
-              <span className="badge">{COST_STATUS_LABELS.COMPLETE}</span>
-            ) : (
-              <span className="badge badge--warn">{COST_STATUS_LABELS.INCOMPLETE}</span>
-            ),
-        },
-        {
-          header: "Actualización",
-          cell: (r) => (
-            <>
-              {formatDateTime(r.updatedAt, user.company.timezone)}
-              {r.draftVersion && (
-                <>
-                  {" "}
-                  <span className="badge badge--draft">
-                    Borrador v{r.draftVersion.versionNumber}
-                  </span>
-                </>
-              )}
-            </>
-          ),
-          className: "hide-sm",
+          header: "Actualizada",
+          cell: (r) => formatDateTime(r.updatedAt, user.company.timezone),
+          className: "hide-md",
         },
       ]}
     />
@@ -138,7 +131,7 @@ export function RecipeDetail({ id }: { id: string }) {
   const activeVersion = useResource<RecipeVersionDto>(
     data?.activeVersionId ? `/api/recipe-versions/${data.activeVersionId}?v=${version}` : null,
   );
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!data) return <Loading />;
   const refresh = () => {
     reload();
@@ -147,17 +140,16 @@ export function RecipeDetail({ id }: { id: string }) {
   const active = data.versions.find((v) => v.id === data.activeVersionId);
   const draft = data.versions.find((v) => v.id === data.draftVersionId);
   const latest = data.versions[0];
+  const canPublish = can(P.RECIPES_PUBLISH);
 
   return (
     <div className="page">
       <PageHeader
         breadcrumb={{ href: BASE, label: "Recetas" }}
         title={data.name}
+        status={<StatusBadge active={data.active} on="Activa" off="Inactiva" />}
         subtitle={
-          <>
-            Producto: <Link href={`/productos/${data.product.id}`}>{data.product.name}</Link> ·{" "}
-            <StatusBadge active={data.active} on="Activa" off="Inactiva" />
-          </>
+          data.name === data.product.name ? "Receta del producto" : `Receta de ${data.product.name}`
         }
         actions={
           <>
@@ -166,7 +158,7 @@ export function RecipeDetail({ id }: { id: string }) {
                 Editar borrador
               </Link>
             )}
-            {data.active && draft && can(P.RECIPES_PUBLISH) && (
+            {data.active && draft && canPublish && (
               <PublishVersionButton
                 versionId={draft.id}
                 versionNumber={draft.versionNumber}
@@ -177,6 +169,7 @@ export function RecipeDetail({ id }: { id: string }) {
             {data.active && !draft && latest && can(P.RECIPES_CREATE) && (
               <ConfirmAction
                 label="Nueva versión"
+                variant="primary"
                 title="¿Crear una nueva versión?"
                 confirmLabel="Crear borrador"
                 message={`Se copia la versión ${(active ?? latest).versionNumber} (ingredientes, cantidades, rendimiento, merma e instrucciones) a un borrador que podés editar. La versión vigente no cambia hasta que publiques el borrador.`}
@@ -202,21 +195,64 @@ export function RecipeDetail({ id }: { id: string }) {
         }
       />
 
+      <section className="panel" aria-labelledby="recipe-summary-title">
+        <h2 id="recipe-summary-title" className="sr-only">
+          Resumen
+        </h2>
+        <dl className="metrics">
+          <div className="metric">
+            <dt className="metric__label">Producto</dt>
+            <dd className="metric__value">
+              <Link href={`/productos/${data.product.id}`}>{data.product.name}</Link>
+            </dd>
+          </div>
+          <div className="metric metric--emphasis">
+            <dt className="metric__label">Versión vigente</dt>
+            <dd className="metric__value">{active ? `v${active.versionNumber}` : "Ninguna"}</dd>
+            {active?.effectiveFrom && (
+              <dd className="metric__note">Desde {formatDate(active.effectiveFrom)}</dd>
+            )}
+          </div>
+          <div className="metric">
+            <dt className="metric__label">Rinde</dt>
+            <dd className="metric__value">
+              {active ? formatQuantity(active.yieldQuantity, active.yieldUnit.symbol) : "—"}
+            </dd>
+            {active && <dd className="metric__note">por tanda</dd>}
+          </div>
+          {draft && (
+            <div className="metric metric--warning">
+              <dt className="metric__label">Borrador pendiente</dt>
+              <dd className="metric__value">v{draft.versionNumber}</dd>
+              <dd className="metric__note">Todavía no se usa para producir</dd>
+            </div>
+          )}
+        </dl>
+      </section>
+
       {draft && (
         <section className="panel" aria-labelledby="draft-title">
           <div className="panel__header">
             <h2 id="draft-title">
               Borrador · versión {draft.versionNumber} <VersionStatusBadge status="DRAFT" />
             </h2>
-            <Link href={`${BASE}/${id}/versiones/${draft.id}`}>Ver borrador</Link>
+            <Link
+              className="button button--small button--tertiary"
+              href={`${BASE}/${id}/versiones/${draft.id}`}
+            >
+              Ver borrador
+            </Link>
           </div>
           <p className="muted">
             Creado el {formatDate(draft.createdAt)} por {draft.createdBy?.displayName ?? "—"}.
             Todavía no está vigente: se aplica al publicarlo.
+            {data.active &&
+              !canPublish &&
+              " Lo publica alguien con permiso para publicar recetas; avisale cuando esté listo."}
           </p>
-          {draftCost.data && (
-            <CostSummary cost={draftCost.data.current} currentLabel="con costos de hoy" />
-          )}
+          <SecondaryLoad state={draftCost} what="el costo del borrador">
+            {(cost) => <CostSummary cost={cost.current} currentLabel="con costos de hoy" />}
+          </SecondaryLoad>
         </section>
       )}
 
@@ -231,7 +267,14 @@ export function RecipeDetail({ id }: { id: string }) {
               "Sin versión vigente"
             )}
           </h2>
-          {active && <Link href={`${BASE}/${id}/versiones/${active.id}`}>Ver versión</Link>}
+          {active && (
+            <Link
+              className="button button--small button--tertiary"
+              href={`${BASE}/${id}/versiones/${active.id}`}
+            >
+              Ver versión
+            </Link>
+          )}
         </div>
         {!active ? (
           <p className="muted">
@@ -242,34 +285,41 @@ export function RecipeDetail({ id }: { id: string }) {
         ) : (
           <>
             <Details
+              hideEmpty
               items={[
                 ["Vigente desde", active.effectiveFrom ? formatDate(active.effectiveFrom) : null],
                 ["Publicada por", active.publishedBy?.displayName],
                 ["Rendimiento", formatQuantity(active.yieldQuantity, active.yieldUnit.symbol)],
                 [
                   "Merma teórica",
-                  active.wastePercentage === null
-                    ? null
-                    : `${formatDecimal(active.wastePercentage)} %`,
+                  active.wastePercentage === null ? null : formatPercent(active.wastePercentage),
                 ],
               ]}
             />
-            {activeCost.data && (
-              <>
-                <h3>Ingredientes (costos de referencia de hoy)</h3>
-                <IngredientCostTable cost={activeCost.data.current} />
-                <CostSummary
-                  cost={activeCost.data.current}
-                  snapshot={activeCost.data.snapshot}
-                  variation={activeCost.data.unitCostVariation}
-                />
-              </>
-            )}
-            {activeVersion.data?.instructions && (
-              <>
-                <h3>Instrucciones</h3>
-                <p className="prewrap">{activeVersion.data.instructions}</p>
-              </>
+            <SecondaryLoad state={activeCost} what="los ingredientes y el costo">
+              {(cost) => (
+                <>
+                  <h3 className="section-title">Ingredientes (costos de hoy)</h3>
+                  <IngredientCostTable cost={cost.current} />
+                  <CostSummary
+                    cost={cost.current}
+                    snapshot={cost.snapshot}
+                    variation={cost.unitCostVariation}
+                  />
+                </>
+              )}
+            </SecondaryLoad>
+            {activeVersion.error ? (
+              <SecondaryLoad state={activeVersion} what="las instrucciones">
+                {() => null}
+              </SecondaryLoad>
+            ) : (
+              activeVersion.data?.instructions && (
+                <>
+                  <h3 className="section-title">Instrucciones</h3>
+                  <p className="prewrap">{activeVersion.data.instructions}</p>
+                </>
+              )
             )}
           </>
         )}
@@ -279,6 +329,29 @@ export function RecipeDetail({ id }: { id: string }) {
       <AuditHistory entityType="recipe" entityId={id} version={version} />
     </div>
   );
+}
+
+/** Carga secundaria de un detalle: esqueleto mientras carga y error visible con reintento. */
+function SecondaryLoad<T>({
+  state,
+  what,
+  children,
+}: {
+  state: { data: T | null; error: ApiError | null; reload: () => void };
+  what: string;
+  children: (data: T) => ReactNode;
+}) {
+  if (state.error)
+    return (
+      <div className="alert alert--warn" role="alert">
+        No se pudo cargar {what}: {describeError(state.error)}{" "}
+        <button type="button" className="link-button" onClick={state.reload}>
+          Reintentar
+        </button>
+      </div>
+    );
+  if (!state.data) return <Loading />;
+  return <>{children(state.data)}</>;
 }
 
 function VersionHistory({
@@ -371,7 +444,7 @@ export function VersionDetail({ recipeId, versionId }: { recipeId: string; versi
     `/api/recipe-versions/${versionId}/cost?v=${tick}`,
   );
   const diff = useResource<RecipeVersionDiffDto>(`/api/recipe-versions/${versionId}/diff`);
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!data) return <Loading />;
   if (data.recipe.id !== recipeId) {
     return (
@@ -390,15 +463,13 @@ export function VersionDetail({ recipeId, versionId }: { recipeId: string; versi
     <div className="page">
       <PageHeader
         breadcrumb={{ href: `${BASE}/${recipeId}`, label: data.recipe.name }}
-        title={
-          <>
-            {data.recipe.name} · versión {data.versionNumber}{" "}
-            <VersionStatusBadge status={data.status} />
-          </>
-        }
+        title={`${data.recipe.name} · versión ${data.versionNumber}`}
+        status={<VersionStatusBadge status={data.status} />}
         subtitle={
           isDraft
-            ? "Borrador: todavía no está vigente."
+            ? data.recipe.active
+              ? "Borrador: todavía no está vigente."
+              : "Borrador de una receta inactiva: reactivá la receta para editarlo o publicarlo."
             : "Versión publicada: sólo lectura. Para cambiarla, creá una nueva versión."
         }
         actions={
@@ -447,12 +518,13 @@ export function VersionDetail({ recipeId, versionId }: { recipeId: string; versi
       />
       <section className="panel">
         <Details
+          hideEmpty
           items={[
             ["Producto", data.product.name],
             ["Rendimiento", formatQuantity(data.yieldQuantity, data.yieldUnit.symbol)],
             [
               "Merma teórica",
-              data.wastePercentage === null ? null : `${formatDecimal(data.wastePercentage)} %`,
+              data.wastePercentage === null ? null : formatPercent(data.wastePercentage),
             ],
             [
               "Creada",
@@ -492,25 +564,29 @@ export function VersionDetail({ recipeId, versionId }: { recipeId: string; versi
         </section>
       )}
 
-      {cost.data && (
-        <section className="panel" aria-labelledby="current-title">
-          <h2 id="current-title">
-            {isDraft ? "Costo teórico (costos de hoy)" : "Costo teórico actual"}
-          </h2>
-          <IngredientCostTable cost={cost.data.current} />
-          <CostSummary
-            cost={cost.data.current}
-            snapshot={cost.data.snapshot}
-            variation={cost.data.unitCostVariation}
-          />
-        </section>
-      )}
+      <section className="panel" aria-labelledby="current-title">
+        <h2 id="current-title">
+          {isDraft
+            ? "Ingredientes y costo teórico (costos de hoy)"
+            : "Ingredientes y costo teórico actual"}
+        </h2>
+        <SecondaryLoad state={cost} what="los ingredientes y el costo">
+          {(c) => (
+            <>
+              <IngredientCostTable cost={c.current} />
+              <CostSummary cost={c.current} snapshot={c.snapshot} variation={c.unitCostVariation} />
+            </>
+          )}
+        </SecondaryLoad>
+      </section>
 
       <section className="panel" aria-labelledby="diff-title">
         <h2 id="diff-title">
           Cambios{diff.data?.from ? ` respecto de la versión ${diff.data.from.versionNumber}` : ""}
         </h2>
-        {diff.data ? <DiffView diff={diff.data} /> : <Loading />}
+        <SecondaryLoad state={diff} what="los cambios">
+          {(d) => <DiffView diff={d} />}
+        </SecondaryLoad>
       </section>
 
       {data.instructions && (

@@ -49,7 +49,12 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   { href: "/ventas/nueva", label: "Nueva venta", icon: "cash", needs: [P.SALES_CREATE] },
-  { href: `${ORDERS_BASE}/nuevo`, label: "Nuevo pedido", icon: "clipboard", needs: [P.ORDERS_CREATE] },
+  {
+    href: `${ORDERS_BASE}/nuevo`,
+    label: "Nuevo pedido",
+    icon: "clipboard",
+    needs: [P.ORDERS_CREATE],
+  },
   {
     href: "/produccion/nueva",
     label: "Nueva orden de producción",
@@ -117,8 +122,7 @@ function attentionItems(today: string): AttentionDef[] {
       key: "low-stock",
       needs: [P.INVENTORY_READ],
       endpoint: "/api/inventory/low-stock?pageSize=1",
-      title: (n) =>
-        n === 1 ? "materia prima bajo el mínimo" : "materias primas bajo el mínimo",
+      title: (n) => (n === 1 ? "materia prima bajo el mínimo" : "materias primas bajo el mínimo"),
       hint: "Revisá si hay que comprar.",
       href: "/stock/bajo-minimo",
       tone: "warning",

@@ -2,6 +2,7 @@
 
 import {
   COVERAGE_STATUS_LABELS,
+  ORDER_INELIGIBILITY_LABELS,
   ORDER_STATUS_LABELS,
   REQUESTED_CONSERVATION_LABELS,
   formatLocalDateTime,
@@ -20,8 +21,8 @@ import { StatusBadge } from "../ui/status";
 import { LOTS_BASE, ConservationBadge } from "../lots/lot-shared";
 
 /*
- * Piezas compartidas de Pedidos y Necesidades (Fase 5A): estados, cobertura,
- * hora de pared de la EMPRESA y la explicación de cobertura de cada producto.
+ * Piezas compartidas de Pedidos y Necesidades: estados, cobertura, hora de
+ * pared de la EMPRESA y la explicación de cobertura de cada producto.
  */
 
 export const ORDERS_BASE = "/pedidos";
@@ -99,7 +100,12 @@ export const isCompleteWallClock = (value: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:
 
 const gt0 = (v: string | null | undefined) => v !== null && v !== undefined && new D(v).gt(0);
 
-/** Cobertura de un producto: números y explicación en palabras, con sus lotes. */
+/**
+ * Cobertura de un producto, compacta: lo que importa para tomar el pedido
+ * (pedido, disponible, se reserva, falta producir) a la vista; el cálculo
+ * (stock físico, válido para la fecha, comprometido), la explicación, la
+ * materia prima y los lotes, plegados en «Cómo se calcula».
+ */
 export function LineCoverage({
   line,
   showLots = true,
@@ -108,14 +114,15 @@ export function LineCoverage({
   showLots?: boolean;
 }) {
   const unit = line.unit.symbol;
+  const short = gt0(line.toProduce) || gt0(line.uncovered);
   return (
     <article className="card" data-testid="line-coverage">
       <h3 className="card__title">
         {line.product.name}{" "}
         {line.requestedConservation !== "ANY" && (
-          <span className="badge badge--info">
+          <StatusBadge tone="tag">
             {REQUESTED_CONSERVATION_LABELS[line.requestedConservation]}
-          </span>
+          </StatusBadge>
         )}
       </h3>
       <dl className="cost-summary">
@@ -124,26 +131,12 @@ export function LineCoverage({
           <dd>{formatQuantity(line.requested, unit)}</dd>
         </div>
         <div>
-          <dt>Stock físico</dt>
-          <dd>{formatQuantity(line.physical, unit)}</dd>
-        </div>
-        <div>
-          <dt>Stock válido para la fecha</dt>
-          <dd>{formatQuantity(line.eligible, unit)}</dd>
-        </div>
-        <div>
-          <dt>Ya comprometido</dt>
-          <dd>{formatQuantity(line.committed, unit)}</dd>
-        </div>
-        <div>
           <dt>Disponible</dt>
           <dd>{formatQuantity(line.available, unit)}</dd>
         </div>
         <div>
           <dt>Reservado para este pedido</dt>
-          <dd>
-            <strong>{formatQuantity(line.reserve, unit)}</strong>
-          </dd>
+          <dd>{formatQuantity(line.reserve, unit)}</dd>
         </div>
         <div>
           <dt>Falta producir</dt>
@@ -153,85 +146,100 @@ export function LineCoverage({
         </div>
         {gt0(line.uncovered) && (
           <div>
-            <dt>Sin cubrir (sin receta)</dt>
+            <dt>Sin receta para producir</dt>
             <dd className="text-negative">{formatQuantity(line.uncovered, unit)}</dd>
           </div>
         )}
       </dl>
-      <ul className="check-list" aria-label={`Explicación de ${line.product.name}`}>
-        {line.explanation.map((text) => (
-          <li key={text}>{text}</li>
-        ))}
-      </ul>
-      {line.materials.length > 0 && (
-        <p className="muted small">
-          Para producir lo que falta:{" "}
-          {line.materials
-            .map((m) => `${formatQuantity(m.required, m.unit.symbol)} de ${m.rawMaterial.name}`)
-            .join(", ")}
-          {line.recipe && ` (receta versión ${line.recipe.versionNumber})`}.
-        </p>
-      )}
-      {showLots && line.lots.length > 0 && (
-        <details>
-          <summary>Lotes ({line.lots.length})</summary>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Lote</th>
-                  <th scope="col">Conservación</th>
-                  <th scope="col" className="num">
-                    Físico
-                  </th>
-                  <th scope="col" className="num">
-                    Ya comprometido
-                  </th>
-                  <th scope="col" className="num">
-                    Reservado aquí
-                  </th>
-                  <th scope="col">Para la fecha</th>
-                </tr>
-              </thead>
-              <tbody>
-                {line.lots.map((l) => (
-                  <tr key={l.id}>
-                    <td>
-                      <Link href={`${LOTS_BASE}/${l.id}`}>{l.code}</Link>
-                    </td>
-                    <td>
-                      <ConservationBadge state={l.conservationState} />
-                    </td>
-                    <td className="num">{formatQuantity(l.physical, unit)}</td>
-                    <td className="num">{formatQuantity(l.committed, unit)}</td>
-                    <td className="num">
-                      {gt0(l.reserve) ? formatQuantity(l.reserve, unit) : "—"}
-                    </td>
-                    <td>
-                      {l.eligible ? (
-                        l.usableUntil === null ? (
-                          <span className="muted">Sin vida útil configurada</span>
-                        ) : (
-                          "Sirve"
-                        )
-                      ) : (
-                        <span className="text-negative">
-                          {l.reason === "EXPIRED"
-                            ? "Vence antes"
-                            : l.reason === "BLOCKED"
-                              ? "Bloqueado"
-                              : "Otra conservación"}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {!short && <p className="muted small">Alcanza con el stock disponible.</p>}
+      <details>
+        <summary>Cómo se calcula</summary>
+        <dl className="cost-summary">
+          <div>
+            <dt>Stock físico</dt>
+            <dd>{formatQuantity(line.physical, unit)}</dd>
           </div>
-        </details>
-      )}
+          <div>
+            <dt>Stock válido para la fecha</dt>
+            <dd>{formatQuantity(line.eligible, unit)}</dd>
+          </div>
+          <div>
+            <dt>Ya comprometido con otros pedidos</dt>
+            <dd>{formatQuantity(line.committed, unit)}</dd>
+          </div>
+        </dl>
+        <ul className="check-list" aria-label={`Explicación de ${line.product.name}`}>
+          {line.explanation.map((text) => (
+            <li key={text}>{text}</li>
+          ))}
+        </ul>
+        {line.materials.length > 0 && (
+          <p className="muted small">
+            Para producir lo que falta:{" "}
+            {line.materials
+              .map((m) => `${formatQuantity(m.required, m.unit.symbol)} de ${m.rawMaterial.name}`)
+              .join(", ")}
+            {line.recipe && ` (receta versión ${line.recipe.versionNumber})`}.
+          </p>
+        )}
+        {showLots && line.lots.length > 0 && <LotCoverageTable lots={line.lots} unit={unit} />}
+      </details>
     </article>
+  );
+}
+
+function LotCoverageTable({ lots, unit }: { lots: LineCoverageDto["lots"]; unit: string }) {
+  return (
+    <div className="table-wrap">
+      <table className="table table--compact" aria-label="Lotes">
+        <thead>
+          <tr>
+            <th scope="col">Lote</th>
+            <th scope="col" className="hide-md">
+              Conservación
+            </th>
+            <th scope="col" className="num">
+              Físico
+            </th>
+            <th scope="col" className="num hide-md">
+              Comprometido
+            </th>
+            <th scope="col" className="num">
+              Se reserva
+            </th>
+            <th scope="col">Para la fecha</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lots.map((l) => (
+            <tr key={l.id}>
+              <td>
+                <Link href={`${LOTS_BASE}/${l.id}`}>{l.code}</Link>
+              </td>
+              <td className="hide-md">
+                <ConservationBadge state={l.conservationState} />
+              </td>
+              <td className="num">{formatQuantity(l.physical, unit)}</td>
+              <td className="num hide-md">{formatQuantity(l.committed, unit)}</td>
+              <td className="num">{gt0(l.reserve) ? formatQuantity(l.reserve, unit) : "—"}</td>
+              <td>
+                {l.eligible ? (
+                  l.usableUntil === null ? (
+                    <span className="muted">Sin vida útil configurada</span>
+                  ) : (
+                    "Sirve"
+                  )
+                ) : (
+                  <span className="text-negative">
+                    {l.reason ? ORDER_INELIGIBILITY_LABELS[l.reason] : "No sirve"}
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

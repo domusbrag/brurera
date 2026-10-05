@@ -20,11 +20,7 @@ export interface ComboOption {
   keywords?: string;
 }
 
-const normalize = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /** Todas las palabras escritas deben aparecer en el rótulo o las palabras clave. */
 export function matchOption(option: ComboOption, query: string): boolean {

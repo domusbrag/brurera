@@ -5,6 +5,7 @@ Alcance leído completo: las 19 `page.tsx` de `apps/web/src/app/(app)/{pedidos,v
 Convenciones: rutas de archivo relativas a `apps/web/src/components/` salvo que se indique otra cosa. "Plano" = `className="button"` (peso secundario). "Primario" = `button--primary`. "Peligro" = `button--danger`.
 
 Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
+
 - `orders.read`: ADMIN, OWNER, ADMINISTRATION, SALES, PRODUCTION, WAREHOUSE · `orders.create/update/confirm/cancel`: ADMIN, OWNER, SALES · `orders.replan`: ADMIN, OWNER, ADMINISTRATION, SALES · `orders.prepare`: ADMIN, OWNER, PRODUCTION · `orders.ready`: ADMIN, OWNER, WAREHOUSE
 - `sales.read`: ADMIN, OWNER, ADMINISTRATION, SALES, WAREHOUSE · `sales.create/update/post`: ADMIN, OWNER, ADMINISTRATION, SALES · `sales.price_override`, `sales.cost.read`, `sales.margin.read`: ADMIN, OWNER, ADMINISTRATION
 - `customers.read/create/update`: ADMIN, OWNER, ADMINISTRATION, SALES · `customers.deactivate`: ADMIN, OWNER, ADMINISTRATION
@@ -16,6 +17,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 ## 1. PEDIDOS
 
 ### /pedidos
+
 - **Ruta:** /pedidos → `OrderList` (order-pages.tsx:72-204)
 - **Módulo:** Comercial › Pedidos
 - **Roles que la usan:** `orders.read` → ADMIN, OWNER, ADMINISTRATION, SALES, PRODUCTION, WAREHOUSE. Botón "Nuevo pedido" sólo con `orders.create` (ADMIN, OWNER, SALES). Filtro "Cliente" sólo con `customers.read`.
@@ -37,6 +39,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P0
 
 ### /pedidos/nuevo
+
 - **Ruta:** /pedidos/nuevo → `OrderForm` sin id → `OrderEditor` (order-form.tsx:319-643)
 - **Módulo:** Comercial › Pedidos
 - **Roles que la usan:** `orders.create` → ADMIN, OWNER, SALES (order-form.tsx:437; sin permiso muestra "No tenés permiso para esta operación." pero recién después de cargar todo el catálogo).
@@ -64,6 +67,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P0
 
 ### /pedidos/[id]
+
 - **Ruta:** /pedidos/[id] → `OrderDetail` (order-pages.tsx:219-420)
 - **Módulo:** Comercial › Pedidos
 - **Roles que la usan:** `orders.read` → los 7 roles. Las acciones dependen de `data.actions` (orders.data.ts:889-905): Entregar y vender (`sales.create`+`sales.post`, y pedido READY/PARTIALLY_DELIVERED con precio), Acordar precio (`orders.update`+precios), Registrar seña (`order_advances.create`), Confirmar (`orders.confirm`), Actualizar cobertura y Modificar (`orders.replan`), Empezar preparación (`orders.prepare` → PRODUCTION), Marcar listo (`orders.ready` → WAREHOUSE), Editar (`orders.update`), Cancelar (`orders.cancel`). Crear orden de producción (`order_production.create`+`production_orders.create` → PRODUCTION).
@@ -98,6 +102,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P0
 
 ### /pedidos/[id]/editar
+
 - **Ruta:** /pedidos/[id]/editar → `OrderForm id` (order-form.tsx:319-643). En borrador edita todo; en confirmado (`infoOnly`, order-form.tsx:348) sólo modalidad, dirección, prioridad, evento, contacto, teléfono y notas.
 - **Módulo:** Comercial › Pedidos
 - **Roles que la usan:** `orders.update` → ADMIN, OWNER, SALES.
@@ -116,6 +121,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P2
 
 ### /pedidos/[id]/modificar
+
 - **Ruta:** /pedidos/[id]/modificar → `OrderReplan` (order-replan.tsx:44-189)
 - **Módulo:** Comercial › Pedidos
 - **Roles que la usan:** `orders.replan` → ADMIN, OWNER, ADMINISTRATION, SALES (order-replan.tsx:178).
@@ -141,6 +147,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 ## 2. VENTAS
 
 ### /ventas
+
 - **Ruta:** /ventas → `SaleList` (sale-pages.tsx:64-183)
 - **Módulo:** Comercial › Ventas
 - **Roles que la usan:** `sales.read` → ADMIN, OWNER, ADMINISTRATION, SALES, WAREHOUSE. "Nueva venta" con `sales.create` (sin WAREHOUSE). Columnas Total/Pendiente sólo con `price_lists.read` (WAREHOUSE no las ve); "Margen sobre materiales" con `sales.margin.read` (ADMIN, OWNER, ADMINISTRATION).
@@ -162,6 +169,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P1
 
 ### /ventas/nueva
+
 - **Ruta:** /ventas/nueva (directa) y /ventas/nueva?orderId=… (entrega de pedido) → `NewSale` → `SaleForm` (sale-form.tsx:130-597)
 - **Módulo:** Comercial › Ventas (mostrador y entrega de pedidos)
 - **Roles que la usan:** `sales.create` → ADMIN, OWNER, ADMINISTRATION, SALES (la página no verifica el permiso en el cliente: sin permiso falla recién al guardar con "No tenés permiso para esta operación."). Precio visible con `price_lists.read`; edición de precio/descuento con `sales.price_override` (ADMIN, OWNER, ADMINISTRATION) (sale-form.tsx:218-219).
@@ -187,6 +195,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P0
 
 ### /ventas/[id]
+
 - **Ruta:** /ventas/[id] → `SaleDetail` (sale-pages.tsx:192-345), con `SalePreview`/`PreviewView` (borrador), `SaleLines` y `SalePayments` (entregada), `PostSale` (sale-pages.tsx:665-830), `CancelSale` (sale-pages.tsx:832-863), `PaymentDialog` (sale-shared.tsx:88-255).
 - **Módulo:** Comercial › Ventas
 - **Roles que la usan:** `sales.read` → ADMIN, OWNER, ADMINISTRATION, SALES, WAREHOUSE. Confirmar (`sales.post`), Editar/Descartar (`sales.update`), Registrar cobro (`payments.create`+`payments.post`) → ADMIN, OWNER, ADMINISTRATION, SALES (sales.data.ts:407-412). Costos con `sales.cost.read`, margen con `sales.margin.read` → ADMIN, OWNER, ADMINISTRATION.
@@ -214,6 +223,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P0
 
 ### /ventas/[id]/editar
+
 - **Ruta:** /ventas/[id]/editar → `EditSale` (sale-form.tsx:149-166) → `SaleForm`
 - **Módulo:** Comercial › Ventas
 - **Roles que la usan:** `sales.update` → ADMIN, OWNER, ADMINISTRATION, SALES.
@@ -232,6 +242,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 ## 3. CLIENTES
 
 ### /clientes
+
 - **Ruta:** /clientes → `CustomerList` (masters/customers.tsx:34-59)
 - **Módulo:** Comercial › Clientes
 - **Roles que la usan:** `customers.read` → ADMIN, OWNER, ADMINISTRATION, SALES. "Nuevo cliente" con `customers.create` (mismos).
@@ -250,6 +261,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P1
 
 ### /clientes/nuevo
+
 - **Ruta:** /clientes/nuevo → `CustomerForm` sin id (masters/customers.tsx:123-169), vía `EntityForm`
 - **Módulo:** Comercial › Clientes
 - **Roles que la usan:** `customers.create` → ADMIN, OWNER, ADMINISTRATION, SALES. Selector de lista de precios sólo con `price_lists.read`.
@@ -268,6 +280,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P1
 
 ### /clientes/[id]
+
 - **Ruta:** /clientes/[id] → `CustomerDetail` (masters/customers.tsx:171-241)
 - **Módulo:** Comercial › Clientes
 - **Roles que la usan:** `customers.read` → ADMIN, OWNER, ADMINISTRATION, SALES. Editar (`customers.update`), Cuenta corriente (`customer_accounts.read`), Desactivar/Reactivar (`customers.deactivate` → ADMIN, OWNER, ADMINISTRATION).
@@ -286,6 +299,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P1
 
 ### /clientes/[id]/editar
+
 - **Ruta:** /clientes/[id]/editar → `CustomerForm id`
 - **Módulo:** Comercial › Clientes
 - **Roles que la usan:** `customers.update` → ADMIN, OWNER, ADMINISTRATION, SALES.
@@ -304,6 +318,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 ## 4. LISTAS DE PRECIOS
 
 ### /listas-de-precios
+
 - **Ruta:** /listas-de-precios → `PriceListList` (sales/price-list-pages.tsx:35-71)
 - **Módulo:** Comercial › Listas de precios
 - **Roles que la usan:** `price_lists.read` → ADMIN, OWNER, ADMINISTRATION, SALES. "Nueva lista" con `price_lists.manage` (ADMIN, OWNER, ADMINISTRATION).
@@ -318,6 +333,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P3
 
 ### /listas-de-precios/nuevo
+
 - **Ruta:** /listas-de-precios/nuevo → `PriceListForm` (price-list-pages.tsx:245-372)
 - **Módulo:** Comercial › Listas de precios
 - **Roles que la usan:** `price_lists.manage` → ADMIN, OWNER, ADMINISTRATION (sin verificación en el cliente; SALES llega por URL y falla al guardar).
@@ -335,6 +351,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P3
 
 ### /listas-de-precios/[id]
+
 - **Ruta:** /listas-de-precios/[id] → `PriceListDetail` + `PriceRow` (price-list-pages.tsx:73-243)
 - **Módulo:** Comercial › Listas de precios
 - **Roles que la usan:** `price_lists.read` → ADMIN, OWNER, ADMINISTRATION, SALES; edición en línea con `canManage` (ADMIN, OWNER, ADMINISTRATION).
@@ -356,6 +373,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P2
 
 ### /listas-de-precios/[id]/editar
+
 - **Ruta:** /listas-de-precios/[id]/editar → `PriceListForm id`
 - **Módulo:** Comercial › Listas de precios
 - **Roles que la usan:** `price_lists.manage` → ADMIN, OWNER, ADMINISTRATION.
@@ -374,6 +392,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 ## 5. CUENTAS A COBRAR
 
 ### /cuentas-a-cobrar
+
 - **Ruta:** /cuentas-a-cobrar → `ReceivableList` (sales/account-pages.tsx:58-112)
 - **Módulo:** Finanzas › Cuentas a cobrar (en el menú está en Finanzas, lib/navigation.ts:112-118)
 - **Roles que la usan:** `customer_accounts.read` → ADMIN, OWNER, ADMINISTRATION, SALES.
@@ -392,6 +411,7 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 - **Prioridad:** P1
 
 ### /cuentas-a-cobrar/[id]
+
 - **Ruta:** /cuentas-a-cobrar/[id] → `CustomerAccount` (account-pages.tsx:114-340), `ApplyPayment` (342-405), `AdjustAccount` (407-522), `PaymentDialog` (sale-shared.tsx:88-255)
 - **Módulo:** Finanzas › Cuentas a cobrar
 - **Roles que la usan:** `customer_accounts.read` → ADMIN, OWNER, ADMINISTRATION, SALES. "Registrar cobro a cuenta" e "Imputar" con `payments.create`+`payments.post` (mismos). "Ajustar saldo" con `customer_accounts.adjust` (ADMIN, OWNER, ADMINISTRATION).
@@ -446,25 +466,25 @@ Mapa permiso → roles (de docs/PERMISSIONS.md) usado abajo:
 
 Caso: venta directa de 2 productos a Consumidor Final, pagada en efectivo, por un usuario SALES (con `price_lists.read`, sin `sales.price_override`, sin costos). Se parte del menú lateral.
 
-| # | Pantalla | Acción | Clics | Código |
-|---|---|---|---|---|
-| 1 | cualquier | Menú › Comercial › "Ventas" | 1 (2 en ≤768 px: abrir menú) | lib/navigation.ts:100 |
-| 2 | **/ventas** (pantalla 1) | "Nueva venta" | 1 | sale-pages.tsx:86-88; master-list.tsx:131 |
-| 3 | **/ventas/nueva** (pantalla 2) | Espera "Cargando…" hasta tener clientes + productos + depósitos | 0 | sale-form.tsx:116-128, 145 |
-| 4 | | Cliente: queda "Consumidor Final" (walk-in) si está entre los 100 primeros | 0 | sale-form.tsx:220-223 |
-| 5 | | Depósito: queda el primero del catálogo; hay que verificar que sea el del mostrador (si no, 2 clics) | 0–2 | sale-form.tsx:226-228, 374-384 |
-| 6 | | Producto 1: abrir `<select>` y elegir (sin búsqueda; scroll en hasta 100 productos) | 2 | sale-form.tsx:434-453 |
-| 7 | | Cantidad 1: foco + tipear (vacía, no 1 por defecto) | 1 + teclado | sale-form.tsx:459-466 |
-| 8 | | "Agregar producto" | 1 | sale-form.tsx:541-549 |
-| 9 | | Producto 2: abrir y elegir | 2 | ídem 6 |
-| 10 | | Cantidad 2: foco + tipear | 1 + teclado | ídem 7 |
-| 11 | | (El precio se resuelve solo; se muestra "Total estimado" cuando todas las líneas tienen precio) | 0 | sale-form.tsx:243-265, 550-557 |
-| 12 | | "Guardar y ver la entrega" → crea un **borrador** | 1 | sale-form.tsx:578-580, 309-318 |
-| 13 | **/ventas/[id]** (pantalla 3) | Se lee: aviso de borrador, "Datos de la venta", "Vista previa de la entrega" con tabla **Lotes que salen** (código de lote, conservación, "stock libre"), "Falta", importes | 0 | sale-pages.tsx:250-255, 269-337, 518-661 |
-| 14 | | "Confirmar entrega y venta" (cabecera) → abre diálogo | 1 | sale-pages.tsx:725-737 |
-| 15 | diálogo | Tildar "Cobrar ahora" (**desmarcado por defecto**). El monto viene precargado con el total y el medio es "Efectivo" | 1 | sale-pages.tsx:677, 732, 755-764 |
-| 16 | diálogo | "Confirmar entrega y venta" (mismo rótulo que el paso 14) | 1 | sale-pages.tsx:810-817 |
-| 17 | /ventas/[id] | La página se actualiza a "Entregada · Cobrada". Para la venta siguiente: "← Ventas" + "Nueva venta" | 2 | sale-pages.tsx:213 |
+| #   | Pantalla                       | Acción                                                                                                                                                                      | Clics                        | Código                                    |
+| --- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
+| 1   | cualquier                      | Menú › Comercial › "Ventas"                                                                                                                                                 | 1 (2 en ≤768 px: abrir menú) | lib/navigation.ts:100                     |
+| 2   | **/ventas** (pantalla 1)       | "Nueva venta"                                                                                                                                                               | 1                            | sale-pages.tsx:86-88; master-list.tsx:131 |
+| 3   | **/ventas/nueva** (pantalla 2) | Espera "Cargando…" hasta tener clientes + productos + depósitos                                                                                                             | 0                            | sale-form.tsx:116-128, 145                |
+| 4   |                                | Cliente: queda "Consumidor Final" (walk-in) si está entre los 100 primeros                                                                                                  | 0                            | sale-form.tsx:220-223                     |
+| 5   |                                | Depósito: queda el primero del catálogo; hay que verificar que sea el del mostrador (si no, 2 clics)                                                                        | 0–2                          | sale-form.tsx:226-228, 374-384            |
+| 6   |                                | Producto 1: abrir `<select>` y elegir (sin búsqueda; scroll en hasta 100 productos)                                                                                         | 2                            | sale-form.tsx:434-453                     |
+| 7   |                                | Cantidad 1: foco + tipear (vacía, no 1 por defecto)                                                                                                                         | 1 + teclado                  | sale-form.tsx:459-466                     |
+| 8   |                                | "Agregar producto"                                                                                                                                                          | 1                            | sale-form.tsx:541-549                     |
+| 9   |                                | Producto 2: abrir y elegir                                                                                                                                                  | 2                            | ídem 6                                    |
+| 10  |                                | Cantidad 2: foco + tipear                                                                                                                                                   | 1 + teclado                  | ídem 7                                    |
+| 11  |                                | (El precio se resuelve solo; se muestra "Total estimado" cuando todas las líneas tienen precio)                                                                             | 0                            | sale-form.tsx:243-265, 550-557            |
+| 12  |                                | "Guardar y ver la entrega" → crea un **borrador**                                                                                                                           | 1                            | sale-form.tsx:578-580, 309-318            |
+| 13  | **/ventas/[id]** (pantalla 3)  | Se lee: aviso de borrador, "Datos de la venta", "Vista previa de la entrega" con tabla **Lotes que salen** (código de lote, conservación, "stock libre"), "Falta", importes | 0                            | sale-pages.tsx:250-255, 269-337, 518-661  |
+| 14  |                                | "Confirmar entrega y venta" (cabecera) → abre diálogo                                                                                                                       | 1                            | sale-pages.tsx:725-737                    |
+| 15  | diálogo                        | Tildar "Cobrar ahora" (**desmarcado por defecto**). El monto viene precargado con el total y el medio es "Efectivo"                                                         | 1                            | sale-pages.tsx:677, 732, 755-764          |
+| 16  | diálogo                        | "Confirmar entrega y venta" (mismo rótulo que el paso 14)                                                                                                                   | 1                            | sale-pages.tsx:810-817                    |
+| 17  | /ventas/[id]                   | La página se actualiza a "Entregada · Cobrada". Para la venta siguiente: "← Ventas" + "Nueva venta"                                                                         | 2                            | sale-pages.tsx:213                        |
 
 **Totales (desde /ventas hasta venta cobrada):** 12 clics mínimos (pasos 2, 6×2, 7, 8, 9×2, 10, 12, 14, 15, 16) + 2 entradas de teclado; 14–16 si hay que corregir el depósito o se cuenta el menú. **3 pantallas** (listado → formulario → detalle) con **2 navegaciones** + **1 diálogo modal**. Volver a empezar: +2 clics y 2 navegaciones más.
 
@@ -473,6 +493,7 @@ Caso: venta directa de 2 productos a Consumidor Final, pagada en efectivo, por u
 **¿Ve lotes/FEFO/costos?** Sí ve lotes y FEFO: la vista previa (`FEFO_SALE_HINT` "Se utilizarán los lotes más próximos a vencer", sale-pages.tsx:529) y la columna "Lotes que salen" se muestran a todos. SALES ve códigos de lote como texto sin enlace. Si el usuario del mostrador es ADMINISTRATION/OWNER, además ve **Costo material**, **Margen** y costo unitario por lote en la vista previa y en el detalle (sale-pages.tsx:317-330, 369, 567-631), que puede quedar a la vista del cliente.
 
 **Acciones redundantes o de riesgo:**
+
 - Guardar borrador + revisar vista previa + confirmar: dos pasos de confirmación para una venta en la que no se elige nada (los lotes salen por FEFO automático y no se pueden cambiar, deuda LOT_PICKING_OVERRIDE).
 - "Confirmar entrega y venta" dos veces (cabecera y diálogo).
 - "Cobrar ahora" debe tildarse siempre en mostrador; si se olvida, la venta queda "Sin cobrar" y genera deuda del Consumidor Final en cuenta corriente (sale-pages.tsx:700-711 envía `{}` sin `initialPayment`).
@@ -485,27 +506,27 @@ Caso: venta directa de 2 productos a Consumidor Final, pagada en efectivo, por u
 
 Caso: SALES carga un pedido de catering para un cliente existente, con fecha de entrega, 2 productos, lo confirma y registra una seña en efectivo.
 
-| # | Pantalla | Acción | Clics | Código |
-|---|---|---|---|---|
-| 1 | cualquier | Menú › Comercial › "Pedidos" | 1 | lib/navigation.ts:98 |
-| 2 | **/pedidos** (pantalla 1) | "Nuevo pedido" | 1 | order-pages.tsx:91-93 |
-| 3 | **/pedidos/nuevo** (pantalla 2) | Cliente: abrir `<select>` y elegir (sin búsqueda, máx. 100; obligatorio, sin cliente por defecto) | 2 | order-form.tsx:472-484, 398 |
-| 4 | | Fecha: por defecto mañana 10:00; cambiar fecha (picker nativo) | 1–2 | order-form.tsx:351; order-shared.tsx:91-98 |
-| 5 | | Hora: cambiar | 1 + teclado | order-shared.tsx:99-105 |
-| 6 | | Modalidad: "Retira" por defecto; para catering con envío → "Entrega" (2) + Dirección (1 + teclado) | 0–3 | order-form.tsx:504-530 |
-| 7 | | Evento / Contacto / Teléfono / Prioridad / Notas (opcionales) | 0–n | order-form.tsx:531-580 |
-| 8 | | Producto 1: abrir y elegir (sin búsqueda, máx. 100) | 2 | order-form.tsx:157-169 |
-| 9 | | Cantidad 1 (unidad = unidad de venta por defecto; conservación "Indistinto") | 1 + teclado | order-form.tsx:175-195, 202-216 |
-| 10 | | "Agregar producto" | 1 | order-form.tsx:237 |
-| 11 | | Producto 2 + cantidad 2 | 3 + teclado | ídem |
-| 12 | | La vista previa de cobertura aparece sola (tarjetas de 8 métricas por producto + materias primas) | 0 | order-form.tsx:375-382, 610-621 |
-| 13 | | "Guardar borrador" | 1 | order-form.tsx:629-631 |
-| 14 | **/pedidos/[id]** (pantalla 3, borrador) | Se repite la vista previa de cobertura | 0 | order-pages.tsx:397-398, 422-429 |
-| 15 | | "Confirmar pedido" (botón **plano**, junto a Registrar seña, Editar y Cancelar) → diálogo | 1 | order-pages.tsx:267, 729-760; masters/ui.tsx:162 |
-| 16 | diálogo | "Confirmar pedido" (el precio se acuerda solo al confirmar) | 1 | masters/ui.tsx:180-186; apps/api/.../orders.service.ts:952 |
-| 17 | /pedidos/[id] (confirmado) | "Registrar seña" (plano) → diálogo | 1 | order-pages.tsx:255-266; sale-shared.tsx:160-167 |
-| 18 | diálogo | Monto (vacío, sin referencia al total acordado ni máximo): foco + tipear | 1 + teclado | sale-shared.tsx:175-194 |
-| 19 | diálogo | Medio "Efectivo" por defecto; "Registrar cobro" | 1 | sale-shared.tsx:113, 235-242 |
+| #   | Pantalla                                 | Acción                                                                                             | Clics       | Código                                                     |
+| --- | ---------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------- |
+| 1   | cualquier                                | Menú › Comercial › "Pedidos"                                                                       | 1           | lib/navigation.ts:98                                       |
+| 2   | **/pedidos** (pantalla 1)                | "Nuevo pedido"                                                                                     | 1           | order-pages.tsx:91-93                                      |
+| 3   | **/pedidos/nuevo** (pantalla 2)          | Cliente: abrir `<select>` y elegir (sin búsqueda, máx. 100; obligatorio, sin cliente por defecto)  | 2           | order-form.tsx:472-484, 398                                |
+| 4   |                                          | Fecha: por defecto mañana 10:00; cambiar fecha (picker nativo)                                     | 1–2         | order-form.tsx:351; order-shared.tsx:91-98                 |
+| 5   |                                          | Hora: cambiar                                                                                      | 1 + teclado | order-shared.tsx:99-105                                    |
+| 6   |                                          | Modalidad: "Retira" por defecto; para catering con envío → "Entrega" (2) + Dirección (1 + teclado) | 0–3         | order-form.tsx:504-530                                     |
+| 7   |                                          | Evento / Contacto / Teléfono / Prioridad / Notas (opcionales)                                      | 0–n         | order-form.tsx:531-580                                     |
+| 8   |                                          | Producto 1: abrir y elegir (sin búsqueda, máx. 100)                                                | 2           | order-form.tsx:157-169                                     |
+| 9   |                                          | Cantidad 1 (unidad = unidad de venta por defecto; conservación "Indistinto")                       | 1 + teclado | order-form.tsx:175-195, 202-216                            |
+| 10  |                                          | "Agregar producto"                                                                                 | 1           | order-form.tsx:237                                         |
+| 11  |                                          | Producto 2 + cantidad 2                                                                            | 3 + teclado | ídem                                                       |
+| 12  |                                          | La vista previa de cobertura aparece sola (tarjetas de 8 métricas por producto + materias primas)  | 0           | order-form.tsx:375-382, 610-621                            |
+| 13  |                                          | "Guardar borrador"                                                                                 | 1           | order-form.tsx:629-631                                     |
+| 14  | **/pedidos/[id]** (pantalla 3, borrador) | Se repite la vista previa de cobertura                                                             | 0           | order-pages.tsx:397-398, 422-429                           |
+| 15  |                                          | "Confirmar pedido" (botón **plano**, junto a Registrar seña, Editar y Cancelar) → diálogo          | 1           | order-pages.tsx:267, 729-760; masters/ui.tsx:162           |
+| 16  | diálogo                                  | "Confirmar pedido" (el precio se acuerda solo al confirmar)                                        | 1           | masters/ui.tsx:180-186; apps/api/.../orders.service.ts:952 |
+| 17  | /pedidos/[id] (confirmado)               | "Registrar seña" (plano) → diálogo                                                                 | 1           | order-pages.tsx:255-266; sale-shared.tsx:160-167           |
+| 18  | diálogo                                  | Monto (vacío, sin referencia al total acordado ni máximo): foco + tipear                           | 1 + teclado | sale-shared.tsx:175-194                                    |
+| 19  | diálogo                                  | Medio "Efectivo" por defecto; "Registrar cobro"                                                    | 1           | sale-shared.tsx:113, 235-242                               |
 
 **Totales:** ~17 clics mínimos (pasos 2, 3×2, 4, 5, 8×2, 9, 10, 11×3, 13, 15, 16, 17, 18, 19) + 5 entradas de teclado (hora, 2 cantidades, monto; más dirección/contacto si aplica); 20+ con modalidad Entrega y contacto. **3 pantallas** (listado → formulario → detalle) con **2 navegaciones** + **2 diálogos**.
 
@@ -514,6 +535,7 @@ Caso: SALES carga un pedido de catering para un cliente existente, con fecha de 
 **¿Ve lotes/FEFO/costos?** Ve cobertura, lotes (en `<details>` "Lotes (N)" con código, conservación, físico, comprometido, reservado, "Sirve/Vence antes"), receta y materias primas con proveedor sugerido, tanto en el alta como en el detalle del borrador (order-shared.tsx:118-300). Tras confirmar, el detalle suma "Lotes reservados", "Producción necesaria" y "Materias primas necesarias" (order-pages.tsx:401-414). No ve costos (no se muestran en pedidos). El "Precio actual" del formulario es el del producto, no el que se acordará (order-form.tsx:219).
 
 **Acciones redundantes o de riesgo:**
+
 - La vista previa de cobertura se muestra dos veces (formulario y detalle del borrador).
 - Guardar borrador y confirmar son dos pasos separados aunque el usuario ya revisó la vista previa; no existe "Guardar y confirmar".
 - La seña no se puede cargar en el alta; y en el detalle se ofrece incluso en borrador, antes de que haya precio acordado.
@@ -526,20 +548,20 @@ Caso: SALES carga un pedido de catering para un cliente existente, con fecha de 
 
 Caso: un cliente con cuenta corriente paga en efectivo y el usuario (SALES) lo registra desde la cuenta del cliente, aplicándolo a su venta pendiente.
 
-| # | Pantalla | Acción | Clics | Código |
-|---|---|---|---|---|
-| 1 | cualquier | Menú › Finanzas › "Cuentas a cobrar" | 1 | lib/navigation.ts:112-118 |
-| 2 | **/cuentas-a-cobrar** (pantalla 1, filtro "Clientes que deben") | Buscar el cliente: foco + tipear (espera de 300 ms) | 1 + teclado | account-pages.tsx:58-74; master-list.tsx:103-108 |
-| 3 | | Clic en el nombre del cliente | 1 | account-pages.tsx:79-81 |
-| 4 | **/cuentas-a-cobrar/[id]** (pantalla 2) | Leer saldo, ventas pendientes, movimientos | 0 | account-pages.tsx:162-217 |
-| 5 | | "Registrar cobro a cuenta" (plano, al lado de "Ajustar saldo") → diálogo | 1 | account-pages.tsx:145-154 |
-| 6 | diálogo | Monto: vacío, sin saldo ni máximo de referencia → foco + tipear | 1 + teclado | sale-shared.tsx:175-194 |
-| 7 | diálogo | Medio "Efectivo" por defecto; "Registrar cobro" | 1 | sale-shared.tsx:113, 235-242 |
-| 8 | /cuentas-a-cobrar/[id] | El saldo baja, pero la venta sigue en "Ventas pendientes de cobro" y aparece "Cobros con crédito sin imputar" | 0 | account-pages.tsx:179-258 |
-| 9 | | "Imputar" en la fila del cobro → diálogo | 1 | account-pages.tsx:243-250, 360-373 |
-| 10 | diálogo | Venta: la primera pendiente preseleccionada (si es otra: 2 clics); monto sugerido = mín(pendiente, disponible) | 0–2 | account-pages.tsx:353-356, 376-391 |
-| 11 | diálogo | "Imputar" | 1 | masters/ui.tsx:180-186 |
-| 12 | | Repetir 9-11 por cada venta adicional a saldar | +2–4 por venta | — |
+| #   | Pantalla                                                        | Acción                                                                                                         | Clics          | Código                                           |
+| --- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------ |
+| 1   | cualquier                                                       | Menú › Finanzas › "Cuentas a cobrar"                                                                           | 1              | lib/navigation.ts:112-118                        |
+| 2   | **/cuentas-a-cobrar** (pantalla 1, filtro "Clientes que deben") | Buscar el cliente: foco + tipear (espera de 300 ms)                                                            | 1 + teclado    | account-pages.tsx:58-74; master-list.tsx:103-108 |
+| 3   |                                                                 | Clic en el nombre del cliente                                                                                  | 1              | account-pages.tsx:79-81                          |
+| 4   | **/cuentas-a-cobrar/[id]** (pantalla 2)                         | Leer saldo, ventas pendientes, movimientos                                                                     | 0              | account-pages.tsx:162-217                        |
+| 5   |                                                                 | "Registrar cobro a cuenta" (plano, al lado de "Ajustar saldo") → diálogo                                       | 1              | account-pages.tsx:145-154                        |
+| 6   | diálogo                                                         | Monto: vacío, sin saldo ni máximo de referencia → foco + tipear                                                | 1 + teclado    | sale-shared.tsx:175-194                          |
+| 7   | diálogo                                                         | Medio "Efectivo" por defecto; "Registrar cobro"                                                                | 1              | sale-shared.tsx:113, 235-242                     |
+| 8   | /cuentas-a-cobrar/[id]                                          | El saldo baja, pero la venta sigue en "Ventas pendientes de cobro" y aparece "Cobros con crédito sin imputar"  | 0              | account-pages.tsx:179-258                        |
+| 9   |                                                                 | "Imputar" en la fila del cobro → diálogo                                                                       | 1              | account-pages.tsx:243-250, 360-373               |
+| 10  | diálogo                                                         | Venta: la primera pendiente preseleccionada (si es otra: 2 clics); monto sugerido = mín(pendiente, disponible) | 0–2            | account-pages.tsx:353-356, 376-391               |
+| 11  | diálogo                                                         | "Imputar"                                                                                                      | 1              | masters/ui.tsx:180-186                           |
+| 12  |                                                                 | Repetir 9-11 por cada venta adicional a saldar                                                                 | +2–4 por venta | —                                                |
 
 **Totales (1 venta):** 7–9 clics + 2 entradas de teclado; **2 pantallas** (1 navegación desde el listado) + **2 diálogos**. Con N ventas: +2–4 clics y 1 diálogo por venta adicional. Desde la ficha del cliente: /clientes/[id] → "Cuenta corriente" (1 clic) reemplaza los pasos 1-3.
 
@@ -550,6 +572,7 @@ Caso: un cliente con cuenta corriente paga en efectivo y el usuario (SALES) lo r
 **¿Ve lotes/FEFO/costos?** No en la cuenta corriente. Sí si entra a la venta (ver venta mostrador).
 
 **Acciones redundantes o de riesgo:**
+
 - Dos pasos (cobrar + imputar) para el caso común "paga la venta X"; las ventas no quedan cobradas hasta imputar.
 - No hay "Cobrar" por fila en "Ventas pendientes de cobro" ni "imputar a las más viejas".
 - Estado del diálogo "Imputar" que no se reinicia tras una imputación (account-pages.tsx:353-356): riesgo de imputar a una venta ya saldada o de error.

@@ -21,7 +21,9 @@ import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ApiError, apiFetch, fetchOptions, listPath } from "@/lib/api-client";
 import { isPositive, toDecimal } from "@/lib/decimal-input";
 import { formatDate, formatQuantity } from "@/lib/format";
-import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { describeError } from "@/lib/errors";
+import { EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { Combobox, type ComboOption } from "../ui/combobox";
 import { useCan, useCurrentUser } from "../user-context";
 import {
   AvailabilityTable,
@@ -63,25 +65,43 @@ interface Catalog {
   units: UnitDto[];
 }
 
-function useCatalog(): Catalog | null {
+function useCatalog(): { catalog: Catalog | null; error: ApiError | null; retry: () => void } {
   const units = useUnits();
   const [rest, setRest] = useState<Omit<Catalog, "units"> | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
       fetchOptions<ProductDto>("/api/products"),
       fetchOptions<WarehouseDto>("/api/warehouses"),
       apiFetch<ResponsibleOptionDto[]>("/api/production/responsibles"),
     ])
-      .then(([products, warehouses, responsibles]) =>
+      .then(([products, warehouses, responsibles]) => {
+        if (cancelled) return;
+        setError(null);
         setRest({
           products: products.filter((p) => p.controlsStock),
           warehouses,
           responsibles,
-        }),
-      )
-      .catch(() => setRest({ products: [], warehouses: [], responsibles: [] }));
-  }, []);
-  return rest && units ? { ...rest, units } : null;
+        });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled)
+          setError(err instanceof ApiError ? err : new ApiError(0, "UNKNOWN", "Error"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+  return {
+    catalog: rest && units ? { ...rest, units } : null,
+    error,
+    retry: () => {
+      setError(null);
+      setAttempt((a) => a + 1);
+    },
+  };
 }
 
 /** Versiones publicadas de la receta del producto (para elegir otra que la vigente). */
@@ -130,7 +150,7 @@ export function ProductionForm({ id }: { id?: string }) {
 }
 
 function ProductionFormInner({ id }: { id?: string }) {
-  const catalog = useCatalog();
+  const { catalog, error: catalogError, retry } = useCatalog();
   const params = useSearchParams();
   const requirementId = id ? null : params.get("requirementId");
   const { data: existing, error } = useResource<ProductionOrderDto>(
@@ -142,27 +162,47 @@ function ProductionFormInner({ id }: { id?: string }) {
   );
   if (error) return <ErrorState error={error} />;
   if (requirementError) return <ErrorState error={requirementError} />;
+  if (catalogError) return <ErrorState error={catalogError} onRetry={retry} />;
   if (!catalog || (id && !existing) || (requirementId && !requirement)) return <Loading />;
   if (existing && (existing.status === "COMPLETED" || existing.status === "CANCELLED")) {
     return (
-      <section className="panel panel--empty">
-        <p className="upcoming">Esta orden ya no se puede editar</p>
-        <p className="muted">
-          Una orden completada o cancelada queda cerrada.{" "}
-          <Link href={`${PRODUCTION_BASE}/${existing.id}`}>Volver</Link>
-        </p>
-      </section>
+      <div className="page">
+        <PageHeader
+          breadcrumb={[
+            { href: PRODUCTION_BASE, label: "Órdenes de producción" },
+            { href: `${PRODUCTION_BASE}/${existing.id}`, label: `Orden ${existing.code}` },
+          ]}
+          title={`Editar orden ${existing.code}`}
+        />
+        <EmptyState
+          title="Esta orden ya no se puede editar"
+          description="Una orden completada o cancelada queda cerrada."
+          action={
+            <Link className="button" href={`${PRODUCTION_BASE}/${existing.id}`}>
+              Ver la orden
+            </Link>
+          }
+        />
+      </div>
     );
   }
   if (requirement?.blockedReason) {
     return (
-      <section className="panel panel--empty">
-        <p className="upcoming">No se puede crear la orden desde este pedido</p>
-        <p className="muted">
-          {requirement.blockedReason}{" "}
-          <Link href={`/pedidos/${requirement.order.id}`}>Ver pedido {requirement.order.code}</Link>
-        </p>
-      </section>
+      <div className="page">
+        <PageHeader
+          breadcrumb={{ href: PRODUCTION_BASE, label: "Órdenes de producción" }}
+          title="Nueva orden de producción"
+        />
+        <EmptyState
+          title="No se puede crear la orden desde este pedido"
+          description={requirement.blockedReason}
+          action={
+            <Link className="button" href={`/pedidos/${requirement.order.id}`}>
+              Ver pedido {requirement.order.code}
+            </Link>
+          }
+        />
+      </div>
     );
   }
   return (
@@ -173,6 +213,20 @@ function ProductionFormInner({ id }: { id?: string }) {
     />
   );
 }
+
+/** Campos con error propio en pantalla. */
+const VISIBLE_FIELDS = new Set<string>([
+  "productId",
+  "scheduledFor",
+  "plannedOutputQuantity",
+  "plannedOutputUnitId",
+  "recipeVersionId",
+  "sourceWarehouseId",
+  "outputWarehouseId",
+  "responsibleEmployeeId",
+  "batchCode",
+  "notes",
+]);
 
 const plain = (v: string | null | undefined) =>
   v ? v.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "";
@@ -364,7 +418,11 @@ function ProductionEditor({
     } catch (err) {
       if (err instanceof ApiError) {
         setFieldErrors(err.fieldErrors);
-        setFormError(err.message);
+        // Errores de campos que no están en pantalla (p. ej. la necesidad del pedido): se dicen acá.
+        const hidden = Object.entries(err.fieldErrors)
+          .filter(([key]) => !VISIBLE_FIELDS.has(key))
+          .map(([, text]) => text);
+        setFormError([describeError(err), ...hidden].join(" "));
       } else {
         setFormError("No se pudo guardar la orden.");
       }
@@ -375,11 +433,29 @@ function ProductionEditor({
   const allowed = existing
     ? can(P.PRODUCTION_ORDERS_UPDATE)
     : can(P.PRODUCTION_ORDERS_CREATE) && (!requirement || can(P.ORDER_PRODUCTION_CREATE));
-  const field = (name: keyof Form) => ({
+  const field = (name: keyof Form, hint?: boolean) => ({
     id: `f-${name}`,
     "aria-invalid": fieldErrors[name] ? true : undefined,
-    "aria-describedby": fieldErrors[name] ? `f-${name}-error` : undefined,
+    "aria-describedby":
+      [fieldErrors[name] ? `f-${name}-error` : null, hint ? `f-${name}-hint` : null]
+        .filter(Boolean)
+        .join(" ") || undefined,
   });
+  const required = (
+    <span className="form__required" aria-hidden="true">
+      *
+    </span>
+  );
+  const productOptions = useMemo<ComboOption[]>(
+    () =>
+      catalog.products.map((p) => ({
+        value: p.id,
+        label: p.name,
+        detail: p.saleUnit.symbol,
+        keywords: p.code,
+      })),
+    [catalog.products],
+  );
   const err = (name: keyof Form) =>
     fieldErrors[name] ? (
       <span className="form__error" id={`f-${name}-error`}>
@@ -420,36 +496,38 @@ function ProductionEditor({
           <section className="panel">
             <div className="form-grid">
               <div className="form__field">
-                <label htmlFor="f-productId">Producto</label>
+                <label htmlFor="f-productId">Producto {!operationalOnly && required}</label>
                 {operationalOnly ? (
                   <p>{existing?.product.name}</p>
                 ) : (
-                  <select
-                    {...field("productId")}
+                  <Combobox
+                    id="f-productId"
+                    options={productOptions}
                     value={form.productId}
-                    onChange={(e) => {
-                      set("productId", e.target.value);
+                    placeholder="Buscar producto por nombre"
+                    required
+                    invalid={Boolean(fieldErrors.productId)}
+                    describedBy={fieldErrors.productId ? "f-productId-error" : undefined}
+                    emptyText="Ningún producto con stock coincide"
+                    onChange={(value) => {
+                      set("productId", value);
                       set("plannedOutputUnitId", "");
                       set("recipeVersionId", "");
                     }}
-                  >
-                    <option value="">Elegí un producto</option>
-                    {catalog.products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 )}
                 {err("productId")}
               </div>
               <div className="form__field">
-                <label htmlFor="f-scheduledFor">Fecha programada</label>
+                <label htmlFor="f-scheduledFor">
+                  Fecha programada {!operationalOnly && required}
+                </label>
                 {operationalOnly ? (
                   <p>{formatDate(form.scheduledFor)}</p>
                 ) : (
                   <input
                     type="date"
+                    aria-required
                     {...field("scheduledFor")}
                     value={form.scheduledFor}
                     onChange={(e) => set("scheduledFor", e.target.value)}
@@ -458,7 +536,9 @@ function ProductionEditor({
                 {err("scheduledFor")}
               </div>
               <div className="form__field">
-                <label htmlFor="f-plannedOutputQuantity">Cantidad a producir</label>
+                <label htmlFor="f-plannedOutputQuantity">
+                  Cantidad a producir {!operationalOnly && required}
+                </label>
                 {operationalOnly && existing ? (
                   <p>
                     {formatQuantity(
@@ -470,6 +550,8 @@ function ProductionEditor({
                   <div className="input-group">
                     <input
                       inputMode="decimal"
+                      autoComplete="off"
+                      aria-required
                       {...field("plannedOutputQuantity")}
                       value={form.plannedOutputQuantity}
                       onChange={(e) => set("plannedOutputQuantity", e.target.value)}
@@ -501,7 +583,7 @@ function ProductionEditor({
                   </p>
                 ) : (
                   <select
-                    {...field("recipeVersionId")}
+                    {...field("recipeVersionId", true)}
                     value={form.recipeVersionId}
                     onChange={(e) => set("recipeVersionId", e.target.value)}
                     disabled={!product}
@@ -514,15 +596,25 @@ function ProductionEditor({
                     ))}
                   </select>
                 )}
+                {!operationalOnly && (
+                  <span className="form__hint" id="f-recipeVersionId-hint">
+                    {product
+                      ? "Cambiala sólo si hay que producir con otra versión."
+                      : "Primero elegí el producto."}
+                  </span>
+                )}
                 {err("recipeVersionId")}
               </div>
               <div className="form__field">
-                <label htmlFor="f-sourceWarehouseId">Depósito de materias primas</label>
+                <label htmlFor="f-sourceWarehouseId">
+                  Depósito de materias primas {!operationalOnly && required}
+                </label>
                 {operationalOnly ? (
                   <p>{existing?.sourceWarehouse.name}</p>
                 ) : (
                   <select
-                    {...field("sourceWarehouseId")}
+                    aria-required
+                    {...field("sourceWarehouseId", true)}
                     value={form.sourceWarehouseId}
                     onChange={(e) => set("sourceWarehouseId", e.target.value)}
                   >
@@ -534,15 +626,23 @@ function ProductionEditor({
                     ))}
                   </select>
                 )}
+                {!operationalOnly && (
+                  <span className="form__hint" id="f-sourceWarehouseId-hint">
+                    De acá se descuentan los ingredientes al completar.
+                  </span>
+                )}
                 {err("sourceWarehouseId")}
               </div>
               <div className="form__field">
-                <label htmlFor="f-outputWarehouseId">Depósito de producto terminado</label>
+                <label htmlFor="f-outputWarehouseId">
+                  Depósito de producto terminado {!operationalOnly && required}
+                </label>
                 {operationalOnly ? (
                   <p>{existing?.outputWarehouse.name}</p>
                 ) : (
                   <select
-                    {...field("outputWarehouseId")}
+                    aria-required
+                    {...field("outputWarehouseId", true)}
                     value={form.outputWarehouseId}
                     onChange={(e) => set("outputWarehouseId", e.target.value)}
                   >
@@ -553,6 +653,11 @@ function ProductionEditor({
                       </option>
                     ))}
                   </select>
+                )}
+                {!operationalOnly && (
+                  <span className="form__hint" id="f-outputWarehouseId-hint">
+                    Acá entra el lote producido.
+                  </span>
                 )}
                 {err("outputWarehouseId")}
               </div>
@@ -575,12 +680,15 @@ function ProductionEditor({
               <div className="form__field">
                 <label htmlFor="f-batchCode">Lote</label>
                 <input
-                  {...field("batchCode")}
+                  {...field("batchCode", true)}
                   value={form.batchCode}
+                  autoComplete="off"
                   onChange={(e) => set("batchCode", e.target.value)}
-                  placeholder="Se genera al planificar si lo dejás vacío"
                   maxLength={40}
                 />
+                <span className="form__hint" id="f-batchCode-hint">
+                  Opcional. Si lo dejás vacío se genera al planificar.
+                </span>
                 {err("batchCode")}
               </div>
               <div className="form__field form__field--full">
@@ -598,6 +706,12 @@ function ProductionEditor({
           </section>
 
           {!operationalOnly && <PlanSummary preview={preview} error={previewError} ready={ready} />}
+          {!operationalOnly && (
+            <p className="muted small">
+              <span aria-hidden="true">*</span> Obligatorio. Se guarda como borrador: la receta, las
+              cantidades y el lote se fijan al planificar.
+            </p>
+          )}
 
           {formError && (
             <p className="form__error" role="alert">
@@ -641,7 +755,7 @@ function PlanSummary({
         </p>
       ) : error ? (
         <div className="alert alert--warn" role="status">
-          {Object.values(error.fieldErrors)[0] ?? error.message}
+          {Object.values(error.fieldErrors)[0] ?? describeError(error)}
         </div>
       ) : !preview ? (
         <Loading />
@@ -677,7 +791,9 @@ function PlanSummary({
               </ul>
             </div>
           )}
-          {preview.availability && <AvailabilityTable availability={preview.availability} />}
+          {preview.availability && (
+            <AvailabilityTable availability={preview.availability} buyInNewTab />
+          )}
           <ProductionCosts order={preview} embedded />
         </>
       )}

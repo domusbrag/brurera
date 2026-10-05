@@ -810,7 +810,7 @@ export async function getOrderDetail(
         ? null
         : "Sólo se entrega un pedido listo (con todo el producto reservado)."
     : unpriced
-      ? "El pedido no tiene precio acordado: cotizalo antes de entregar."
+      ? "El pedido no tiene precio acordado: usá «Acordar precio» antes de entregar."
       : null;
   const open = order.status !== "CANCELLED" && order.status !== "DELIVERED";
 

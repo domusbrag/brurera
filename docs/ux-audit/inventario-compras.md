@@ -7,22 +7,22 @@ Fecha: 2026-10-05. Sin cambios en el repo.
 
 Abreviaturas de archivo (todas bajo `apps/web/src/`):
 
-| Abrev. | Archivo |
-| --- | --- |
-| `INV` | `components/inventory/inventory-pages.tsx` |
-| `OP` | `components/inventory/stock-operation.tsx` |
-| `PST` | `components/inventory/product-stock-pages.tsx` |
-| `PRES` | `components/inventory/presentations.tsx` |
-| `LOT` | `components/lots/lot-pages.tsx` |
-| `LSH` | `components/lots/lot-shared.tsx` |
-| `CONS` | `components/lots/conservation.tsx` |
-| `PP` | `components/purchases/purchase-pages.tsx` |
-| `PF` | `components/purchases/purchase-form.tsx` |
-| `ITEMS` | `components/masters/items.tsx` |
-| `ML` | `components/masters/master-list.tsx` |
-| `UI` | `components/masters/ui.tsx` |
-| `API` | `lib/api-client.ts` |
-| `CSS` | `app/globals.css` |
+| Abrev.  | Archivo                                        |
+| ------- | ---------------------------------------------- |
+| `INV`   | `components/inventory/inventory-pages.tsx`     |
+| `OP`    | `components/inventory/stock-operation.tsx`     |
+| `PST`   | `components/inventory/product-stock-pages.tsx` |
+| `PRES`  | `components/inventory/presentations.tsx`       |
+| `LOT`   | `components/lots/lot-pages.tsx`                |
+| `LSH`   | `components/lots/lot-shared.tsx`               |
+| `CONS`  | `components/lots/conservation.tsx`             |
+| `PP`    | `components/purchases/purchase-pages.tsx`      |
+| `PF`    | `components/purchases/purchase-form.tsx`       |
+| `ITEMS` | `components/masters/items.tsx`                 |
+| `ML`    | `components/masters/master-list.tsx`           |
+| `UI`    | `components/masters/ui.tsx`                    |
+| `API`   | `lib/api-client.ts`                            |
+| `CSS`   | `app/globals.css`                              |
 
 Notas de contexto que afectan a todas las rutas:
 
@@ -48,6 +48,7 @@ Notas de contexto que afectan a todas las rutas:
 ## 1. Inventario — materias primas
 
 ### `/stock`
+
 - **Ruta:** `/stock` → `StockList` (`INV:117-196`).
 - **Módulo:** Inventario › Materias primas.
 - **Roles que la usan:** `inventory.read` → ADMIN, OWNER, ADMINISTRATION, PURCHASING, PRODUCTION, WAREHOUSE. Columnas de costo sólo con `inventory.cost.read` (ADMIN, OWNER, ADMINISTRATION, PURCHASING). Botones: Ajustar/Registrar merma → WAREHOUSE (+ADMIN/OWNER); Cargar stock inicial → ADMINISTRATION (+ADMIN/OWNER).
@@ -70,6 +71,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/stock/[id]`
+
 - **Ruta:** `/stock/[id]` → `StockDetail` (`INV:440-612`).
 - **Módulo:** Inventario › Materias primas › Ficha de stock.
 - **Roles que la usan:** `inventory.read` (los 6 roles de arriba). Costos promedio/valor e historial con `inventory.cost.read`. "Nueva compra" con `purchases.create` (PURCHASING). Presentaciones con `presentations.read` (ADMIN, OWNER, ADMINISTRATION, PURCHASING, WAREHOUSE).
@@ -92,6 +94,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/stock/ajuste`
+
 - **Ruta:** `/stock/ajuste` → `StockOperationForm kind="adjust"` (`OP:69-441`).
 - **Módulo:** Inventario › Operaciones.
 - **Roles que la usan:** `inventory.adjust` → ADMIN, OWNER, WAREHOUSE.
@@ -114,6 +117,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1 (fecha en zona incorrecta = dato contable incorrecto).
 
 ### `/stock/merma`
+
 - **Ruta:** `/stock/merma` → `StockOperationForm kind="waste"`.
 - **Módulo:** Inventario › Operaciones.
 - **Roles que la usan:** `inventory.waste` → ADMIN, OWNER, WAREHOUSE.
@@ -127,6 +131,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/stock/inicial`
+
 - **Ruta:** `/stock/inicial` → `StockOperationForm kind="initial"`.
 - **Módulo:** Inventario › Operaciones (puesta en marcha).
 - **Roles que la usan:** `inventory.initial_stock` → ADMIN, OWNER, ADMINISTRATION.
@@ -140,6 +145,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/stock/movimientos`
+
 - **Ruta:** `/stock/movimientos` → `MovementList` (`INV:319-371`).
 - **Módulo:** Inventario › Movimientos.
 - **Roles que la usan:** `inventory.read` (6 roles); columna de costo unitario con `inventory.cost.read`.
@@ -159,6 +165,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/stock/bajo-minimo`
+
 - **Ruta:** `/stock/bajo-minimo` → `LowStockList` (`INV:373-436`).
 - **Módulo:** Inventario › Bajo mínimo.
 - **Roles que la usan:** `inventory.read`; "Crear compra" con `purchases.create` (PURCHASING, ADMIN, OWNER).
@@ -174,6 +181,7 @@ Notas de contexto que afectan a todas las rutas:
 ## 2. Inventario — productos terminados y lotes
 
 ### `/stock/productos`
+
 - **Ruta:** `/stock/productos` → `ProductStockList` (`PST:42-168`).
 - **Módulo:** Inventario › Productos terminados.
 - **Roles que la usan:** `inventory.read` → ADMIN, OWNER, ADMINISTRATION, PURCHASING, PRODUCTION, WAREHOUSE. Costos con `inventory.cost.read`.
@@ -196,6 +204,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P0 (es la pantalla que responde "qué puedo vender" y oculta bloqueado/vencido/descongelado/comprometido en tablet).
 
 ### `/stock/productos/[id]`
+
 - **Ruta:** `/stock/productos/[id]` → `ProductStockDetail` (`PST:170-405`) + `ProductLotsPanel`, `AvailabilityAtDate` (`LOT:109-356`).
 - **Módulo:** Inventario › Productos terminados › Ficha.
 - **Roles que la usan:** `inventory.read`; lotes y disponibilidad con `product_lots.read` (ADMIN, OWNER, ADMINISTRATION, PRODUCTION, WAREHOUSE — **PURCHASING no ve lotes**); "Nueva orden de producción" con `production_orders.create` (PRODUCTION); acciones de lote según `product_lots.transform/waste`.
@@ -219,6 +228,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/stock/productos/por-vencer`
+
 - **Ruta:** `/stock/productos/por-vencer` → `ExpiringList` (`LOT:996-1071`).
 - **Módulo:** Inventario › Próximos a vencer.
 - **Roles que la usan:** `inventory.expiry.read` → ADMIN, OWNER, ADMINISTRATION, PRODUCTION, WAREHOUSE. Acciones de fila con `product_lots.transform` (PRODUCTION, WAREHOUSE) y `product_lots.waste` (WAREHOUSE).
@@ -239,6 +249,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/stock/lotes/[id]`
+
 - **Ruta:** `/stock/lotes/[id]` → `LotDetail` (`LOT:403-683`).
 - **Módulo:** Inventario › Lote.
 - **Roles que la usan:** `product_lots.read` → ADMIN, OWNER, ADMINISTRATION, PRODUCTION, WAREHOUSE. Congelar/Descongelar `product_lots.transform`; Merma `product_lots.waste`; Bloquear/Desbloquear `product_lots.quality` (WAREHOUSE).
@@ -260,6 +271,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/stock/lotes/[id]/congelar`
+
 - **Ruta:** `/stock/lotes/[id]/congelar` → `LotOperationForm kind="freeze"` (`LOT:695-992`).
 - **Módulo:** Inventario › Lote › Operación.
 - **Roles que la usan:** `product_lots.transform` → ADMIN, OWNER, PRODUCTION, WAREHOUSE.
@@ -273,6 +285,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/stock/lotes/[id]/descongelar`
+
 - **Ruta:** `/stock/lotes/[id]/descongelar` → `LotOperationForm kind="thaw"`.
 - **Módulo:** Inventario › Lote › Operación.
 - **Roles que la usan:** `product_lots.transform` → ADMIN, OWNER, PRODUCTION, WAREHOUSE.
@@ -286,6 +299,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/stock/lotes/[id]/merma`
+
 - **Ruta:** `/stock/lotes/[id]/merma` → `LotOperationForm kind="waste"`.
 - **Módulo:** Inventario › Lote › Operación.
 - **Roles que la usan:** `product_lots.waste` → ADMIN, OWNER, WAREHOUSE.
@@ -301,6 +315,7 @@ Notas de contexto que afectan a todas las rutas:
 ## 3. Compras
 
 ### `/compras`
+
 - **Ruta:** `/compras` → `PurchaseList` (`PP:83-142`).
 - **Módulo:** Operaciones › Compras.
 - **Roles que la usan:** `purchases.read` → ADMIN, OWNER, ADMINISTRATION, PURCHASING, WAREHOUSE. "Nueva compra" con `purchases.create` (PURCHASING).
@@ -321,6 +336,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/compras/nueva`
+
 - **Ruta:** `/compras/nueva` → `PurchaseForm` (`PF:129-684`).
 - **Módulo:** Compras › Alta.
 - **Roles que la usan:** `purchases.create` → ADMIN, OWNER, PURCHASING; "Guardar y confirmar pedido" requiere además `purchases.order`.
@@ -346,6 +362,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P0 (riesgo de compras duplicadas + selects truncados).
 
 ### `/compras/[id]`
+
 - **Ruta:** `/compras/[id]` → `PurchaseDetail` (`PP:144-379`).
 - **Módulo:** Compras › Detalle.
 - **Roles que la usan:** `purchases.read` → ADMIN, OWNER, ADMINISTRATION, PURCHASING, WAREHOUSE. Editar `purchases.update`, Confirmar pedido `purchases.order`, Cancelar `purchases.cancel` (PURCHASING); Registrar recepción `purchases.receive` (PURCHASING, WAREHOUSE). Historial con `audit.read`.
@@ -368,6 +385,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P1.
 
 ### `/compras/[id]/editar`
+
 - **Ruta:** `/compras/[id]/editar` → `PurchaseForm id` (`PF:137-154`).
 - **Módulo:** Compras › Edición de borrador.
 - **Roles que la usan:** `purchases.update` → ADMIN, OWNER, PURCHASING.
@@ -381,6 +399,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/compras/[id]/recepcion`
+
 - **Ruta:** `/compras/[id]/recepcion` → `ReceiptForm` (`PF:704-1030`).
 - **Módulo:** Compras › Recepción.
 - **Roles que la usan:** `purchases.receive` → ADMIN, OWNER, PURCHASING, WAREHOUSE.
@@ -403,6 +422,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P0 (fecha de ingreso de stock/costo en zona incorrecta, es dato contable).
 
 ### `/compras/[id]/recepciones/[receiptId]`
+
 - **Ruta:** `/compras/[id]/recepciones/[receiptId]` → `ReceiptDetail` (`PP:411-508`).
 - **Módulo:** Compras › Recepción (detalle).
 - **Roles que la usan:** `purchases.read` → ADMIN, OWNER, ADMINISTRATION, PURCHASING, WAREHOUSE.
@@ -418,6 +438,7 @@ Notas de contexto que afectan a todas las rutas:
 ## 4. Maestros de artículos
 
 ### `/materias-primas`
+
 - **Ruta:** `/materias-primas` → `RawMaterialList` (`ITEMS:91-136`).
 - **Módulo:** Inventario › Materias primas (maestro).
 - **Roles que la usan:** `raw_materials.read` → ADMIN, OWNER, ADMINISTRATION, PURCHASING, PRODUCTION, WAREHOUSE; alta con `raw_materials.create` (ADMIN, OWNER, PURCHASING).
@@ -431,6 +452,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/materias-primas/nuevo`
+
 - **Ruta:** `/materias-primas/nuevo` → `RawMaterialForm` (`ITEMS:138-257`).
 - **Módulo:** Maestro de materias primas.
 - **Roles que la usan:** `raw_materials.create` → ADMIN, OWNER, PURCHASING (costo inicial con `raw_materials.update_cost`).
@@ -448,6 +470,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/materias-primas/[id]`
+
 - **Ruta:** `/materias-primas/[id]` → `RawMaterialDetail` (`ITEMS:259-382`).
 - **Módulo:** Maestro de materias primas › Ficha.
 - **Roles que la usan:** `raw_materials.read`; Editar `raw_materials.update` (PURCHASING); Desactivar `raw_materials.deactivate` (ADMIN, OWNER); Cambiar costo `raw_materials.update_cost` (ADMINISTRATION, PURCHASING); presentaciones según `presentations.*`.
@@ -461,6 +484,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/materias-primas/[id]/editar`
+
 - **Ruta:** `/materias-primas/[id]/editar` → `RawMaterialForm id`.
 - **Módulo:** Maestro de materias primas.
 - **Roles que la usan:** `raw_materials.update` → ADMIN, OWNER, PURCHASING.
@@ -474,6 +498,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P3.
 
 ### `/productos`
+
 - **Ruta:** `/productos` → `ProductList` (`ITEMS:446-475`).
 - **Módulo:** Inventario › Productos (maestro).
 - **Roles que la usan:** `products.read` → ADMIN, OWNER, ADMINISTRATION, SALES, PRODUCTION, WAREHOUSE; alta con `products.create` (ADMIN, OWNER).
@@ -487,6 +512,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P3.
 
 ### `/productos/nuevo`
+
 - **Ruta:** `/productos/nuevo` → `ProductForm` (`ITEMS:477-566`).
 - **Módulo:** Maestro de productos.
 - **Roles que la usan:** `products.create` → ADMIN, OWNER.
@@ -500,6 +526,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P3.
 
 ### `/productos/[id]`
+
 - **Ruta:** `/productos/[id]` → `ProductDetail` (`ITEMS:568-625`) + `ConservationSummary` (`CONS:28-84`).
 - **Módulo:** Maestro de productos › Ficha.
 - **Roles que la usan:** `products.read`; Editar `products.update` (ADMINISTRATION); Desactivar `products.deactivate`; costo teórico con `recipes.read` (ADMIN, OWNER, ADMINISTRATION, PRODUCTION); conservación con `product_conservation.read` y "Configurar" con `.manage` (ADMIN, OWNER).
@@ -513,6 +540,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P2.
 
 ### `/productos/[id]/editar`
+
 - **Ruta:** `/productos/[id]/editar` → `ProductForm id`.
 - **Módulo:** Maestro de productos.
 - **Roles que la usan:** `products.update` → ADMIN, OWNER, ADMINISTRATION.
@@ -526,6 +554,7 @@ Notas de contexto que afectan a todas las rutas:
 - **Prioridad:** P3.
 
 ### `/productos/[id]/conservacion`
+
 - **Ruta:** `/productos/[id]/conservacion` → `ConservationForm` (`CONS:118-351`).
 - **Módulo:** Maestro de productos › Conservación.
 - **Roles que la usan:** `product_conservation.manage` → ADMIN, OWNER.
@@ -568,28 +597,28 @@ Notas de contexto que afectan a todas las rutas:
 
 Escenario: PURCHASING crea una compra con 2 líneas, la pide, se recibe y se verifica stock/costo.
 
-| # | Pantalla | Acción exacta | Clics | Navegación | Código |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Cualquiera | Menú lateral "Operaciones → Compras" | 1 | → `/compras` | `lib/navigation.ts:65` |
-| 2 | `/compras` | "Nueva compra" (primaria, cabecera) | 1 | → `/compras/nueva` | `PP:98-100`, `ML:130-134` |
-| 3 | Nueva compra | Proveedor: abrir select y elegir (obligatorio; ≤100, sin búsqueda) | 2 | — | `PF:382-394` |
-| 4 | Nueva compra | Fecha: precargada con hoy del navegador (obligatoria) | 0 | — | `PF:186`, `PF:78-82` |
-| 5 | Línea 1 | Materia prima: abrir select y elegir (≤100) | 2 | — | `PF:476-492` |
-| 6 | Línea 1 | Presentación: se autoselecciona la primera activa o la unidad base; cambiarla = 2 clics | 0–2 | — | `PF:231-237`, `PF:504-521` |
-| 7 | Línea 1 | Cantidad (escribir, obligatoria) y Precio unitario (escribir, obligatorio); Descuento opcional | 2 campos | — | `PF:529-567` |
-| 8 | Nueva compra | "Agregar materia prima" | 1 | — | `PF:597-603` |
-| 9 | Línea 2 | Repetir pasos 5–7 | 2 clics + 2 campos | — | — |
-| 10 | Nueva compra | (Opcional) Impuestos, fecha esperada, documento, observaciones | — | — | `PF:417-435, 616-631, 651-658` |
-| 11 | Nueva compra | "Guardar y confirmar pedido" (sin diálogo de confirmación; POST + POST `/order`) | 1 | → `/compras/[id]` (Pedida) | `PF:663-672`, `PF:323-327` |
-| 11b | (alternativa) | "Guardar borrador" → detalle → "Confirmar pedido" → diálogo "Confirmar pedido" | +2 | → `/compras/[id]` | `PF:660`, `PP:182-193` |
-| 12 | `/compras/[id]` | "Registrar recepción" (primaria) | 1 | → `/compras/[id]/recepcion` | `PP:172-176` |
-| 13 | Recepción | Depósito (preseleccionado el primero; obligatorio), fecha/hora (precargada, zona del navegador), remito opcional; cantidades precargadas con todo lo pendiente | 0 | — | `PF:724-727`, `PF:832-870` |
-| 14 | Recepción | "Revisar recepción" | 1 | (mismo URL, paso 2) | `PF:940-946` |
-| 15 | Revisión | "Confirmar recepción" (POST receipt + POST `/post`) | 1 | → `/compras/[id]` (Recibida) | `PF:1003-1010`, `PF:756-777` |
-| 16 | `/compras/[id]` | Las líneas no enlazan a stock (`PP:273`). Menú "Inventario → Stock" | 1 | → `/stock` | `lib/navigation.ts:84` |
-| 17 | `/stock` | Escribir nombre de MP 1 en la búsqueda + clic en el nombre | 1 + texto | → `/stock/[id]` | `INV:157-160` |
-| 18 | `/stock/[id]` | Ver "Stock total", "Costo promedio de inventario" (sólo con `inventory.cost.read`), "Última compra" | 0 | — | `INV:486-600` |
-| 19 | — | Volver (breadcrumb, 1) y repetir 17–18 para MP 2 | 2 + texto | → `/stock` → `/stock/[id]` | `INV:452` |
+| #   | Pantalla        | Acción exacta                                                                                                                                                  | Clics              | Navegación                   | Código                         |
+| --- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------- | ------------------------------ |
+| 1   | Cualquiera      | Menú lateral "Operaciones → Compras"                                                                                                                           | 1                  | → `/compras`                 | `lib/navigation.ts:65`         |
+| 2   | `/compras`      | "Nueva compra" (primaria, cabecera)                                                                                                                            | 1                  | → `/compras/nueva`           | `PP:98-100`, `ML:130-134`      |
+| 3   | Nueva compra    | Proveedor: abrir select y elegir (obligatorio; ≤100, sin búsqueda)                                                                                             | 2                  | —                            | `PF:382-394`                   |
+| 4   | Nueva compra    | Fecha: precargada con hoy del navegador (obligatoria)                                                                                                          | 0                  | —                            | `PF:186`, `PF:78-82`           |
+| 5   | Línea 1         | Materia prima: abrir select y elegir (≤100)                                                                                                                    | 2                  | —                            | `PF:476-492`                   |
+| 6   | Línea 1         | Presentación: se autoselecciona la primera activa o la unidad base; cambiarla = 2 clics                                                                        | 0–2                | —                            | `PF:231-237`, `PF:504-521`     |
+| 7   | Línea 1         | Cantidad (escribir, obligatoria) y Precio unitario (escribir, obligatorio); Descuento opcional                                                                 | 2 campos           | —                            | `PF:529-567`                   |
+| 8   | Nueva compra    | "Agregar materia prima"                                                                                                                                        | 1                  | —                            | `PF:597-603`                   |
+| 9   | Línea 2         | Repetir pasos 5–7                                                                                                                                              | 2 clics + 2 campos | —                            | —                              |
+| 10  | Nueva compra    | (Opcional) Impuestos, fecha esperada, documento, observaciones                                                                                                 | —                  | —                            | `PF:417-435, 616-631, 651-658` |
+| 11  | Nueva compra    | "Guardar y confirmar pedido" (sin diálogo de confirmación; POST + POST `/order`)                                                                               | 1                  | → `/compras/[id]` (Pedida)   | `PF:663-672`, `PF:323-327`     |
+| 11b | (alternativa)   | "Guardar borrador" → detalle → "Confirmar pedido" → diálogo "Confirmar pedido"                                                                                 | +2                 | → `/compras/[id]`            | `PF:660`, `PP:182-193`         |
+| 12  | `/compras/[id]` | "Registrar recepción" (primaria)                                                                                                                               | 1                  | → `/compras/[id]/recepcion`  | `PP:172-176`                   |
+| 13  | Recepción       | Depósito (preseleccionado el primero; obligatorio), fecha/hora (precargada, zona del navegador), remito opcional; cantidades precargadas con todo lo pendiente | 0                  | —                            | `PF:724-727`, `PF:832-870`     |
+| 14  | Recepción       | "Revisar recepción"                                                                                                                                            | 1                  | (mismo URL, paso 2)          | `PF:940-946`                   |
+| 15  | Revisión        | "Confirmar recepción" (POST receipt + POST `/post`)                                                                                                            | 1                  | → `/compras/[id]` (Recibida) | `PF:1003-1010`, `PF:756-777`   |
+| 16  | `/compras/[id]` | Las líneas no enlazan a stock (`PP:273`). Menú "Inventario → Stock"                                                                                            | 1                  | → `/stock`                   | `lib/navigation.ts:84`         |
+| 17  | `/stock`        | Escribir nombre de MP 1 en la búsqueda + clic en el nombre                                                                                                     | 1 + texto          | → `/stock/[id]`              | `INV:157-160`                  |
+| 18  | `/stock/[id]`   | Ver "Stock total", "Costo promedio de inventario" (sólo con `inventory.cost.read`), "Última compra"                                                            | 0                  | —                            | `INV:486-600`                  |
+| 19  | —               | Volver (breadcrumb, 1) y repetir 17–18 para MP 2                                                                                                               | 2 + texto          | → `/stock` → `/stock/[id]`   | `INV:452`                      |
 
 **Totales (camino corto con "Guardar y confirmar pedido"):** ≈ 19–21 clics, 8 campos escritos (4 cantidades/precios + 2 búsquedas + opcionales), **8 navegaciones** (`/compras` → `/compras/nueva` → `/compras/[id]` → `/compras/[id]/recepcion` → `/compras/[id]` → `/stock` → `/stock/[id]` → `/stock` → `/stock/[id]`).
 
@@ -603,12 +632,12 @@ Escenario: PURCHASING crea una compra con 2 líneas, la pide, se recibe y se ver
 
 Escenario: a las 7:00, depósito/producción necesita saber, para productos terminados perecederos, qué hay, qué está reservado, qué se puede vender, qué vence pronto y qué está bloqueado. Punto de partida: cualquier pantalla. Rol con todos los permisos de lectura (WAREHOUSE o ADMINISTRATION).
 
-| Pregunta | Dónde se responde | Clics / pantallas | Notas y código |
-| --- | --- | --- | --- |
-| **¿Qué tengo?** (total por producto) | `/stock/productos`, columna "Físico" | 2 clics (menú Stock → pestaña "Productos terminados"), 1 pantalla | La pestaña por defecto de Stock es Materias primas (`INV:58`); "Físico" `PST:90-94`. Por estado sólo Fresco/Refrigerado/Congelado, **sin Descongelado** (`PST:95`) y ocultas en tablet (`hide-md`). Por lote: +1 clic por producto (`PST:293`, `LOT:109-213`). |
-| **¿Qué está reservado?** | `/stock/productos`, columna "Comprometido" | 2 clics, 1 pantalla (en escritorio) | Oculta en tablet (`PST:114`, `hide-sm`). **Por lote/pedido**: producto (+1) → lote (+1) → panel "Reservado para pedidos" (`LOT:361-401`) = 4 clics y 3 pantallas por lote; la tabla de lotes no tiene columna de reservado (el DTO `ProductLotDto` no lo trae). |
-| **¿Qué puedo vender?** | `/stock/productos`, columna "Disponible ahora" (negrita) | 2 clics, 1 pantalla | `PST:117-122`. Convive con "Utilizable ahora" sin explicación. **Para una fecha futura** (p. ej. sábado): +1 clic al producto y elegir fecha/hora en "Disponibilidad a una fecha" (`LOT:216-356`) = 3 clics + 2 campos por producto. |
-| **¿Qué vence pronto?** | `/stock/productos/por-vencer` | 2 clics (menú Stock → pestaña "Próximos a vencer"), 1 pantalla | `INV:60-62`, `LOT:996-1071`. Filtro de ventana opcional (+2). No muestra si lo que vence está reservado. Alternativa resumida: columna "Próximo a vencer" en `/stock/productos` (`PST:123-134`). |
-| **¿Qué está bloqueado?** | **No hay pantalla global.** Sólo en la ficha de stock de cada producto (texto chico "bloqueado X", `PST:256-257`) o como badge en la tabla de lotes (`LOT:187`) | 3 clics y 3 pantallas **por producto** (menú → pestaña → producto), revisando N productos uno por uno | El listado (`PST:75-165`) no muestra `lots.blocked` ni `lots.expired` aunque el DTO los trae; "Próximos a vencer" no incluye bloqueados (`LOT:1008-1012`). Con 20 productos ≈ 2 + 20×2 = 42 clics. |
+| Pregunta                             | Dónde se responde                                                                                                                                               | Clics / pantallas                                                                                     | Notas y código                                                                                                                                                                                                                                                  |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **¿Qué tengo?** (total por producto) | `/stock/productos`, columna "Físico"                                                                                                                            | 2 clics (menú Stock → pestaña "Productos terminados"), 1 pantalla                                     | La pestaña por defecto de Stock es Materias primas (`INV:58`); "Físico" `PST:90-94`. Por estado sólo Fresco/Refrigerado/Congelado, **sin Descongelado** (`PST:95`) y ocultas en tablet (`hide-md`). Por lote: +1 clic por producto (`PST:293`, `LOT:109-213`).  |
+| **¿Qué está reservado?**             | `/stock/productos`, columna "Comprometido"                                                                                                                      | 2 clics, 1 pantalla (en escritorio)                                                                   | Oculta en tablet (`PST:114`, `hide-sm`). **Por lote/pedido**: producto (+1) → lote (+1) → panel "Reservado para pedidos" (`LOT:361-401`) = 4 clics y 3 pantallas por lote; la tabla de lotes no tiene columna de reservado (el DTO `ProductLotDto` no lo trae). |
+| **¿Qué puedo vender?**               | `/stock/productos`, columna "Disponible ahora" (negrita)                                                                                                        | 2 clics, 1 pantalla                                                                                   | `PST:117-122`. Convive con "Utilizable ahora" sin explicación. **Para una fecha futura** (p. ej. sábado): +1 clic al producto y elegir fecha/hora en "Disponibilidad a una fecha" (`LOT:216-356`) = 3 clics + 2 campos por producto.                            |
+| **¿Qué vence pronto?**               | `/stock/productos/por-vencer`                                                                                                                                   | 2 clics (menú Stock → pestaña "Próximos a vencer"), 1 pantalla                                        | `INV:60-62`, `LOT:996-1071`. Filtro de ventana opcional (+2). No muestra si lo que vence está reservado. Alternativa resumida: columna "Próximo a vencer" en `/stock/productos` (`PST:123-134`).                                                                |
+| **¿Qué está bloqueado?**             | **No hay pantalla global.** Sólo en la ficha de stock de cada producto (texto chico "bloqueado X", `PST:256-257`) o como badge en la tabla de lotes (`LOT:187`) | 3 clics y 3 pantallas **por producto** (menú → pestaña → producto), revisando N productos uno por uno | El listado (`PST:75-165`) no muestra `lots.blocked` ni `lots.expired` aunque el DTO los trae; "Próximos a vencer" no incluye bloqueados (`LOT:1008-1012`). Con 20 productos ≈ 2 + 20×2 = 42 clics.                                                              |
 
 **Resumen:** 4 de las 5 preguntas se responden en 2 clics, pero repartidas en **2 pantallas distintas** (Productos terminados + Próximos a vencer) y con columnas clave (Comprometido, estados de conservación) ocultas en tablet, el dispositivo típico del depósito. La quinta (bloqueado) no tiene respuesta agregada: escala lineal con la cantidad de productos. El detalle por lote de reservado también escala lineal (4 clics por lote). Vencido sólo se ve en "Próximos a vencer" (filtro "Sólo vencidos") o en texto chico en la ficha (`PST:254-255`). El inicio no muestra ninguna alerta de vencimiento (backlog DASHBOARD F4.5).

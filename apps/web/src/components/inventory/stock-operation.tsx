@@ -4,6 +4,7 @@ import { D } from "@bakery/domain";
 import {
   ADJUSTMENT_REASONS,
   ADJUSTMENT_REASON_LABELS,
+  PERMISSIONS as P,
   WASTE_REASONS,
   WASTE_REASON_LABELS,
   type InventoryDetailDto,
@@ -11,15 +12,20 @@ import {
   type RawMaterialDto,
   type StockOperationResultDto,
   type WarehouseDto,
+  instantToZonedLocal,
+  zonedLocalToInstant,
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
 import { isDecimal, isPositive, parseDecimal, toDecimal } from "@/lib/decimal-input";
-import { formatMoney, formatQuantity, formatReferenceCost } from "@/lib/format";
+import { describeError } from "@/lib/errors";
+import { formatMoney, formatQuantity, formatUnitCost } from "@/lib/format";
 import { Loading, PageHeader, useResource } from "../masters/ui";
-import { useCurrentUser } from "../user-context";
+import { WallClockInput, formatWallClock, isCompleteWallClock } from "../orders/order-shared";
+import { Combobox, type ComboOption } from "../ui/combobox";
+import { useCan, useCurrentUser } from "../user-context";
 import { STOCK_BASE } from "./inventory-pages";
 
 /*
@@ -60,11 +66,8 @@ const COPY: Record<
   },
 };
 
-const localNow = () => {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 16);
-};
+/** Hora de pared actual de la EMPRESA ("AAAA-MM-DDTHH:mm"), no la del navegador. */
+const companyNow = (timeZone: string) => instantToZonedLocal(new Date(), timeZone);
 
 export function StockOperationForm({ kind }: { kind: StockOperationKind }) {
   return (
@@ -78,6 +81,9 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
   const router = useRouter();
   const params = useSearchParams();
   const user = useCurrentUser();
+  const can = useCan();
+  const tz = user.company.timezone;
+  const showCosts = can(P.INVENTORY_COST_READ);
   const copy = COPY[kind];
   const [materials, setMaterials] = useState<RawMaterialDto[] | null>(null);
   const { data: warehousePage } = useResource<Page<WarehouseDto>>(
@@ -85,11 +91,12 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
   );
   const [rawMaterialId, setRawMaterialId] = useState(params.get("rawMaterialId") ?? "");
   const [chosenWarehouseId, setWarehouseId] = useState("");
-  const [direction, setDirection] = useState<"POSITIVE" | "NEGATIVE">("NEGATIVE");
+  // Sin valor por defecto: el sentido del ajuste define el signo y se elige a conciencia.
+  const [direction, setDirection] = useState<"POSITIVE" | "NEGATIVE" | "">("");
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [reason, setReason] = useState("");
-  const [occurredAt, setOccurredAt] = useState(localNow);
+  const [occurredAt, setOccurredAt] = useState(() => companyNow(tz));
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState<"edit" | "review">("edit");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -103,6 +110,18 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
   }, []);
   const { data: detail } = useResource<InventoryDetailDto>(
     rawMaterialId ? `/api/inventory/raw-materials/${rawMaterialId}` : null,
+  );
+  const materialOptions = useMemo<ComboOption[]>(
+    () =>
+      (materials ?? [])
+        .filter((m) => m.active || m.id === rawMaterialId)
+        .map((m) => ({
+          value: m.id,
+          label: m.name,
+          detail: m.baseUnit.symbol,
+          keywords: `${m.code} ${m.category.name}`,
+        })),
+    [materials, rawMaterialId],
   );
 
   if (!materials || !warehousePage) return <Loading />;
@@ -133,13 +152,19 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
         ? ADJUSTMENT_REASONS.map((r) => ({ value: r, label: ADJUSTMENT_REASON_LABELS[r] }))
         : [];
   const costOk = unitCost.trim() === "" ? !needsCost : isDecimal(unitCost);
-  const ready =
-    !!material &&
-    !!warehouseId &&
-    !!qty &&
-    costOk &&
-    (reasons.length === 0 || !!reason) &&
-    !(after && after.lt(0));
+  const dateComplete = isCompleteWallClock(occurredAt);
+  const dateInFuture = dateComplete && occurredAt > companyNow(tz);
+  // Lo que falta para poder revisar, en palabras (el botón deshabilitado no queda mudo).
+  const missing = [
+    !material && "la materia prima",
+    !warehouseId && "el depósito",
+    kind === "adjust" && !direction && "el tipo de ajuste",
+    !qty && "una cantidad mayor a 0",
+    !costOk && "el costo unitario",
+    reasons.length > 0 && !reason && "el motivo",
+    !dateComplete && "la fecha y hora",
+  ].filter(Boolean) as string[];
+  const ready = missing.length === 0 && !dateInFuture && !(after && after.lt(0));
   const movementLabel =
     kind === "initial"
       ? "Stock inicial"
@@ -147,7 +172,9 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
         ? "Merma"
         : direction === "NEGATIVE"
           ? "Ajuste (salida)"
-          : "Ajuste (entrada)";
+          : direction === "POSITIVE"
+            ? "Ajuste (entrada)"
+            : "Ajuste";
   const valuationCost =
     unitCost.trim() !== "" && isDecimal(unitCost)
       ? toDecimal(unitCost)
@@ -166,7 +193,8 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
           rawMaterialId,
           warehouseId,
           quantity: toDecimal(quantity),
-          occurredAt: occurredAt ? new Date(occurredAt).toISOString() : null,
+          // Hora de pared de la empresa → instante ISO (mismo formato de payload que antes).
+          occurredAt: dateComplete ? zonedLocalToInstant(occurredAt, tz).toISOString() : null,
           notes: notes || null,
           ...(kind === "adjust" ? { direction, reason } : {}),
           ...(kind === "waste" ? { reason } : {}),
@@ -184,8 +212,8 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
             : err.code === "VALUATION_COST_REQUIRED"
               ? "Esta materia prima no tiene costo promedio: indicá el costo unitario de valorización."
               : Object.keys(err.fieldErrors).length > 0
-                ? Object.values(err.fieldErrors).join(". ")
-                : err.message,
+                ? "Revisá los datos marcados."
+                : describeError(err),
         );
       } else setFormError("No se pudo registrar la operación.");
       setStep("edit");
@@ -242,71 +270,115 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
           <section className={copy.panel}>
             <div className="form-grid">
               <div className="form__field">
-                <label htmlFor="rawMaterialId">Materia prima</label>
-                <select
+                <label htmlFor="rawMaterialId">
+                  Materia prima <Required />
+                </label>
+                <Combobox
                   id="rawMaterialId"
+                  options={materialOptions}
                   value={rawMaterialId}
-                  aria-invalid={fieldErrors.rawMaterialId ? true : undefined}
-                  onChange={(e) => setRawMaterialId(e.target.value)}
-                >
-                  <option value="">Elegí una materia prima</option>
-                  {materials
-                    .filter((m) => m.active || m.id === rawMaterialId)
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                </select>
+                  onChange={setRawMaterialId}
+                  placeholder="Buscar por nombre o código"
+                  emptyText="Ninguna materia prima coincide"
+                  required
+                  invalid={Boolean(fieldErrors.rawMaterialId)}
+                  describedBy={fieldErrors.rawMaterialId ? "rawMaterialId-error" : undefined}
+                />
                 {fieldErrors.rawMaterialId && (
-                  <span className="form__error">{fieldErrors.rawMaterialId}</span>
+                  <span id="rawMaterialId-error" className="form__error">
+                    {fieldErrors.rawMaterialId}
+                  </span>
                 )}
               </div>
               <div className="form__field">
-                <label htmlFor="warehouseId">Depósito</label>
+                <label htmlFor="warehouseId">
+                  Depósito <Required />
+                </label>
                 <select
                   id="warehouseId"
                   value={warehouseId}
+                  aria-required="true"
                   onChange={(e) => setWarehouseId(e.target.value)}
                 >
+                  {warehousePage.items.length === 0 && (
+                    <option value="">Sin depósitos activos</option>
+                  )}
                   {warehousePage.items.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name}
                     </option>
                   ))}
                 </select>
+                {warehousePage.items.length > 1 && !chosenWarehouseId && (
+                  <span className="form__hint">
+                    Se propone el primer depósito: cambialo si corresponde.
+                  </span>
+                )}
               </div>
               {kind === "adjust" && (
-                <div className="form__field">
-                  <label htmlFor="direction">Tipo de ajuste</label>
-                  <select
-                    id="direction"
-                    value={direction}
-                    onChange={(e) => setDirection(e.target.value as "POSITIVE" | "NEGATIVE")}
-                  >
-                    <option value="NEGATIVE">Salida (hay menos de lo registrado)</option>
-                    <option value="POSITIVE">Entrada (hay más de lo registrado)</option>
-                  </select>
-                </div>
+                <fieldset className="form__field form__field--full">
+                  <legend className="form__label">
+                    Tipo de ajuste <Required />
+                  </legend>
+                  <div className="segmented" role="radiogroup" aria-label="Tipo de ajuste">
+                    <label>
+                      <input
+                        type="radio"
+                        name="direction"
+                        value="POSITIVE"
+                        checked={direction === "POSITIVE"}
+                        onChange={() => setDirection("POSITIVE")}
+                      />
+                      Entrada: hay más de lo registrado
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="direction"
+                        value="NEGATIVE"
+                        checked={direction === "NEGATIVE"}
+                        onChange={() => setDirection("NEGATIVE")}
+                      />
+                      Salida: hay menos de lo registrado
+                    </label>
+                  </div>
+                </fieldset>
               )}
               <div className="form__field">
-                <label htmlFor="quantity">Cantidad{unit ? ` (${unit})` : ""}</label>
-                <input
-                  id="quantity"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  value={quantity}
-                  aria-invalid={fieldErrors.quantity || (quantity && !qty) ? true : undefined}
-                  onChange={(e) => setQuantity(e.target.value)}
-                />
-                {fieldErrors.quantity && (
-                  <span className="form__error">{fieldErrors.quantity}</span>
+                <label htmlFor="quantity">
+                  Cantidad{unit ? ` (${unit})` : ""} <Required />
+                </label>
+                <div className="input-group">
+                  <input
+                    id="quantity"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={quantity}
+                    aria-required="true"
+                    aria-invalid={fieldErrors.quantity || (quantity && !qty) ? true : undefined}
+                    aria-describedby={
+                      fieldErrors.quantity || (quantity && !qty) ? "quantity-error" : undefined
+                    }
+                    onChange={(e) => setQuantity(e.target.value)}
+                  />
+                  {unit && <span className="muted">{unit}</span>}
+                </div>
+                {(fieldErrors.quantity || (quantity && !qty)) && (
+                  <span id="quantity-error" className="form__error">
+                    {fieldErrors.quantity ?? "Escribí una cantidad mayor a 0."}
+                  </span>
                 )}
               </div>
               {allowsCost && (
                 <div className="form__field">
                   <label htmlFor="unitCost">
-                    Costo unitario por {unit || "unidad"} ({currency}){needsCost ? " *" : ""}
+                    Costo unitario por {unit || "unidad"} ({currency})
+                    {needsCost && (
+                      <>
+                        {" "}
+                        <Required />
+                      </>
+                    )}
                   </label>
                   <input
                     id="unitCost"
@@ -315,15 +387,17 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
                     placeholder={
                       needsCost
                         ? "Obligatorio"
-                        : average
-                          ? `Promedio vigente: ${formatReferenceCost(average, currency, unit)}`
+                        : average && showCosts
+                          ? `Promedio vigente: ${formatUnitCost(average, currency, unit)}`
                           : undefined
                     }
                     value={unitCost}
-                    aria-invalid={fieldErrors.unitCost ? true : undefined}
+                    aria-required={needsCost || undefined}
+                    aria-invalid={fieldErrors.unitCost || !costOk ? true : undefined}
+                    aria-describedby="unitCost-hint"
                     onChange={(e) => setUnitCost(e.target.value)}
                   />
-                  <span className="form__hint">
+                  <span id="unitCost-hint" className="form__hint">
                     {kind === "initial"
                       ? "Valoriza el stock inicial y fija el primer costo promedio."
                       : needsCost
@@ -337,10 +411,13 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
               )}
               {reasons.length > 0 && (
                 <div className="form__field">
-                  <label htmlFor="reason">Motivo</label>
+                  <label htmlFor="reason">
+                    Motivo <Required />
+                  </label>
                   <select
                     id="reason"
                     value={reason}
+                    aria-required="true"
                     aria-invalid={fieldErrors.reason ? true : undefined}
                     onChange={(e) => setReason(e.target.value)}
                   >
@@ -351,17 +428,28 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.reason && <span className="form__error">{fieldErrors.reason}</span>}
                 </div>
               )}
               <div className="form__field">
-                <label htmlFor="occurredAt">Fecha y hora</label>
-                <input
+                <label htmlFor="occurredAt">
+                  Fecha y hora <Required />
+                </label>
+                <WallClockInput
                   id="occurredAt"
-                  type="datetime-local"
                   value={occurredAt}
-                  max={localNow()}
-                  onChange={(e) => setOccurredAt(e.target.value)}
+                  timeZone={tz}
+                  onChange={setOccurredAt}
+                  invalid={dateInFuture || Boolean(fieldErrors.occurredAt)}
+                  describedBy={
+                    dateInFuture || fieldErrors.occurredAt ? "occurredAt-error" : undefined
+                  }
                 />
+                {(dateInFuture || fieldErrors.occurredAt) && (
+                  <span id="occurredAt-error" className="form__error">
+                    {fieldErrors.occurredAt ?? "La fecha no puede ser posterior a ahora."}
+                  </span>
+                )}
               </div>
             </div>
             <div className="form__field form__field--full" style={{ marginTop: "1rem" }}>
@@ -378,15 +466,25 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
               </p>
             )}
             <div className="form__footer">
-              <button type="submit" className="button button--primary" disabled={!ready}>
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={!ready}
+                aria-describedby={missing.length > 0 ? "review-missing" : undefined}
+              >
                 Revisar
               </button>
               <Link
-                className="button"
+                className="button button--tertiary"
                 href={material ? `${STOCK_BASE}/${material.id}` : STOCK_BASE}
               >
                 Cancelar
               </Link>
+              {missing.length > 0 && (
+                <span id="review-missing" className="muted small">
+                  Para revisar falta: {missing.join(", ")}.
+                </span>
+              )}
             </div>
           </section>
         </form>
@@ -404,14 +502,17 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
                     : ADJUSTMENT_REASON_LABELS[reason as keyof typeof ADJUSTMENT_REASON_LABELS]
                 }`
               : ""}
-            {valuationCost && qty
-              ? ` · valorizado a ${formatReferenceCost(valuationCost, currency, unit)} (${formatMoney(
+            {showCosts && valuationCost && qty
+              ? ` · valorizado a ${formatUnitCost(valuationCost, currency, unit)} (${formatMoney(
                   qty.times(valuationCost).toString(),
                   currency,
                 )})`
               : ""}
           </p>
           {impact}
+          <p className="muted small">
+            Fecha del movimiento: {formatWallClock(occurredAt)} (hora de la empresa).
+          </p>
           <p className="muted small">
             Se registra como movimiento de inventario y no se puede editar: una corrección se hace
             con otro ajuste.
@@ -437,5 +538,13 @@ function StockOperationInner({ kind }: { kind: StockOperationKind }) {
         </section>
       )}
     </div>
+  );
+}
+
+function Required() {
+  return (
+    <span className="form__required" aria-hidden="true">
+      *
+    </span>
   );
 }

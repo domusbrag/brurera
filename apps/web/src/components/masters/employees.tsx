@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { formatDate } from "@/lib/format";
+import { useFlash } from "../ui/flash";
 import { useCan } from "../user-context";
 import { EntityForm, toFormValues, toPayload, type FieldDef } from "./entity-form";
 import { MasterList } from "./master-list";
@@ -47,21 +48,25 @@ export function EmployeeList() {
       emptyText="Todavía no hay empleados cargados."
       statusLabels={{ active: "Activos", inactive: "Dados de baja" }}
       columns={[
-        { header: "Legajo", cell: (e) => <span className="code">{e.code}</span> },
         {
           header: "Nombre",
           cell: (e) => <Link href={`${BASE}/${e.id}`}>{`${e.lastName}, ${e.firstName}`}</Link>,
         },
-        { header: "Puesto", cell: (e) => e.position ?? "—", className: "hide-sm" },
         {
-          header: "Usuario del sistema",
+          header: "Legajo",
+          cell: (e) => <span className="code">{e.code}</span>,
+          className: "hide-md",
+        },
+        { header: "Puesto", cell: (e) => e.position ?? "" },
+        {
+          header: "Acceso al sistema",
           cell: (e) =>
-            e.access ? (e.access.status === "ACTIVE" ? "Sí" : "Sí (desactivado)") : "No",
-          className: "hide-sm",
+            e.access ? (e.access.status === "ACTIVE" ? "Sí" : "Sí, desactivado") : "No",
+          className: "hide-md",
         },
         {
           header: "Estado",
-          cell: (e) => <StatusBadge active={e.status === "ACTIVE"} off="Baja" />,
+          cell: (e) => <StatusBadge active={e.status === "ACTIVE"} off="Dado de baja" />,
         },
       ]}
     />
@@ -69,17 +74,7 @@ export function EmployeeList() {
 }
 
 const fields = (creating: boolean): FieldDef[] => [
-  ...(creating
-    ? [
-        {
-          name: "code",
-          label: "Legajo",
-          placeholder: "Automático (EMP-0001…)",
-          hint: "Dejalo vacío para generarlo solo.",
-        },
-      ]
-    : []),
-  { name: "firstName", label: "Nombre", required: true },
+  { name: "firstName", label: "Nombre", required: true, section: "Datos personales" },
   { name: "lastName", label: "Apellido", required: true },
   {
     name: "documentType",
@@ -87,11 +82,31 @@ const fields = (creating: boolean): FieldDef[] => [
     kind: "select",
     options: DOCUMENT_TYPES.map((t) => ({ value: t, label: DOCUMENT_TYPE_LABELS[t] })),
   },
-  { name: "documentNumber", label: "Número de documento" },
-  { name: "position", label: "Puesto" },
+  { name: "documentNumber", label: "Número de documento", hint: "Sin puntos ni guiones." },
+  {
+    name: "position",
+    label: "Puesto",
+    section: "Trabajo",
+    hint: "Ej.: Panadero, Cajera, Repartidor.",
+  },
   { name: "hireDate", label: "Fecha de ingreso", kind: "date" },
-  { name: "phone", label: "Teléfono" },
-  { name: "email", label: "Email", kind: "email" },
+  ...(creating
+    ? [
+        {
+          name: "code",
+          label: "Legajo",
+          placeholder: "EMP-0001",
+          hint: "Opcional: si lo dejás vacío se genera solo.",
+        },
+      ]
+    : []),
+  { name: "phone", label: "Teléfono", section: "Contacto" },
+  {
+    name: "email",
+    label: "Email",
+    kind: "email",
+    hint: "Para contactarlo. El email para ingresar al sistema se define al crear su acceso.",
+  },
   { name: "address", label: "Dirección" },
   { name: "city", label: "Localidad" },
   { name: "notes", label: "Observaciones", kind: "textarea" },
@@ -99,6 +114,7 @@ const fields = (creating: boolean): FieldDef[] => [
 
 export function EmployeeForm({ id }: { id?: string }) {
   const router = useRouter();
+  const flash = useFlash();
   const { data, error } = useResource<EmployeeDto>(id ? `${API}/${id}` : null);
   if (id && error) return <ErrorState error={error} />;
   if (id && !data) return <Loading />;
@@ -106,11 +122,16 @@ export function EmployeeForm({ id }: { id?: string }) {
   return (
     <div className="page">
       <PageHeader
-        title={id ? `Editar ${data?.fullName}` : "Nuevo empleado"}
-        breadcrumb={{
-          href: id ? `${BASE}/${id}` : BASE,
-          label: id ? "Volver al empleado" : "Empleados",
-        }}
+        title={id ? "Editar empleado" : "Nuevo empleado"}
+        subtitle={id && data ? <span className="code">{data.code}</span> : undefined}
+        breadcrumb={
+          id && data
+            ? [
+                { href: BASE, label: "Empleados" },
+                { href: `${BASE}/${id}`, label: data.fullName },
+              ]
+            : { href: BASE, label: "Empleados" }
+        }
       />
       <EntityForm
         fields={defs}
@@ -122,6 +143,9 @@ export function EmployeeForm({ id }: { id?: string }) {
           const saved = id
             ? await apiFetch<EmployeeDto>(`${API}/${id}`, { method: "PATCH", body })
             : await apiFetch<EmployeeDto>(API, { method: "POST", body });
+          flash(id ? "Cambios guardados." : `Empleado ${saved.code} creado.`, {
+            afterNavigation: true,
+          });
           router.push(`${BASE}/${saved.id}`);
         }}
       />
@@ -134,8 +158,8 @@ export function EmployeeDetail({ id }: { id: string }) {
   const [version, setVersion] = useState(0);
   const [terminationDate, setTerminationDate] = useState("");
   const { data, error, reload } = useResource<EmployeeDto>(`${API}/${id}`);
-  if (error) return <ErrorState error={error} />;
-  if (!data) return <Loading />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!data) return <Loading label="Cargando el empleado…" />;
   const refresh = () => {
     reload();
     setVersion((v) => v + 1);
@@ -146,10 +170,10 @@ export function EmployeeDetail({ id }: { id: string }) {
       <PageHeader
         breadcrumb={{ href: BASE, label: "Empleados" }}
         title={data.fullName}
+        status={<StatusBadge active={active} off="Dado de baja" />}
         subtitle={
           <>
-            <span className="code">{data.code}</span> · {data.position ?? "Sin puesto"} ·{" "}
-            <StatusBadge active={active} off="Dado de baja" />
+            <span className="code">{data.code}</span> · {data.position ?? "Sin puesto"}
           </>
         }
         actions={
@@ -178,17 +202,23 @@ export function EmployeeDetail({ id }: { id: string }) {
                       method: "POST",
                       body: terminationDate ? { terminationDate } : {},
                     });
+                    setTerminationDate("");
                     refresh();
                   }}
                 >
-                  <label className="form__field" style={{ marginTop: "0.75rem" }}>
-                    <span>Fecha de egreso (vacío = hoy)</span>
+                  <div className="form__field">
+                    <label htmlFor="employee-termination">Fecha de egreso</label>
                     <input
+                      id="employee-termination"
                       type="date"
                       value={terminationDate}
+                      aria-describedby="employee-termination-hint"
                       onChange={(e) => setTerminationDate(e.target.value)}
                     />
-                  </label>
+                    <span className="form__hint" id="employee-termination-hint">
+                      Si la dejás vacía, se usa la fecha de hoy.
+                    </span>
+                  </div>
                 </ConfirmAction>
               ) : (
                 <ConfirmAction
@@ -207,6 +237,7 @@ export function EmployeeDetail({ id }: { id: string }) {
       />
       <section className="panel">
         <Details
+          hideEmpty
           items={[
             [
               "Documento",
@@ -215,10 +246,10 @@ export function EmployeeDetail({ id }: { id: string }) {
                 : null,
             ],
             ["Puesto", data.position],
-            ["Fecha de ingreso", formatDate(data.hireDate)],
+            ["Fecha de ingreso", data.hireDate ? formatDate(data.hireDate) : null],
             ["Fecha de egreso", data.terminationDate ? formatDate(data.terminationDate) : null],
-            ["Teléfono", data.phone],
-            ["Email", data.email],
+            ["Teléfono", data.phone && <a href={`tel:${data.phone}`}>{data.phone}</a>],
+            ["Email", data.email && <a href={`mailto:${data.email}`}>{data.email}</a>],
             ["Dirección", [data.address, data.city].filter(Boolean).join(", ")],
             ["Observaciones", data.notes],
           ]}
@@ -228,7 +259,7 @@ export function EmployeeDetail({ id }: { id: string }) {
         <h2 id="access-title">Acceso al sistema</h2>
         <Details
           items={[
-            ["Empleado", "Sí"],
+            ["Empleado", active ? "Activo" : "Dado de baja"],
             [
               "Usuario del sistema",
               data.access ? (data.access.status === "ACTIVE" ? "Sí" : "Sí, desactivado") : "No",
@@ -236,6 +267,11 @@ export function EmployeeDetail({ id }: { id: string }) {
             ["Email de ingreso", data.access?.email],
           ]}
         />
+        {!data.access && (
+          <p className="muted small">
+            Sin acceso, la persona no puede ingresar al sistema. Darle acceso es opcional.
+          </p>
+        )}
         <div className="form__footer">
           {data.access && can(P.USERS_READ) && (
             <Link className="button" href={`/usuarios/${data.access.userId}`}>

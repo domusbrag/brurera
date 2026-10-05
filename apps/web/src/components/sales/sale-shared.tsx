@@ -85,6 +85,7 @@ export function PaymentDialog({
   max,
   maxMessage,
   defaultAmount,
+  currentBalance,
   primary,
   small,
   onDone,
@@ -98,6 +99,8 @@ export function PaymentDialog({
   max?: string;
   maxMessage?: string;
   defaultAmount?: string;
+  /** Saldo actual del cliente (positivo = debe): muestra cómo queda después del cobro. */
+  currentBalance?: string;
   /** Es el paso principal de la pantalla (p. ej. cobrar una venta pendiente). */
   primary?: boolean;
   small?: boolean;
@@ -202,6 +205,21 @@ export function PaymentDialog({
             {tooMuch && (
               <span className="form__error" role="alert">
                 {maxMessage ?? `Supera el pendiente de ${formatMoney(max, currency)}.`}
+              </span>
+            )}
+            {max === undefined && currentBalance !== undefined && (
+              <span className="form__hint" data-testid="balance-after">
+                {(() => {
+                  const after = isPositive(amount)
+                    ? new D(currentBalance).minus(toDecimal(amount))
+                    : new D(currentBalance);
+                  const label = isPositive(amount) ? "Después del cobro" : "Saldo actual";
+                  if (after.gt(0))
+                    return `${label}: debe ${formatMoney(after.toFixed(2), currency)}`;
+                  if (after.lt(0))
+                    return `${label}: ${formatMoney(after.abs().toFixed(2), currency)} de crédito a favor`;
+                  return `${label}: sin saldo`;
+                })()}
               </span>
             )}
             {fieldErrors.amount && (

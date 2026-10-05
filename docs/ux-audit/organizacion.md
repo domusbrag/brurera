@@ -638,9 +638,10 @@ Fuente: `lib/navigation.ts` (`NAVIGATION`, `visibleNavigation`, `CURRENT_PHASE =
 Se usan los permisos de `packages/shared/src/roles.ts`. "Inicio" se agrega siempre, fuera de grupo y sin verificar
 `dashboard.view` (`app-shell.tsx:45-47`). Los ítems con `phase > 5` (Caja 6, Cuentas a pagar 6, Gastos 6,
 Facturación 7, Reportes 8) se muestran a todos y llevan a "Disponible en próxima etapa".
-Se marcan con *(futuro)*.
+Se marcan con _(futuro)_.
 
 ### ADMIN — Administrador del sistema (23 entradas: Inicio + 22 ítems, 5 futuros, 9 grupos)
+
 ```
 Inicio
 OPERACIONES     Compras
@@ -655,15 +656,18 @@ SISTEMA         Configuración · Auditoría
 ```
 
 ### OWNER — Dueño (23 entradas, idéntico a ADMIN)
+
 Igual a ADMIN: ambos tienen `ALL_PERMISSION_CODES`.
 
 ### ADMINISTRATION — Administración (23 entradas: Inicio + 22 ítems, 5 futuros, 9 grupos)
+
 Igual a ADMIN. Tiene `purchases.read`, `production_orders.read`, `recipes.read`, `order_planning.read`,
 `inventory.read`, `raw_materials.read`, `products.read`, `orders.read`, `sales.read`, `price_lists.read`,
 `customers.read`, `suppliers.read`, `customer_accounts.read`, `employees.read`, `users.read`, `audit.read`
 y los permisos de configuración. Ve los mismos 22 ítems aunque solo lee buena parte de ellos.
 
 ### SALES — Ventas (13 entradas: Inicio + 12 ítems, 5 futuros = 42 % del menú, 6 grupos)
+
 ```
 Inicio
 INVENTARIO      Productos
@@ -674,6 +678,7 @@ SISTEMA         Configuración   (Unidades, Categorías, Depósitos: solo lectur
 ```
 
 ### PURCHASING — Compras (11 entradas: Inicio + 10 ítems, 5 futuros = 50 % del menú, 6 grupos)
+
 ```
 Inicio
 OPERACIONES     Compras
@@ -685,6 +690,7 @@ SISTEMA         Configuración   (solo lectura)
 ```
 
 ### PRODUCTION — Producción (14 entradas: Inicio + 13 ítems, 5 futuros = 38 %, 7 grupos)
+
 ```
 Inicio
 PRODUCCIÓN      Órdenes · Recetas
@@ -697,6 +703,7 @@ SISTEMA         Configuración   (solo lectura)
 ```
 
 ### WAREHOUSE — Depósito (13 entradas: Inicio + 12 ítems, 5 futuros = 42 %, 7 grupos)
+
 ```
 Inicio
 OPERACIONES     Compras
@@ -709,15 +716,15 @@ SISTEMA         Configuración   (solo lectura; aquí están los Depósitos)
 
 ### Resumen
 
-| Rol | Entradas (con Inicio) | Ítems reales | Futuros | Grupos | Grupos de 1 ítem |
-| --- | :-: | :-: | :-: | :-: | --- |
-| ADMIN | 23 | 17 | 5 | 9 | Operaciones, Planificación, Análisis |
-| OWNER | 23 | 17 | 5 | 9 | Operaciones, Planificación, Análisis |
-| ADMINISTRATION | 23 | 17 | 5 | 9 | Operaciones, Planificación, Análisis |
-| SALES | 13 | 7 | 5 | 6 | Inventario, Análisis, Sistema |
-| PURCHASING | 11 | 5 | 5 | 6 | Operaciones, Comercial, Análisis, Sistema |
-| PRODUCTION | 14 | 8 | 5 | 7 | Planificación, Comercial, Análisis, Sistema |
-| WAREHOUSE | 13 | 7 | 5 | 7 | Operaciones, Análisis, Sistema |
+| Rol            | Entradas (con Inicio) | Ítems reales | Futuros | Grupos | Grupos de 1 ítem                            |
+| -------------- | :-------------------: | :----------: | :-----: | :----: | ------------------------------------------- |
+| ADMIN          |          23           |      17      |    5    |   9    | Operaciones, Planificación, Análisis        |
+| OWNER          |          23           |      17      |    5    |   9    | Operaciones, Planificación, Análisis        |
+| ADMINISTRATION |          23           |      17      |    5    |   9    | Operaciones, Planificación, Análisis        |
+| SALES          |          13           |      7       |    5    |   6    | Inventario, Análisis, Sistema               |
+| PURCHASING     |          11           |      5       |    5    |   6    | Operaciones, Comercial, Análisis, Sistema   |
+| PRODUCTION     |          14           |      8       |    5    |   7    | Planificación, Comercial, Análisis, Sistema |
+| WAREHOUSE      |          13           |      7       |    5    |   7    | Operaciones, Análisis, Sistema              |
 
 ### Problemas de la navegación
 
@@ -756,38 +763,38 @@ Deuda registrada: NAVIGATION [F3] (agrupar por tarea y atenuar futuros), [F5A] y
 
 ### 3.1 Tokens en `:root` (`globals.css:1-23`)
 
-| Token | Valor | Uso |
-| --- | --- | --- |
-| `--color-bg` | `#f6f4f0` | fondo de body |
-| `--color-surface` | `#ffffff` | paneles, botones, inputs, topbar |
-| `--color-border` | `#e3ddd3` | bordes de todo (contraste 1,35:1 sobre blanco) |
-| `--color-text` | `#2b2620` | texto |
-| `--color-muted` | `#6d645a` | texto secundario, th, hints (5,8:1 sobre blanco) |
-| `--color-primary` | `#9a5b1e` | botón primario, enlaces de tabla, foco, pestaña activa (5,4:1) |
-| `--color-primary-contrast` | `#ffffff` | texto del botón primario |
-| `--color-sidebar` | `#2f2821` | fondo del menú |
-| `--color-sidebar-text` | `#e9e2d8` | texto del menú (11,3:1) |
-| `--color-sidebar-active` | `#4a3f33` | hover y activo del menú |
-| `--color-danger` | `#b3261e` | errores, botón danger, alert, asterisco (6,5:1) |
-| `--radius` | `8px` | radio estándar |
-| `--sidebar-width` | `240px` | ancho del menú |
+| Token                      | Valor     | Uso                                                            |
+| -------------------------- | --------- | -------------------------------------------------------------- |
+| `--color-bg`               | `#f6f4f0` | fondo de body                                                  |
+| `--color-surface`          | `#ffffff` | paneles, botones, inputs, topbar                               |
+| `--color-border`           | `#e3ddd3` | bordes de todo (contraste 1,35:1 sobre blanco)                 |
+| `--color-text`             | `#2b2620` | texto                                                          |
+| `--color-muted`            | `#6d645a` | texto secundario, th, hints (5,8:1 sobre blanco)               |
+| `--color-primary`          | `#9a5b1e` | botón primario, enlaces de tabla, foco, pestaña activa (5,4:1) |
+| `--color-primary-contrast` | `#ffffff` | texto del botón primario                                       |
+| `--color-sidebar`          | `#2f2821` | fondo del menú                                                 |
+| `--color-sidebar-text`     | `#e9e2d8` | texto del menú (11,3:1)                                        |
+| `--color-sidebar-active`   | `#4a3f33` | hover y activo del menú                                        |
+| `--color-danger`           | `#b3261e` | errores, botón danger, alert, asterisco (6,5:1)                |
+| `--radius`                 | `8px`     | radio estándar                                                 |
+| `--sidebar-width`          | `240px`   | ancho del menú                                                 |
 
 No hay tokens de **éxito, advertencia ni información**, ni escalas de espaciado o tipografía, ni modo oscuro.
 
 ### 3.2 Hex y colores fijos fuera de tokens
 
-| Línea | Selector | Valor | Semántica |
-| --- | --- | --- | --- |
-| 415–416 | `.badge` (por defecto) | fondo `#e8f3e6`, texto `#2f6b28` | **éxito / activo** (verde) |
-| 421 | `.badge--off` | fondo `#efe9e1` (texto `--color-muted`) | inactivo / cancelado / agotado |
-| 426 | `.badge--info` | fondo `#f5ead9` (texto `--color-primary`) | info / en curso / parcial / etiquetas |
-| 507–508 | `.notice` | fondo `#f5ead9`, texto `#5c3e1c` | aviso informativo, **y también el éxito "Cambios guardados"** |
-| 579 | `.dialog::backdrop` | `rgb(0 0 0 / 35%)` | velo del diálogo |
-| 631 | `.shell__backdrop` | `rgb(0 0 0 / 35%)` | velo del menú móvil (duplicado) |
-| 669–670 | `.badge--warn` | fondo `#fdf0d5`, texto `#8a5300` | advertencia |
-| 674–675 | `.badge--draft` | fondo `#e7eef8`, texto `#2c4f7c` | borrador (el único azul de la app) |
-| 697–699 | `.alert--warn` | borde `#b26b00` (mezclado al 40 %), fondo `#fff7e6`, texto `#6b4300` | advertencia (otra paleta ámbar) |
-| 788 | `.text-positive` | `#2f6b28` | valor positivo (repite el verde del badge) |
+| Línea   | Selector               | Valor                                                                | Semántica                                                     |
+| ------- | ---------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 415–416 | `.badge` (por defecto) | fondo `#e8f3e6`, texto `#2f6b28`                                     | **éxito / activo** (verde)                                    |
+| 421     | `.badge--off`          | fondo `#efe9e1` (texto `--color-muted`)                              | inactivo / cancelado / agotado                                |
+| 426     | `.badge--info`         | fondo `#f5ead9` (texto `--color-primary`)                            | info / en curso / parcial / etiquetas                         |
+| 507–508 | `.notice`              | fondo `#f5ead9`, texto `#5c3e1c`                                     | aviso informativo, **y también el éxito "Cambios guardados"** |
+| 579     | `.dialog::backdrop`    | `rgb(0 0 0 / 35%)`                                                   | velo del diálogo                                              |
+| 631     | `.shell__backdrop`     | `rgb(0 0 0 / 35%)`                                                   | velo del menú móvil (duplicado)                               |
+| 669–670 | `.badge--warn`         | fondo `#fdf0d5`, texto `#8a5300`                                     | advertencia                                                   |
+| 674–675 | `.badge--draft`        | fondo `#e7eef8`, texto `#2c4f7c`                                     | borrador (el único azul de la app)                            |
+| 697–699 | `.alert--warn`         | borde `#b26b00` (mezclado al 40 %), fondo `#fff7e6`, texto `#6b4300` | advertencia (otra paleta ámbar)                               |
+| 788     | `.text-positive`       | `#2f6b28`                                                            | valor positivo (repite el verde del badge)                    |
 
 Colores derivados con `color-mix` (`.button--danger` 328, `.table tr:hover` 385, `.alert` 498–499,
 `.badge--danger` 821) usan porcentajes distintos para el mismo rojo: 40 %, 35 %, 6 % y 12 %.
@@ -814,25 +821,25 @@ Son cuatro radios, tres de ellos sin token.
 
 ### 3.5 Badges: variantes y semántica real en uso
 
-| Variante | Colores | Usada para (grep en `components/`) |
-| --- | --- | --- |
-| `.badge` (sin modificador) | verde | Activo/Activa/Con acceso (`StatusBadge`), compra Recibida, recepción Registrada, venta Registrada, cobro Pagado, pedido Listo y Entregado, cobertura completa, lote Disponible, receta vigente, reserva activa |
-| `.badge--off` | gris | Inactivo, Baja, Desactivado, Cancelado (compra, venta, pedido), lote Agotado, "Sin vigente" |
-| `.badge--info` | marrón claro (primario) | **roles del usuario** (`users.tsx:524`), lista "General", compra Pedida, pedido Confirmado, Entregado en parte, venta "Pagada en parte" |
-| `.badge--warn` | ámbar | compra Recibida en parte, pedido **En preparación**, cobertura parcial, venta Impaga, lote Por vencer, "Sin costo", "Incompleto", prioridad Alta (no urgente) |
-| `.badge--draft` | azul | Borrador (compra, recepción, venta, pedido, receta) |
-| `.badge--danger` | rojo | Urgente, Sin cobertura, Replanificar, lote Vencido, lote **Bloqueado**, reserva invalidada |
+| Variante                   | Colores                 | Usada para (grep en `components/`)                                                                                                                                                                             |
+| -------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.badge` (sin modificador) | verde                   | Activo/Activa/Con acceso (`StatusBadge`), compra Recibida, recepción Registrada, venta Registrada, cobro Pagado, pedido Listo y Entregado, cobertura completa, lote Disponible, receta vigente, reserva activa |
+| `.badge--off`              | gris                    | Inactivo, Baja, Desactivado, Cancelado (compra, venta, pedido), lote Agotado, "Sin vigente"                                                                                                                    |
+| `.badge--info`             | marrón claro (primario) | **roles del usuario** (`users.tsx:524`), lista "General", compra Pedida, pedido Confirmado, Entregado en parte, venta "Pagada en parte"                                                                        |
+| `.badge--warn`             | ámbar                   | compra Recibida en parte, pedido **En preparación**, cobertura parcial, venta Impaga, lote Por vencer, "Sin costo", "Incompleto", prioridad Alta (no urgente)                                                  |
+| `.badge--draft`            | azul                    | Borrador (compra, recepción, venta, pedido, receta)                                                                                                                                                            |
+| `.badge--danger`           | rojo                    | Urgente, Sin cobertura, Replanificar, lote Vencido, lote **Bloqueado**, reserva invalidada                                                                                                                     |
 
 ### 3.6 Botones
 
-| Variante | Estilo | Notas |
-| --- | --- | --- |
-| `.button` | borde gris, fondo blanco | secundario por defecto. Se usa también para acciones principales de cabecera ("Editar") |
-| `.button--primary` | fondo primario | una acción principal por formulario |
-| `.button--danger` | **outline** (texto rojo, borde rojo al 40 %) | también se usa para la confirmación destructiva del diálogo (`ui.tsx:182`): el "Desactivar" final pesa menos que un primario |
-| `.button--small` | 32px | paginación, "Cambiar roles" |
-| `.link-button` | texto subrayado | sin estilo de foco propio |
-| `.topbar__menu` | `.button` con glifo ☰ | — |
+| Variante           | Estilo                                       | Notas                                                                                                                        |
+| ------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `.button`          | borde gris, fondo blanco                     | secundario por defecto. Se usa también para acciones principales de cabecera ("Editar")                                      |
+| `.button--primary` | fondo primario                               | una acción principal por formulario                                                                                          |
+| `.button--danger`  | **outline** (texto rojo, borde rojo al 40 %) | también se usa para la confirmación destructiva del diálogo (`ui.tsx:182`): el "Desactivar" final pesa menos que un primario |
+| `.button--small`   | 32px                                         | paginación, "Cambiar roles"                                                                                                  |
+| `.link-button`     | texto subrayado                              | sin estilo de foco propio                                                                                                    |
+| `.topbar__menu`    | `.button` con glifo ☰                       | —                                                                                                                            |
 
 No hay variantes **ghost/terciaria**, **danger sólido** ni **icon-only**.
 
@@ -870,6 +877,7 @@ FORMS [F5B] unificar editor de líneas.
    - `suppliers.tsx:166`
 
    Un usuario de negocio no sabe qué es una "fase".
+
 2. **Códigos técnicos y snake_case en pantalla:**
    - Módulos de permisos sin etiqueta: `production`, `product_lots`, `product_conservation`, `orders`, `order_planning` (`permission-matrix.ts:5-27` → `settings.tsx:696`, `users.tsx:317`).
    - Seis tipos de entidad sin etiqueta en Auditoría (`audit.tsx:10-24, 88`).
@@ -915,5 +923,6 @@ FORMS [F5B] unificar editor de líneas.
     - Empleado no muestra los roles de su acceso.
 
     En los cuatro casos el usuario tiene que navegar a otro módulo para responder la pregunta natural de la ficha.
+
 16. **Paginación y conteos duplicados.** `AuditLog` reimplementa la paginación de `MasterList` con textos distintos ("registros" contra "resultados") y guarda el filtro en estado local en lugar de la URL.
 17. **Densidad móvil.** `hide-sm` oculta justamente los datos de contacto (Teléfono y Contacto en Proveedores; Email en Usuarios) y deja visibles los códigos técnicos. `.button--small` (32px) queda debajo del tamaño táctil recomendado.

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { openSection, selectByText, summaryValue } from "./support";
+import { crumb, openSection, selectByText, summaryValue } from "./support";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 /*
@@ -320,8 +320,8 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(page.getByLabel("Cantidad a producir")).toHaveValue("200");
   await page.getByRole("button", { name: "Crear borrador" }).click();
   await expect(heading).toContainText("Borrador");
-  await expect(page.locator("dl.details")).toContainText(`Creada para ${orderCode}`);
-  await page.locator("dl.details").getByRole("link", { name: orderCode }).click();
+  await expect(page.locator("dl.metrics")).toContainText(orderCode);
+  await page.locator("dl.metrics").getByRole("link", { name: orderCode }).click();
   await expect(heading).toContainText(orderCode);
   await expect(section(page, "Producción necesaria").locator("tbody tr")).toContainText(
     "Orden de producción creada",
@@ -340,7 +340,7 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(section(page, "Reservado para pedidos")).toContainText(orderCode);
 
   // Stock del producto: comprometido y disponible ahora.
-  await page.getByRole("link", { name: `← ${world.productName}` }).click();
+  await crumb(page, `${world.productName}`).click();
   const stock = section(page, "Existencias");
   await expect(summaryValue(stock, "Stock físico")).toHaveText("300 kg");
   await expect(summaryValue(stock, "Comprometido con pedidos")).toHaveText("300 kg");
@@ -476,7 +476,7 @@ test("Fase 5A: lo reservado no se transforma y bloquear el lote deja el pedido p
   );
   await page.getByLabel(/^Cantidad a/).fill("50");
   await expect(page.getByLabel(/^Cantidad a/)).toHaveAttribute("aria-invalid", "true");
-  await page.getByRole("link", { name: `← Lote ${lot.code}` }).click();
+  await crumb(page, `Lote ${lot.code}`).click();
 
   // Bloquear por calidad: avisa que invalida reservas.
   await page.getByRole("button", { name: "Bloquear", exact: true }).click();

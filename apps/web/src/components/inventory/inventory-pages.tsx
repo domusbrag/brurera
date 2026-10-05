@@ -24,11 +24,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fetchOptions, listPath } from "@/lib/api-client";
-import { formatDateTime, formatMoney, formatQuantity, formatReferenceCost } from "@/lib/format";
+import {
+  formatDateTime,
+  formatMoney,
+  formatQuantity,
+  formatReferenceCost,
+  formatUnitCost,
+} from "@/lib/format";
 import { STOCK_STATUS_TONE } from "@/lib/status";
 import { StatusBadge } from "../ui/status";
 import { MasterList } from "../masters/master-list";
-import { Details, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { Details, EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
 import { useCan, useCurrentUser } from "../user-context";
 import { PresentationsPanel } from "./presentations";
 
@@ -92,7 +98,7 @@ export function StockActions({ rawMaterialId }: { rawMaterialId?: string }) {
         </Link>
       )}
       {can(P.INVENTORY_INITIAL_STOCK) && (
-        <Link className="button" href={`${STOCK_BASE}/inicial${qs}`}>
+        <Link className="button button--tertiary" href={`${STOCK_BASE}/inicial${qs}`}>
           Cargar stock inicial
         </Link>
       )}
@@ -123,7 +129,7 @@ export function StockList() {
       endpoint="/api/inventory"
       basePath={STOCK_BASE}
       searchPlaceholder="Buscar materia prima"
-      emptyText="No hay materias primas para mostrar."
+      emptyText="Todavía no hay materias primas con stock para mostrar. Se dan de alta en Materias primas y entran al stock con una compra recibida o con el stock inicial."
       statusParam="stockStatus"
       defaultStatus="all"
       statusOptions={[
@@ -156,8 +162,8 @@ export function StockList() {
         },
         {
           header: "Depósito",
-          cell: (i) => i.warehouse?.name ?? "Todos",
-          className: "hide-sm",
+          cell: (i) => i.warehouse?.name ?? <span className="muted">Todos los depósitos</span>,
+          className: "hide-md",
         },
         {
           header: "Stock actual",
@@ -167,8 +173,12 @@ export function StockList() {
         {
           header: "Stock mínimo",
           cell: (i) =>
-            Number(i.minimumStock) > 0 ? formatQuantity(i.minimumStock, i.baseUnit.symbol) : "—",
-          className: "num hide-sm",
+            Number(i.minimumStock) > 0 ? (
+              formatQuantity(i.minimumStock, i.baseUnit.symbol)
+            ) : (
+              <span className="muted">Sin mínimo</span>
+            ),
+          className: "num hide-md",
         },
         { header: "Estado", cell: (i) => <StockStatusBadge status={i.status} /> },
         ...(showCosts
@@ -176,13 +186,13 @@ export function StockList() {
               {
                 header: "Costo promedio",
                 cell: (i: InventoryItemDto) =>
-                  formatReferenceCost(i.movingAverageCost, currency, i.baseUnit.symbol),
-                className: "num hide-sm",
+                  formatUnitCost(i.movingAverageCost, currency, i.baseUnit.symbol),
+                className: "num hide-md",
               },
               {
                 header: "Valor estimado",
                 cell: (i: InventoryItemDto) => formatMoney(i.inventoryValue, currency),
-                className: "num",
+                className: "num hide-md",
               },
             ]
           : []),
@@ -196,8 +206,10 @@ export function StockList() {
 function reasonLabel(m: Pick<StockMovementDto, "movementType" | "reason">): string | null {
   if (!m.reason) return null;
   if (m.movementType === "WASTE")
-    return WASTE_REASON_LABELS[m.reason as keyof typeof WASTE_REASON_LABELS] ?? m.reason;
-  return ADJUSTMENT_REASON_LABELS[m.reason as keyof typeof ADJUSTMENT_REASON_LABELS] ?? m.reason;
+    return WASTE_REASON_LABELS[m.reason as keyof typeof WASTE_REASON_LABELS] ?? "Otro motivo";
+  return (
+    ADJUSTMENT_REASON_LABELS[m.reason as keyof typeof ADJUSTMENT_REASON_LABELS] ?? "Otro motivo"
+  );
 }
 
 function SignedQuantity({ m }: { m: StockMovementDto }) {
@@ -216,13 +228,37 @@ export function ReferenceLink({
 }: {
   reference: { type: string; id: string; label: string } | null;
 }) {
+  const can = useCan();
+  // Sin permiso para abrir el documento, se muestra el código sin enlace (nunca un 403).
   if (reference?.type === "PURCHASE")
-    return <Link href={`/compras/${reference.id}`}>{reference.label}</Link>;
+    return can(P.PURCHASES_READ) ? (
+      <Link href={`/compras/${reference.id}`}>{reference.label}</Link>
+    ) : (
+      <>{reference.label}</>
+    );
   if (reference?.type === "PRODUCTION_ORDER")
-    return <Link href={`/produccion/${reference.id}`}>Producción {reference.label}</Link>;
+    return can(P.PRODUCTION_ORDERS_READ) ? (
+      <Link href={`/produccion/${reference.id}`}>Producción {reference.label}</Link>
+    ) : (
+      <>Producción {reference.label}</>
+    );
   if (reference?.type === "PRODUCT_LOT_TRANSFORMATION")
-    return <Link href={`${STOCK_BASE}/lotes/${reference.id}`}>{reference.label}</Link>;
+    return can(P.PRODUCT_LOTS_READ) ? (
+      <Link href={`${STOCK_BASE}/lotes/${reference.id}`}>{reference.label}</Link>
+    ) : (
+      <>{reference.label}</>
+    );
   return null;
+}
+
+/** Código de lote enlazado a su detalle sólo si el usuario puede ver lotes. */
+function LotRef({ lot }: { lot: { id: string; code: string } }) {
+  const can = useCan();
+  return can(P.PRODUCT_LOTS_READ) ? (
+    <Link href={`${STOCK_BASE}/lotes/${lot.id}`}>{lot.code}</Link>
+  ) : (
+    <>{lot.code}</>
+  );
 }
 
 function MovementReference({ m }: { m: StockMovementDto }) {
@@ -273,13 +309,13 @@ export function movementColumns(
           {STOCK_MOVEMENT_TYPE_LABELS[m.movementType]}
           {m.productLot && (
             <span className="cost-source">
-              Lote <Link href={`${STOCK_BASE}/lotes/${m.productLot.id}`}>{m.productLot.code}</Link>
+              Lote <LotRef lot={m.productLot} />
             </span>
           )}
         </>
       ),
     },
-    { header: "Depósito", cell: (m: StockMovementDto) => m.warehouse.name, className: "hide-sm" },
+    { header: "Depósito", cell: (m: StockMovementDto) => m.warehouse.name, className: "hide-md" },
     {
       header: "Cantidad",
       cell: (m: StockMovementDto) => <SignedQuantity m={m} />,
@@ -288,15 +324,14 @@ export function movementColumns(
     {
       header: "Saldo",
       cell: (m: StockMovementDto) => formatQuantity(m.balanceAfter, m.baseUnit.symbol),
-      className: "num hide-sm",
+      className: "num hide-md",
     },
     ...(showCosts
       ? [
           {
             header: "Costo unitario",
-            cell: (m: StockMovementDto) =>
-              formatReferenceCost(m.unitCost, currency, m.baseUnit.symbol),
-            className: "num hide-sm",
+            cell: (m: StockMovementDto) => formatUnitCost(m.unitCost, currency, m.baseUnit.symbol),
+            className: "num hide-md",
           },
         ]
       : []),
@@ -307,7 +342,7 @@ export function movementColumns(
     {
       header: "Usuario",
       cell: (m: StockMovementDto) => m.actor?.displayName ?? "—",
-      className: "hide-sm",
+      className: "hide-md",
     },
   ];
 }
@@ -323,7 +358,7 @@ export function MovementList() {
       endpoint="/api/inventory/movements"
       basePath={`${STOCK_BASE}/movimientos`}
       searchPlaceholder="Buscar materia prima o producto"
-      emptyText="Todavía no hay movimientos."
+      emptyText="Todavía no hay movimientos. Aparecen al recibir compras, completar producciones, vender o registrar ajustes y mermas."
       statusParam="movementType"
       defaultStatus=""
       statusOptions={[
@@ -405,8 +440,8 @@ export function LowStockList() {
         { header: "Estado", cell: (i) => <StockStatusBadge status={i.status} /> },
         {
           header: "Proveedor preferido",
-          cell: (i) => i.preferredSupplier?.name ?? "—",
-          className: "hide-sm",
+          cell: (i) => i.preferredSupplier?.name ?? <span className="muted">Sin proveedor</span>,
+          className: "hide-md",
         },
         ...(can(P.PURCHASES_CREATE)
           ? [
@@ -446,14 +481,11 @@ export function StockDetail({ id }: { id: string }) {
     <div className="page">
       <PageHeader
         breadcrumb={{ href: STOCK_BASE, label: "Stock de materias primas" }}
-        title={
-          <>
-            {data.rawMaterial.name} <StockStatusBadge status={data.status} />
-          </>
-        }
+        title={data.rawMaterial.name}
+        status={<StockStatusBadge status={data.status} />}
         subtitle={
           <>
-            Código <span className="code">{data.rawMaterial.code}</span>
+            Código <span className="code">{data.rawMaterial.code}</span> · Unidad base {unit}
             {data.rawMaterial.preferredSupplier
               ? ` · Proveedor preferido: ${data.rawMaterial.preferredSupplier.name}`
               : ""}
@@ -480,9 +512,11 @@ export function StockDetail({ id }: { id: string }) {
       <section className="panel" aria-labelledby="stock-title">
         <h2 id="stock-title">Existencias</h2>
         <dl className="cost-summary">
-          <div>
+          <div
+            className={`metric ${data.status === "OUT_OF_STOCK" ? "metric--danger" : data.status === "LOW" ? "metric--warning" : "metric--emphasis"}`}
+          >
             <dt>Stock total</dt>
-            <dd>{formatQuantity(data.quantity, unit)}</dd>
+            <dd className="metric__value">{formatQuantity(data.quantity, unit)}</dd>
           </div>
           <div>
             <dt>Stock mínimo</dt>
@@ -494,7 +528,9 @@ export function StockDetail({ id }: { id: string }) {
           </div>
           <div>
             <dt>Faltante</dt>
-            <dd>{Number(data.shortage) > 0 ? formatQuantity(data.shortage, unit) : "—"}</dd>
+            <dd>
+              {Number(data.shortage) > 0 ? formatQuantity(data.shortage, unit) : "Sin faltante"}
+            </dd>
           </div>
         </dl>
         {data.byWarehouse.length > 0 && (
@@ -538,7 +574,7 @@ export function StockDetail({ id }: { id: string }) {
               <dd>
                 {data.movingAverageCost === null
                   ? "Sin compras ni stock valorizado"
-                  : formatReferenceCost(data.movingAverageCost, currency, unit)}
+                  : formatUnitCost(data.movingAverageCost, currency, unit)}
               </dd>
             </div>
           )}
@@ -555,16 +591,16 @@ export function StockDetail({ id }: { id: string }) {
             <dd>
               {data.effectiveCost === null
                 ? "Sin costo"
-                : formatReferenceCost(data.effectiveCost, currency, unit)}
+                : data.effectiveCostSource === "PURCHASE_MOVING_AVERAGE"
+                  ? formatUnitCost(data.effectiveCost, currency, unit)
+                  : formatReferenceCost(data.effectiveCost, currency, unit)}
               {data.effectiveCostSource && (
                 <span className="cost-summary__note">
                   {" "}
                   Origen:{" "}
                   {data.effectiveCostSource === "PURCHASE_MOVING_AVERAGE"
                     ? "compras (promedio ponderado)"
-                    : data.effectiveCostSource
-                      ? COST_SOURCE_LABELS[data.effectiveCostSource].toLowerCase()
-                      : "—"}
+                    : COST_SOURCE_LABELS[data.effectiveCostSource].toLowerCase()}
                 </span>
               )}
             </dd>
@@ -582,13 +618,17 @@ export function StockDetail({ id }: { id: string }) {
               "Última compra",
               data.lastPurchase ? (
                 <>
-                  <Link href={`/compras/${data.lastPurchase.purchaseId}`}>
-                    {data.lastPurchase.purchaseNumber}
-                  </Link>{" "}
+                  {can(P.PURCHASES_READ) ? (
+                    <Link href={`/compras/${data.lastPurchase.purchaseId}`}>
+                      {data.lastPurchase.purchaseNumber}
+                    </Link>
+                  ) : (
+                    data.lastPurchase.purchaseNumber
+                  )}{" "}
                   · {data.lastPurchase.supplierName} ·{" "}
                   {formatDateTime(data.lastPurchase.receivedAt, tz)}
                   {data.lastPurchase.unitCost !== null &&
-                    ` · ${formatReferenceCost(data.lastPurchase.unitCost, currency, unit)}`}
+                    ` · ${formatUnitCost(data.lastPurchase.unitCost, currency, unit)}`}
                 </>
               ) : null,
             ],
@@ -674,11 +714,11 @@ export function ItemMovements({
         <Link href={listPath(`${STOCK_BASE}/movimientos`, { q: name })}>Ver todos</Link>
       </div>
       {error ? (
-        <p className="muted">{error.message}</p>
+        <ErrorState error={error} />
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
-        <p className="muted">Sin movimientos todavía.</p>
+        <EmptyState compact title="Sin movimientos todavía." />
       ) : (
         <>
           <div className="table-wrap">
@@ -724,7 +764,7 @@ function CostHistory({ rawMaterialId, unit }: { rawMaterialId: string; unit: str
     <section className="panel" aria-labelledby="cost-history-title">
       <h2 id="cost-history-title">Historial de costo promedio</h2>
       {error ? (
-        <p className="muted">{error.message}</p>
+        <ErrorState error={error} />
       ) : !data ? (
         <Loading />
       ) : data.history.items.length === 0 ? (
@@ -767,12 +807,12 @@ function CostHistory({ rawMaterialId, unit }: { rawMaterialId: string; unit: str
                     <td className="num">
                       {h.averageBefore === null
                         ? "—"
-                        : formatReferenceCost(h.averageBefore, currency, unit)}
+                        : formatUnitCost(h.averageBefore, currency, unit)}
                     </td>
                     <td className="num">
                       {h.averageAfter === null
                         ? "—"
-                        : formatReferenceCost(h.averageAfter, currency, unit)}
+                        : formatUnitCost(h.averageAfter, currency, unit)}
                       {!h.averageChanged && <span className="cost-source">sin cambio</span>}
                     </td>
                     <td className="num hide-sm">{formatQuantity(h.quantityAfter, unit)}</td>
