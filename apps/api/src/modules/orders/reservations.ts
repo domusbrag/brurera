@@ -26,7 +26,14 @@ import { fixedQty } from "../inventory/ledger.js";
 
 type Db = Database | Transaction;
 
-/** Σ reservas ACTIVAS por lote (opcionalmente sin las de un pedido). */
+/** Cantidad pendiente de una reserva: reservado − ya entregado (Fase 5B). */
+export const remainingSql = sql<string>`(${productLotReservations.quantity} - ${productLotReservations.fulfilledQuantity})`;
+
+export function reservationRemaining(r: { quantity: string; fulfilledQuantity: string }) {
+  return new D(r.quantity).minus(r.fulfilledQuantity);
+}
+
+/** Σ pendiente de las reservas ACTIVAS por lote (opcionalmente sin las de un pedido). */
 export async function committedByLot(
   db: Db,
   ctx: OperationContext,
@@ -38,7 +45,7 @@ export async function committedByLot(
   const rows = await db
     .select({
       lotId: productLotReservations.productLotId,
-      quantity: sql<string>`sum(${productLotReservations.quantity})`,
+      quantity: sql<string>`sum(${remainingSql})`,
     })
     .from(productLotReservations)
     .where(
@@ -117,7 +124,7 @@ export async function invalidateLotReservations(
           active.map((a) => ({
             ...a,
             id: a.r.id,
-            quantity: a.r.quantity,
+            quantity: fixedQty(reservationRemaining(a.r)),
             priority: a.priority as OrderPriority,
             reservedAt: a.r.reservedAt,
           })),
@@ -127,6 +134,7 @@ export async function invalidateLotReservations(
   const result: InvalidatedReservation[] = [];
   for (const { reservation, keep } of affected) {
     const r = reservation.r;
+    const pending = fixedQty(reservationRemaining(r));
     await tx
       .update(productLotReservations)
       .set({
@@ -163,20 +171,20 @@ export async function invalidateLotReservations(
         lotId: lot.id,
         product: lot.productName,
         reason: cause.reason,
-        quantity: fixedQty(r.quantity),
+        quantity: pending,
         kept: fixedQty(keep),
         unit: lot.unitSymbol,
         planRevision: r.planRevision,
         summary: keep.gt(0)
-          ? `El lote ${lot.code} ${verb}: la reserva baja de ${new D(r.quantity).toString()} a ${keep.toString()} ${lot.unitSymbol}. Recalcular cobertura.`
-          : `El lote ${lot.code} ${verb}: se invalidó la reserva de ${new D(r.quantity).toString()} ${lot.unitSymbol}. Recalcular cobertura.`,
+          ? `El lote ${lot.code} ${verb}: la reserva baja de ${new D(pending).toString()} a ${keep.toString()} ${lot.unitSymbol}. Recalcular cobertura.`
+          : `El lote ${lot.code} ${verb}: se invalidó la reserva de ${new D(pending).toString()} ${lot.unitSymbol}. Recalcular cobertura.`,
       },
     });
     result.push({
       reservationId: r.id,
       orderId: r.customerOrderId,
       orderCode: reservation.orderCode,
-      quantity: fixedQty(r.quantity),
+      quantity: pending,
       kept: fixedQty(keep),
     });
   }
@@ -197,7 +205,7 @@ export async function lotCommitment(
   const rows = await db
     .select({
       id: productLotReservations.id,
-      quantity: productLotReservations.quantity,
+      quantity: remainingSql,
       planRevision: productLotReservations.planRevision,
       reservedAt: productLotReservations.reservedAt,
       order: {

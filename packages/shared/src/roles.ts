@@ -88,6 +88,22 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.ORDERS_READ,
       P.ORDERS_REPLAN,
       P.ORDER_PLANNING_READ,
+      // Finanzas comerciales completas: ventas con costo y margen, precios, cobros y ajustes.
+      P.SALES_READ,
+      P.SALES_CREATE,
+      P.SALES_UPDATE,
+      P.SALES_POST,
+      P.SALES_PRICE_OVERRIDE,
+      P.SALES_COST_READ,
+      P.SALES_MARGIN_READ,
+      P.PRICE_LISTS_READ,
+      P.PRICE_LISTS_MANAGE,
+      P.PAYMENTS_READ,
+      P.PAYMENTS_CREATE,
+      P.PAYMENTS_POST,
+      P.CUSTOMER_ACCOUNTS_READ,
+      P.CUSTOMER_ACCOUNTS_ADJUST,
+      P.ORDER_ADVANCES_CREATE,
     ],
   },
   {
@@ -108,6 +124,18 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       P.ORDERS_CONFIRM,
       P.ORDERS_REPLAN,
       P.ORDERS_CANCEL,
+      // Vende y cobra con los precios vigentes; sin costos, márgenes ni cambios de precio.
+      P.WAREHOUSES_READ,
+      P.SALES_READ,
+      P.SALES_CREATE,
+      P.SALES_UPDATE,
+      P.SALES_POST,
+      P.PRICE_LISTS_READ,
+      P.PAYMENTS_READ,
+      P.PAYMENTS_CREATE,
+      P.PAYMENTS_POST,
+      P.CUSTOMER_ACCOUNTS_READ,
+      P.ORDER_ADVANCES_CREATE,
     ],
   },
   {
@@ -200,6 +228,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       // Ve reservas y lotes comprometidos; marca listos los pedidos cubiertos.
       P.ORDERS_READ,
       P.ORDERS_READY,
+      // Ve las salidas físicas por venta (sin precios ni costos).
+      P.SALES_READ,
     ],
   },
 ];

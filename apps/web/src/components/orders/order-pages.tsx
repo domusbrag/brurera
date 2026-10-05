@@ -4,11 +4,14 @@ import {
   COVERAGE_STATUSES,
   COVERAGE_STATUS_LABELS,
   FULFILLMENT_TYPE_LABELS,
+  ORDER_PRICING_STATUS_LABELS,
   ORDER_PRIORITIES,
   ORDER_PRIORITY_LABELS,
   ORDER_STATUSES,
   ORDER_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
   PERMISSIONS as P,
+  PRICE_SOURCE_LABELS,
   REQUESTED_CONSERVATION_LABELS,
   REQUIREMENT_PROBLEM_LABELS,
   REQUIREMENT_STATUS_LABELS,
@@ -24,7 +27,7 @@ import { D } from "@bakery/domain";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch, fetchOptions } from "@/lib/api-client";
-import { formatDateTime, formatQuantity } from "@/lib/format";
+import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { MasterList } from "../masters/master-list";
 import {
   AuditHistory,
@@ -37,6 +40,13 @@ import {
 } from "../masters/ui";
 import { ConservationBadge, LOTS_BASE } from "../lots/lot-shared";
 import { useCan, useCurrentUser } from "../user-context";
+import {
+  PaymentDialog,
+  PaymentStatusBadge,
+  SALES_BASE,
+  SaleStatusBadge,
+  Warnings,
+} from "../sales/sale-shared";
 import { CoveragePreview } from "./order-form";
 import {
   CoverageBadge,
@@ -211,8 +221,10 @@ export function OrderDetail({ id }: { id: string }) {
   const user = useCurrentUser();
   const { data, error, setData } = useResource<OrderDetailDto>(`/api/orders/${id}`);
   const [version, setVersion] = useState(0);
-  const replace = (order: OrderDetailDto) => {
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const replace = (order: OrderDetailDto, w: string[] = []) => {
     setData(order);
+    setWarnings(w);
     setVersion((v) => v + 1);
   };
   if (error) return <ErrorState error={error} />;
@@ -234,6 +246,24 @@ export function OrderDetail({ id }: { id: string }) {
         subtitle={`${data.customer.name} · ${FULFILLMENT_TYPE_LABELS[data.fulfillmentType]} el ${formatWallClock(data.requestedAtLocal)}${data.eventName ? ` · ${data.eventName}` : ""}`}
         actions={
           <>
+            {a.canDeliver && (
+              <Link className="button button--primary" href={`${SALES_BASE}/nueva?orderId=${id}`}>
+                {data.status === "PARTIALLY_DELIVERED" ? "Entregar el resto" : "Entregar y vender"}
+              </Link>
+            )}
+            {a.canQuote && <QuoteOrder order={data} onDone={replace} />}
+            {a.canRegisterAdvance && (
+              <PaymentDialog
+                label="Registrar seña"
+                title={`Seña del pedido ${data.code}`}
+                description="Queda como crédito del cliente y se aplica sola a la venta cuando se entrega el pedido."
+                endpoint={`/api/orders/${id}/advances`}
+                currency={user.company.currencyCode}
+                onDone={async (r) =>
+                  replace(await apiFetch<OrderDetailDto>(`/api/orders/${id}`), r.warnings)
+                }
+              />
+            )}
             {a.canConfirm && <ConfirmOrder order={data} onDone={replace} />}
             {a.canReplan && <RefreshCoverage order={data} onDone={replace} />}
             {a.canReplan && (
@@ -262,7 +292,7 @@ export function OrderDetail({ id }: { id: string }) {
                 <ConfirmAction
                   label="Marcar listo"
                   title={`¿Marcar el pedido ${data.code} como listo?`}
-                  message="Todo el pedido está reservado. Queda listo para entregar o retirar; el stock no se descuenta hasta la venta (Fase 5B)."
+                  message="Todo el pedido está reservado. Queda listo para entregar o retirar; el stock se descuenta al confirmar la entrega y venta."
                   confirmLabel="Marcar listo"
                   onConfirm={async () =>
                     replace(
@@ -292,6 +322,14 @@ export function OrderDetail({ id }: { id: string }) {
         }
       />
 
+      <Warnings warnings={warnings} />
+      {!a.canDeliver &&
+        a.deliverBlockedReason &&
+        (data.status === "READY" || data.status === "PARTIALLY_DELIVERED") && (
+          <p className="alert alert--warn" role="status" data-testid="deliver-blocked">
+            {a.deliverBlockedReason}
+          </p>
+        )}
       {data.status === "CANCELLED" && (
         <p className="notice">
           Cancelado el {data.cancelledAt ? formatDateTime(data.cancelledAt, tz) : "—"}
@@ -361,6 +399,7 @@ export function OrderDetail({ id }: { id: string }) {
       ) : (
         <>
           <OrderLines order={data} />
+          <OrderCommercial order={data} tz={tz} />
           <OrderReservations order={data} tz={tz} />
           <OrderRequirements order={data} />
           {data.status !== "CANCELLED" && (
@@ -389,7 +428,11 @@ function DraftPreview({ id, version }: { id: string; version: number }) {
   return <CoveragePreview preview={data} />;
 }
 
+const DELIVERY_STATUSES = new Set(["READY", "PARTIALLY_DELIVERED", "DELIVERED"]);
+
 function OrderLines({ order }: { order: OrderDetailDto }) {
+  const delivering = DELIVERY_STATUSES.has(order.status);
+  const priced = order.lines.some((l) => l.price !== null);
   return (
     <section className="panel" aria-labelledby="lines-title">
       <h2 id="lines-title">Productos y cobertura</h2>
@@ -413,6 +456,21 @@ function OrderLines({ order }: { order: OrderDetailDto }) {
               <th scope="col" className="num hide-md">
                 Sin cubrir
               </th>
+              {delivering && (
+                <>
+                  <th scope="col" className="num">
+                    Entregado
+                  </th>
+                  <th scope="col" className="num">
+                    Pendiente
+                  </th>
+                </>
+              )}
+              {priced && (
+                <th scope="col" className="num hide-sm">
+                  Precio acordado
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -452,6 +510,31 @@ function OrderLines({ order }: { order: OrderDetailDto }) {
                   <td className={`num hide-md ${gt0(l.uncovered) ? "text-negative" : ""}`}>
                     {gt0(l.uncovered) ? formatQuantity(l.uncovered, unit) : "—"}
                   </td>
+                  {delivering && (
+                    <>
+                      <td className="num">{formatQuantity(l.delivered, unit)}</td>
+                      <td className="num">
+                        {gt0(l.pendingDelivery) ? formatQuantity(l.pendingDelivery, unit) : "—"}
+                      </td>
+                    </>
+                  )}
+                  {priced && (
+                    <td className="num hide-sm">
+                      {l.price ? (
+                        <>
+                          {formatMoney(l.price.unitPrice)} / {unit}
+                          <span className="muted small">
+                            <br />
+                            {PRICE_SOURCE_LABELS[l.price.priceSource]}
+                            {gt0(l.price.discountAmount) &&
+                              ` · desc. ${formatMoney(l.price.discountAmount)}`}
+                          </span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -713,7 +796,7 @@ function CancelOrder({
   onDone,
 }: {
   order: OrderDetailDto;
-  onDone: (o: OrderDetailDto) => void;
+  onDone: (o: OrderDetailDto, warnings?: string[]) => void;
 }) {
   const [operationId, renew] = useOperationId();
   const [reason, setReason] = useState("");
@@ -731,6 +814,9 @@ function CancelOrder({
             : ""}
           Las órdenes de producción ya creadas no se cancelan solas. El pedido cancelado no se puede
           reabrir.
+          {order.commercial.advances && gt0(order.commercial.advances.available)
+            ? ` La seña de ${formatMoney(order.commercial.advances.available)} queda como crédito a favor del cliente.`
+            : ""}
         </>
       }
       confirmLabel="Cancelar pedido"
@@ -741,7 +827,7 @@ function CancelOrder({
           body: { reason: reason.trim(), operationId, confirmReady },
         });
         renew();
-        onDone(result.order);
+        onDone(result.order, result.warnings ?? []);
       }}
     >
       {ready && (
@@ -769,5 +855,99 @@ function CancelOrder({
         />
       </div>
     </ConfirmAction>
+  );
+}
+
+/* ---------- Comercial (Fase 5B) ---------- */
+
+function OrderCommercial({ order, tz }: { order: OrderDetailDto; tz: string }) {
+  const c = order.commercial;
+  return (
+    <section className="panel" aria-labelledby="commercial-title" data-testid="order-commercial">
+      <h2 id="commercial-title">Precio, señas y ventas</h2>
+      <Details
+        items={[
+          ["Precio", ORDER_PRICING_STATUS_LABELS[c.pricingStatus]],
+          ["Lista de precios", c.priceList ? c.priceList.name : null],
+          ["Total acordado", c.quotedTotal ? formatMoney(c.quotedTotal) : null],
+          [
+            "Descuentos",
+            c.quotedDiscountTotal && gt0(c.quotedDiscountTotal)
+              ? formatMoney(c.quotedDiscountTotal)
+              : null,
+          ],
+          ["Primera entrega", c.firstDeliveredAt ? formatDateTime(c.firstDeliveredAt, tz) : null],
+          ["Entregado completo", c.deliveredAt ? formatDateTime(c.deliveredAt, tz) : null],
+          [
+            "Seña disponible",
+            c.advances ? (
+              <span data-testid="advance-available">{formatMoney(c.advances.available)}</span>
+            ) : null,
+          ],
+        ]}
+      />
+      {c.pricingStatus === "UNPRICED" && (
+        <p className="alert alert--warn" role="status">
+          Pedido cargado antes de las listas de precios: hay que acordar el precio antes de la
+          primera entrega.
+        </p>
+      )}
+      {c.advances && c.advances.payments.length > 0 && (
+        <>
+          <h3 className="section-title">Señas</h3>
+          <ul className="plain-list">
+            {c.advances.payments.map((p) => (
+              <li key={p.id}>
+                <span className="code">{p.code}</span> · {formatDateTime(p.paymentDate, tz)} ·{" "}
+                {PAYMENT_METHOD_LABELS[p.method]} · {formatMoney(p.amount)}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {c.sales && c.sales.length > 0 && (
+        <>
+          <h3 className="section-title">Ventas del pedido</h3>
+          <ul className="plain-list">
+            {c.sales.map((s) => (
+              <li key={s.id}>
+                <Link className="code" href={`${SALES_BASE}/${s.id}`}>
+                  {s.code}
+                </Link>{" "}
+                <SaleStatusBadge status={s.status} />{" "}
+                {s.status === "POSTED" && <PaymentStatusBadge status={s.paymentStatus} />} ·{" "}
+                {formatDateTime(s.date, tz)}
+                {s.total !== null && ` · ${formatMoney(s.total)}`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+function QuoteOrder({
+  order,
+  onDone,
+}: {
+  order: OrderDetailDto;
+  onDone: (o: OrderDetailDto) => void;
+}) {
+  return (
+    <ConfirmAction
+      label="Acordar precio"
+      title={`¿Acordar el precio del pedido ${order.code}?`}
+      message="Se toma el precio vigente de cada producto (lista del cliente, lista general o precio del producto) y queda como precio acordado del pedido. Las ventas del pedido usan ese precio."
+      confirmLabel="Acordar precio"
+      onConfirm={async () =>
+        onDone(
+          await apiFetch<OrderDetailDto>(`/api/orders/${order.id}/quote`, {
+            method: "POST",
+            body: { lines: [] },
+          }),
+        )
+      }
+    />
   );
 }

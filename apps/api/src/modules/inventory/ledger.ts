@@ -315,7 +315,7 @@ export async function lockProductCost(tx: Transaction, ctx: OperationContext, pr
   return row;
 }
 
-async function lockProductBalance(
+export async function lockProductBalance(
   tx: Transaction,
   ctx: OperationContext,
   warehouseId: string,
@@ -396,7 +396,7 @@ export async function postProductMovement(
       {
         quantity: cost.quantity,
         inventoryValue: cost.inventoryValue,
-        movingAverageCost: cost.movingAverageCost,
+        movingAverageCost: cost.averageMaterialCost,
       },
       req.quantity,
       req.unitCost,
@@ -443,7 +443,7 @@ export async function postProductMovement(
     .set({
       quantity: fixedQty(after.quantity),
       inventoryValue: fixedMoney(after.inventoryValue),
-      movingAverageCost:
+      averageMaterialCost:
         after.movingAverageCost === null ? null : fixedMoney(after.movingAverageCost),
       lastMovementId: movement.id,
       lastUpdatedAt: sql`now()`,
@@ -494,7 +494,7 @@ export async function postProductMovement(
         batchQuantity: fixedQty(costed.quantity),
         batchUnitCost: fixedMoney(costed.unitCost),
         changes: {
-          movingAverageCost: {
+          averageMaterialCost: {
             from: money(before.movingAverageCost),
             to: money(after.movingAverageCost),
           },
@@ -568,13 +568,13 @@ export interface LotMovementRequest {
   productName: string;
   lot: { id: string; code: string; warehouseId: string };
   saleUnitId: string;
-  movementType: "LOT_TRANSFORMATION_OUT" | "LOT_TRANSFORMATION_IN" | "WASTE";
+  movementType: "LOT_TRANSFORMATION_OUT" | "LOT_TRANSFORMATION_IN" | "WASTE" | "SALE";
   /** Cantidad POSITIVA en unidad de venta; el signo lo pone el tipo. */
   quantity: string;
   /** Valor POSITIVO que sale o entra (costo del lote, no el promedio). */
   value: string;
   occurredAt: Date;
-  referenceType: "PRODUCT_LOT_TRANSFORMATION" | "PRODUCT_LOT";
+  referenceType: "PRODUCT_LOT_TRANSFORMATION" | "PRODUCT_LOT" | "SALE";
   referenceId: string;
   sourceLineId: string;
   reason?: string | null;
@@ -584,10 +584,11 @@ export interface LotMovementRequest {
 }
 
 /**
- * Movimiento de un lote de producto terminado (transformación o merma), dentro
- * de la transacción del llamador, que ya bloqueó el lote (product_lots FOR
- * UPDATE). Locks: costo del producto → saldo agregado del depósito → saldo del
- * lote. Valoriza al COSTO DEL LOTE y no recalcula el promedio móvil del producto.
+ * Movimiento de un lote de producto terminado (transformación, merma o venta),
+ * dentro de la transacción del llamador, que ya bloqueó el lote (product_lots
+ * FOR UPDATE) y su saldo. Locks: costo del producto → saldo agregado del
+ * depósito → saldo del lote. Valoriza al COSTO DEL LOTE (identificación
+ * específica) y deja el promedio del producto como valor / cantidad (ADR-057).
  */
 export async function postLotMovement(
   tx: Transaction,
@@ -611,7 +612,7 @@ export async function postLotMovement(
       {
         quantity: cost.quantity,
         inventoryValue: cost.inventoryValue,
-        movingAverageCost: cost.movingAverageCost,
+        movingAverageCost: cost.averageMaterialCost,
       },
       qty,
       new D(req.value).times(sign),
@@ -660,7 +661,7 @@ export async function postLotMovement(
     .set({
       quantity: fixedQty(after.quantity),
       inventoryValue: fixedMoney(after.inventoryValue),
-      movingAverageCost: money(after.movingAverageCost),
+      averageMaterialCost: money(after.movingAverageCost),
       lastMovementId: movement.id,
       lastUpdatedAt: sql`now()`,
     })

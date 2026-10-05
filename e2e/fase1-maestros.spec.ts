@@ -95,9 +95,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByRole("button", { name: "Crear cliente" }).click();
   await expect(page.getByRole("heading", { name: `Almacén ${run} S.R.L.` })).toBeVisible();
   await expect(page.getByText("$150.000,50")).toBeVisible();
-  await expect(
-    page.getByText("Ventas y cuenta corriente estarán disponibles en una fase posterior."),
-  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Cuenta corriente" })).toBeVisible();
   await expect(page.getByText(/^CLI-\d{4}$/)).toBeVisible();
 
   // 7. Proveedor

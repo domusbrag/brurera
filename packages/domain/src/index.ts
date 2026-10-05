@@ -6,4 +6,5 @@ export * from "./inventory";
 export * from "./lots";
 export * from "./orders";
 export * from "./production";
+export * from "./sales";
 export * from "./units";

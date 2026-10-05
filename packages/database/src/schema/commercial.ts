@@ -24,8 +24,8 @@ export const customerType = pgEnum("customer_type", [
 export const commercialCondition = pgEnum("commercial_condition", ["CASH", "CURRENT_ACCOUNT"]);
 
 /**
- * Cliente. Preparado para ventas y cuenta corriente (fases 5 y 6), que se
- * vincularán por FK a esta tabla. La lista de precios se agregará en Fase 5.
+ * Cliente. Ventas, cobros y cuenta corriente (Fase 5B) se vinculan por FK a
+ * esta tabla; puede tener una lista de precios propia.
  */
 export const customers = pgTable(
   "customers",
@@ -51,9 +51,19 @@ export const customers = pgTable(
     notes: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Lista de precios del cliente (Fase 5B). FK compuesta a price_lists declarada sólo
+     * en la migración 0010 (items → commercial impide importarla aquí sin ciclo).
+     */
+    defaultPriceListId: uuid(),
+    /** Cliente genérico "Consumidor Final" de la empresa (uno por empresa, Fase 5B). */
+    isWalkIn: boolean().notNull().default(false),
   },
   (t) => [
     unique("customers_company_id_uq").on(t.companyId, t.id),
+    uniqueIndex("customers_company_walk_in_uq")
+      .on(t.companyId)
+      .where(sql`${t.isWalkIn}`),
     uniqueIndex("customers_company_code_uq").on(t.companyId, t.internalCode),
     index("customers_company_active_name_idx").on(t.companyId, t.active, t.legalName),
     check("customers_credit_limit_nonneg", sql`${t.creditLimit} is null or ${t.creditLimit} >= 0`),

@@ -104,6 +104,7 @@ export function linePayload(lines: LineDraft[], catalog: OrderCatalog): OrderLin
       quantity: toDecimal(l.quantity),
       unitId: l.unitId || product?.saleUnit.id || null,
       requestedConservation: l.requestedConservation,
+      priceOverrideReason: null,
       notes: null,
     };
   });

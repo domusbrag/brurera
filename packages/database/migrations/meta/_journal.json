@@ -71,6 +71,20 @@
       "when": 1790897786834,
       "tag": "0009_customer_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790956663623,
+      "tag": "0010_sales_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790973513219,
+      "tag": "0011_idempotent_applications_adjustments",
+      "breakpoints": true
     }
   ]
 }

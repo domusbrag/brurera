@@ -104,6 +104,22 @@ export const PERMISSIONS = {
   ORDERS_READY: "orders.ready",
   ORDER_PLANNING_READ: "order_planning.read",
   ORDER_PRODUCTION_CREATE: "order_production.create",
+
+  SALES_READ: "sales.read",
+  SALES_CREATE: "sales.create",
+  SALES_UPDATE: "sales.update",
+  SALES_POST: "sales.post",
+  SALES_PRICE_OVERRIDE: "sales.price_override",
+  SALES_COST_READ: "sales.cost.read",
+  SALES_MARGIN_READ: "sales.margin.read",
+  PRICE_LISTS_READ: "price_lists.read",
+  PRICE_LISTS_MANAGE: "price_lists.manage",
+  PAYMENTS_READ: "payments.read",
+  PAYMENTS_CREATE: "payments.create",
+  PAYMENTS_POST: "payments.post",
+  CUSTOMER_ACCOUNTS_READ: "customer_accounts.read",
+  CUSTOMER_ACCOUNTS_ADJUST: "customer_accounts.adjust",
+  ORDER_ADVANCES_CREATE: "order_advances.create",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -397,6 +413,66 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = [
     code: P.ORDER_PRODUCTION_CREATE,
     module: "order_planning",
     description: "Crear órdenes de producción desde la necesidad de un pedido",
+  },
+
+  {
+    code: P.SALES_READ,
+    module: "sales",
+    description: "Ver ventas y entregas (precios sólo con price_lists.read)",
+  },
+  { code: P.SALES_CREATE, module: "sales", description: "Crear ventas (borrador)" },
+  { code: P.SALES_UPDATE, module: "sales", description: "Editar y descartar borradores de venta" },
+  {
+    code: P.SALES_POST,
+    module: "sales",
+    description: "Confirmar entregas y ventas (sale el producto y se genera la deuda)",
+  },
+  {
+    code: P.SALES_PRICE_OVERRIDE,
+    module: "sales",
+    description: "Cambiar el precio o aplicar descuentos distintos de lo acordado (con motivo)",
+  },
+  {
+    code: P.SALES_COST_READ,
+    module: "sales",
+    description: "Ver el costo material de las ventas y de los lotes vendidos",
+  },
+  {
+    code: P.SALES_MARGIN_READ,
+    module: "sales",
+    description: "Ver el margen sobre materiales de las ventas",
+  },
+  {
+    code: P.PRICE_LISTS_READ,
+    module: "price_lists",
+    description: "Ver listas de precios y precios de venta",
+  },
+  {
+    code: P.PRICE_LISTS_MANAGE,
+    module: "price_lists",
+    description: "Crear y modificar listas de precios y sus precios",
+  },
+  { code: P.PAYMENTS_READ, module: "payments", description: "Ver cobros y señas" },
+  { code: P.PAYMENTS_CREATE, module: "payments", description: "Cargar cobros" },
+  {
+    code: P.PAYMENTS_POST,
+    module: "payments",
+    description: "Registrar cobros y aplicarlos a ventas (mueve la cuenta corriente)",
+  },
+  {
+    code: P.CUSTOMER_ACCOUNTS_READ,
+    module: "customer_accounts",
+    description: "Ver la cuenta corriente y el saldo de los clientes",
+  },
+  {
+    code: P.CUSTOMER_ACCOUNTS_ADJUST,
+    module: "customer_accounts",
+    description: "Registrar ajustes de cuenta corriente (con motivo)",
+  },
+  {
+    code: P.ORDER_ADVANCES_CREATE,
+    module: "payments",
+    description: "Registrar señas (anticipos) de pedidos",
   },
 ];
 

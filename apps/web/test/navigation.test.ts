@@ -31,11 +31,29 @@ describe("safeNextPath (prevención de open redirect)", () => {
 });
 
 describe("menú según permisos", () => {
+  it("Comercial (Fase 5B): Pedidos, Ventas y Listas de precios; Finanzas → Cuentas a cobrar", async () => {
+    const { visibleNavigation } = await import("@/lib/navigation");
+    const groups = visibleNavigation([
+      "orders.read",
+      "sales.read",
+      "price_lists.read",
+      "customer_accounts.read",
+    ]);
+    const commercial = groups.find((g) => g.label === "Comercial")?.items.map((i) => i.slug);
+    expect(commercial).toEqual(["pedidos", "ventas", "listas-de-precios"]);
+    const finance = groups.find((g) => g.label === "Finanzas")?.items.map((i) => i.slug);
+    expect(finance).toContain("cuentas-a-cobrar");
+    const warehouse = visibleNavigation(["sales.read"]).flatMap((g) => g.items.map((i) => i.slug));
+    expect(warehouse).not.toContain("listas-de-precios");
+    expect(warehouse).not.toContain("cuentas-a-cobrar");
+  });
+
   it("oculta módulos implementados sin permiso y conserva los de fases futuras", async () => {
     const { visibleNavigation } = await import("@/lib/navigation");
     const slugs = visibleNavigation(["customers.read"]).flatMap((g) => g.items.map((i) => i.slug));
     expect(slugs).toContain("clientes");
-    expect(slugs).toContain("ventas");
+    expect(slugs).toContain("caja");
+    expect(slugs).not.toContain("ventas");
     expect(slugs).not.toContain("proveedores");
     expect(slugs).not.toContain("usuarios");
     expect(slugs).not.toContain("configuracion");
@@ -68,7 +86,7 @@ describe("menú según permisos", () => {
 
   it("Producción → Órdenes (Fase 4) aparece sólo con production_orders.read, antes que Recetas", async () => {
     const { visibleNavigation, CURRENT_PHASE } = await import("@/lib/navigation");
-    expect(CURRENT_PHASE).toBe(4);
+    expect(CURRENT_PHASE).toBe(5);
     const group = (perms: string[]) =>
       visibleNavigation(perms).find((g) => g.label === "Producción")?.items ?? [];
     const both = group(["production_orders.read", "recipes.read"]);

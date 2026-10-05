@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ConservationStateDto } from "./lots";
 import type { PersonRefDto, UnitRefDto } from "./recipes";
+import type { OrderCommercialDto, OrderLinePriceDto, OrderPricingStatusDto } from "./sales";
 import { localDateTimeSchema } from "./timezone";
 import { decimalString, optionalText, optionalUuid, requiredText, uuid } from "./validation";
 
@@ -15,6 +16,8 @@ export const ORDER_STATUSES = [
   "CONFIRMED",
   "IN_PREPARATION",
   "READY",
+  "PARTIALLY_DELIVERED",
+  "DELIVERED",
   "CANCELLED",
 ] as const;
 export type OrderStatusDto = (typeof ORDER_STATUSES)[number];
@@ -23,6 +26,8 @@ export const ORDER_STATUS_LABELS: Record<OrderStatusDto, string> = {
   CONFIRMED: "Confirmado",
   IN_PREPARATION: "En preparación",
   READY: "Listo",
+  PARTIALLY_DELIVERED: "Entregado parcialmente",
+  DELIVERED: "Entregado",
   CANCELLED: "Cancelado",
 };
 
@@ -85,6 +90,7 @@ export const RESERVATION_RELEASE_REASONS = [
   "ORDER_REPLANNED",
   "LOT_BLOCKED",
   "LOT_WASTE",
+  "ORDER_DELIVERED",
 ] as const;
 export type ReservationReleaseReasonDto = (typeof RESERVATION_RELEASE_REASONS)[number];
 export const RESERVATION_RELEASE_REASON_LABELS: Record<ReservationReleaseReasonDto, string> = {
@@ -92,6 +98,7 @@ export const RESERVATION_RELEASE_REASON_LABELS: Record<ReservationReleaseReasonD
   ORDER_REPLANNED: "Cobertura recalculada",
   LOT_BLOCKED: "Lote bloqueado por calidad",
   LOT_WASTE: "Merma del lote",
+  ORDER_DELIVERED: "Pedido entregado",
 };
 
 export const REQUIREMENT_STATUSES = [
@@ -142,6 +149,14 @@ export type OrderIneligibilityReasonDto = keyof typeof ORDER_INELIGIBILITY_LABEL
 
 const quantity = () => decimalString({ integers: 12, scale: 6, positive: true });
 
+/** Precio de una línea (pedido o venta). Sin unitPrice = precio vigente / acordado. */
+export const linePriceFields = {
+  unitPrice: decimalString({ integers: 12, scale: 2 }).optional(),
+  discountAmount: decimalString({ integers: 12, scale: 2 }).optional(),
+  /** Obligatorio si el precio o el descuento difieren de lo acordado / vigente. */
+  priceOverrideReason: optionalText(500),
+};
+
 export const orderLineInputSchema = z.object({
   /** Al replanificar: id de la línea existente que se modifica (sin id = línea nueva). */
   id: optionalUuid(),
@@ -150,6 +165,7 @@ export const orderLineInputSchema = z.object({
   /** Unidad de la cantidad; por defecto la unidad de venta del producto. */
   unitId: optionalUuid(),
   requestedConservation: z.enum(REQUESTED_CONSERVATIONS).default("ANY"),
+  ...linePriceFields,
   notes: optionalText(500),
 });
 export type OrderLineInput = z.infer<typeof orderLineInputSchema>;
@@ -300,6 +316,7 @@ export interface OrderListItemDto {
   products: { name: string; quantity: string; unit: string }[];
   /** Producto sin reservar (a producir o sin receta). */
   shortages: { name: string; quantity: string; unit: string }[];
+  pricingStatus: OrderPricingStatusDto;
 }
 
 export interface OrderLotCoverageDto {
@@ -377,8 +394,13 @@ export interface OrderLineDto {
   saleUnit: UnitRefDto;
   requestedConservation: RequestedConservationDto;
   notes: string | null;
-  /** Precio informativo actual del producto (no es precio final: Fase 5B). */
+  /** Precio vigente del producto según la lista del cliente (null sin price_lists.read). */
   informativePrice: string | null;
+  /** Precio cotizado / acordado de la línea (null sin precio o sin price_lists.read). */
+  price: OrderLinePriceDto | null;
+  /** Entregado (Σ ventas confirmadas) y pendiente de entregar, en unidad de venta. */
+  delivered: string;
+  pendingDelivery: string;
   /** Cobertura del plan vigente (null en borrador). */
   physical: string | null;
   eligible: string | null;
@@ -402,6 +424,8 @@ export interface OrderReservationDto {
     warehouse: { id: string; code: string; name: string };
   };
   quantity: string;
+  /** Ya entregado de esta reserva (venta desde el pedido). */
+  fulfilledQuantity: string;
   unit: UnitRefDto;
   planRevision: number;
   status: ReservationStatusDto;
@@ -439,6 +463,12 @@ export interface OrderActionsDto {
   canMarkReady: boolean;
   /** Por qué no puede pasar a listo (si corresponde). */
   readyBlockedReason: string | null;
+  /** Registrar entrega y venta (pedido LISTO o entregado parcialmente). */
+  canDeliver: boolean;
+  deliverBlockedReason: string | null;
+  /** Cotizar un pedido confirmado sin precio acordado (pedidos anteriores a 5B). */
+  canQuote: boolean;
+  canRegisterAdvance: boolean;
 }
 
 export interface OrderDetailDto {
@@ -475,12 +505,15 @@ export interface OrderDetailDto {
   productionRequirements: OrderProductionRequirementDto[];
   materials: MaterialProjectionDto[];
   issues: OrderIssueDto[];
+  commercial: OrderCommercialDto;
   actions: OrderActionsDto;
 }
 
 export interface OrderOperationResultDto {
   order: OrderDetailDto;
   replayed: boolean;
+  /** Avisos de negocio de la operación (p. ej. seña que queda como crédito). */
+  warnings?: string[];
 }
 
 export interface ReplanPreviewDto {

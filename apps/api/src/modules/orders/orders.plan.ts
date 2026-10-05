@@ -69,6 +69,8 @@ export interface ResolvedLine {
   normalized: InstanceType<typeof D>;
   requestedConservation: RequestedConservation;
   notes: string | null;
+  /** Precio pedido para la línea (sin precio = vigente / acordado). */
+  price: { unitPrice?: string; discountAmount?: string; priceOverrideReason?: string | null };
 }
 
 /** Valida productos y unidades y normaliza cada cantidad a la unidad de venta. */
@@ -128,6 +130,11 @@ export async function resolveLines(
       normalized,
       requestedConservation: input.requestedConservation,
       notes: input.notes ?? null,
+      price: {
+        unitPrice: input.unitPrice,
+        discountAmount: input.discountAmount,
+        priceOverrideReason: input.priceOverrideReason,
+      },
     };
   });
 }

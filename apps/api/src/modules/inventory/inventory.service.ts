@@ -56,6 +56,7 @@ import {
   lockMaterialCosts,
   postStockMovement,
 } from "./ledger.js";
+import { qualified } from "../../lib/sql.js";
 
 /*
  * Consultas y operaciones manuales de inventario. Ninguna función escribe un
@@ -132,7 +133,7 @@ export async function listInventory(
         warehouseQuantity: sql<string>`coalesce(${stockBalances.quantity}, 0)`,
         movingAverageCost: rawMaterialInventoryCosts.movingAverageCost,
         inventoryValue: sql<string>`coalesce(${rawMaterialInventoryCosts.inventoryValue}, 0)`,
-        warehouseCount: sql<number>`(select count(*)::int from ${stockBalances} sb where sb.company_id = ${rawMaterials.companyId} and sb.raw_material_id = ${rawMaterials.id} and sb.quantity > 0)`,
+        warehouseCount: sql<number>`(select count(*)::int from ${stockBalances} sb where sb.company_id = ${qualified(rawMaterials.companyId)} and sb.raw_material_id = ${qualified(rawMaterials.id)} and sb.quantity > 0)`,
       })
       .from(rawMaterials)
       .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, rawMaterials.baseUnitId))

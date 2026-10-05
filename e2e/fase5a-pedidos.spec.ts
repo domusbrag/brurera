@@ -441,7 +441,7 @@ test("Fase 5A: stock liberado, cambiar fecha con antes/después, listo y cancela
   ).toContainText(`${frozen.code}: 50 kg`);
   await page.getByRole("button", { name: "Aplicar cambios" }).click();
   await expect(heading).toContainText("Cubierto");
-  await expect(page.locator("dl.details")).toContainText("Revisión 2");
+  await expect(page.locator("dl.details").first()).toContainText("Revisión 2");
   await expect(page.locator("main")).toContainText(`Retira el ${shown(world.dayIn(3))} 10:00`);
   const kept = section(page, "Lotes reservados").locator("tbody tr");
   await expect(kept).toHaveCount(1);

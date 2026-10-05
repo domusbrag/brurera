@@ -158,6 +158,6 @@ describe("concurrencia — mismas materias primas en paralelo, sin deadlocks (AD
     const product = await ok(api.get(`/api/inventory/products/${w.panFrances}`));
     expect(dec(product.quantity)).toBe("400");
     // 75.000 + 400 + 2.000 = 77.400 por lote → 774/kg
-    expect(product.movingAverageCost).toBe("774.000000");
+    expect(product.averageMaterialCost).toBe("774.000000");
   });
 });

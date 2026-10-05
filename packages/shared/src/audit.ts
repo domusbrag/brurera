@@ -107,6 +107,24 @@ export const AUDIT_ACTION_LABELS = {
   LOT_RESERVATION_INVALIDATED: "Reserva invalidada (el lote ya no la cubre)",
   ORDER_PRODUCTION_REQUIREMENT_CREATED: "Necesidad de producción registrada",
   PRODUCTION_ORDER_CREATED_FROM_ORDER: "Orden de producción creada desde el pedido",
+  ORDER_QUOTED: "Precio del pedido acordado",
+  ORDER_PARTIALLY_DELIVERED: "Pedido entregado parcialmente",
+  ORDER_DELIVERED: "Pedido entregado",
+
+  SALE_CREATED: "Venta creada (borrador)",
+  SALE_UPDATED: "Venta modificada",
+  SALE_POSTED: "Entrega y venta confirmadas",
+  SALE_DRAFT_CANCELLED: "Borrador de venta descartado",
+  SALE_PRICE_OVERRIDDEN: "Precio modificado",
+  PRICE_LIST_CREATED: "Lista de precios creada",
+  PRICE_LIST_UPDATED: "Lista de precios modificada",
+  PRICE_LIST_ITEM_CHANGED: "Precio de lista modificado",
+  CUSTOMER_PAYMENT_CREATED: "Cobro cargado",
+  CUSTOMER_PAYMENT_POSTED: "Cobro registrado",
+  PAYMENT_APPLIED: "Cobro imputado a una venta",
+  ORDER_ADVANCE_PAYMENT_POSTED: "Seña registrada",
+  CUSTOMER_ACCOUNT_ADJUSTED: "Ajuste de cuenta corriente",
+  CUSTOMER_CREDIT_LIMIT_EXCEEDED: "Venta por encima del límite de crédito",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;
