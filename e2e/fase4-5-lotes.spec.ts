@@ -341,7 +341,9 @@ test("Fase 4.5: producto sin congelado habilitado no ofrece congelar", async ({
   await expect(page.getByRole("link", { name: "Registrar merma" })).toBeVisible();
   // Aun entrando directo, la operación explica por qué no se puede.
   await page.goto(`/stock/lotes/${lot.id}/congelar`);
-  await expect(page.getByRole("status")).toContainText("no tiene habilitado el estado congelado");
+  await expect(
+    page.getByRole("status").filter({ hasText: "no tiene habilitado el estado congelado" }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Revisar" })).toHaveCount(0);
 
   expect(consoleErrors).toEqual([]);
@@ -358,8 +360,7 @@ test("Fase 4.5: lote de vida corta en Próximos a vencer y fuera de la disponibi
   await configureConservation(page, world.productId, [["Fresco", "2", "horas", true]]);
   const lot = await world.produce("30");
 
-  await openSection(page, "Stock de materias primas");
-  await page.getByRole("link", { name: "Próximos a vencer" }).click();
+  await openSection(page, "Próximos a vencer");
   await expect(page.getByRole("heading", { level: 1, name: "Próximos a vencer" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(lot.code);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(lot.code);

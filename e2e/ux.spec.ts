@@ -104,6 +104,7 @@ test("UX: cada rol ve sólo lo que puede usar", async ({ page }, testInfo) => {
   await expect(page.getByTestId("attention-lots-near-expiry")).toHaveCount(0);
   // Sin permiso, la ruta directa no ofrece la acción.
   await page.goto("/compras");
+  await expect(page.locator("main")).toContainText("No tenés acceso a esta sección");
   await expect(page.locator("main")).not.toContainText("Nueva compra");
   await logout(page);
 

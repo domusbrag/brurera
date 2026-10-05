@@ -77,8 +77,8 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByRole("checkbox", { name: "Producción" }).check();
   await page.getByRole("button", { name: "Guardar roles" }).click();
   const roles = page.locator("section", { has: page.getByRole("heading", { name: "Roles" }) });
-  await expect(roles.getByText("Producción")).toBeVisible();
-  await expect(roles.getByText("Ventas")).toBeVisible();
+  await expect(roles.getByText("Producción", { exact: true })).toBeVisible();
+  await expect(roles.getByText("Ventas", { exact: true })).toBeVisible();
 
   // 6. Cliente
   await openSection(page, "Clientes");
@@ -218,7 +218,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await expect(nav.getByRole("link", { name: "Usuarios", exact: true })).toHaveCount(0);
   await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toHaveCount(0);
   await page.goto("/usuarios");
-  await expect(page.getByText("No tenés permiso para esta operación.")).toBeVisible();
+  await expect(page.getByText("No tenés acceso a esta sección")).toBeVisible();
   await page.getByRole("button", { name: "Salir" }).click();
   await expect(page).toHaveURL(/\/login$/);
 

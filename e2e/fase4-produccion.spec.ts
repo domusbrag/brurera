@@ -220,7 +220,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
 
   // Stock de producto terminado: 96 kg a $800/kg, margen teórico $700 (46,67 %).
   await openSection(page, "Stock de materias primas");
-  await page.getByRole("link", { name: "Productos terminados" }).click();
+  await openSection(page, "Productos terminados");
   await expect(
     page.getByRole("heading", { level: 1, name: "Stock de productos terminados" }),
   ).toBeVisible();
@@ -251,7 +251,10 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   await expect(page.getByRole("row").filter({ hasText: sal })).toContainText("8,5 kg");
 
   // Movimientos de inventario: filtro por productos terminados, con enlace a la orden.
-  await page.getByRole("link", { name: "Movimientos", exact: true }).click();
+  await page
+    .getByLabel("Inventario")
+    .getByRole("link", { name: "Movimientos", exact: true })
+    .click();
   await page.getByRole("combobox", { name: "Artículo" }).selectOption("PRODUCT");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);

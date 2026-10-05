@@ -4,6 +4,7 @@ import {
   NAVIGATION,
   UPCOMING_SECTIONS,
   activeNavHref,
+  canOpenRoute,
   findUpcomingSection,
   safeNextPath,
   visibleNavigation,
@@ -121,5 +122,21 @@ describe("menú por rol (sólo lo que cada persona puede usar)", () => {
 
   it("sin permisos no hay grupos", () => {
     expect(visibleNavigation([])).toEqual([]);
+  });
+});
+
+describe("acceso a rutas por permiso", () => {
+  it("Ventas no abre compras ni stock, pero sí lotes y configuración de sólo lectura", () => {
+    const sales = permsOf("SALES");
+    expect(canOpenRoute("/compras", sales)).toBe(false);
+    expect(canOpenRoute("/stock", sales)).toBe(false);
+    expect(canOpenRoute("/ventas/nueva", sales)).toBe(true);
+    expect(canOpenRoute("/stock/lotes/abc", sales)).toBe(true);
+    expect(canOpenRoute("/configuracion/unidades", sales)).toBe(true);
+    expect(canOpenRoute("/", sales)).toBe(true);
+  });
+  it("Admin abre todo lo del menú", () => {
+    for (const g of NAVIGATION)
+      for (const i of g.items) expect(canOpenRoute(i.href, permsOf("ADMIN"))).toBe(true);
   });
 });

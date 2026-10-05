@@ -219,6 +219,29 @@ export function activeNavHref(pathname: string, items: readonly NavItem[]): stri
   return best;
 }
 
+/*
+ * Rutas cuyo acceso no se deduce del menú: Configuración tiene páginas de sólo
+ * lectura para todos los roles (unidades, categorías, depósitos) y los lotes se
+ * abren desde ventas y pedidos con `product_lots.read`, sin acceso al stock.
+ */
+const UNGUARDED_PREFIXES = ["/configuracion", "/stock/lotes"];
+
+/**
+ * ¿El usuario puede abrir esta ruta? Se decide con el ítem de menú dueño de la
+ * ruta: si existe y el usuario no lo ve, la página no se carga (se evita pedir
+ * datos que la API va a rechazar y se explica por qué). Las rutas sin dueño en el
+ * menú las resuelve cada página.
+ */
+export function canOpenRoute(pathname: string, permissions: readonly string[]): boolean {
+  if (UNGUARDED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return true;
+  const owner = activeNavHref(
+    pathname,
+    NAVIGATION.flatMap((g) => g.items),
+  );
+  if (!owner || owner === "/") return true;
+  return visibleNavigation(permissions).some((g) => g.items.some((i) => i.href === owner));
+}
+
 export function findUpcomingSection(slug: string) {
   return UPCOMING_SECTIONS.find((s) => s.slug === slug);
 }

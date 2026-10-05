@@ -420,7 +420,7 @@ test("UX: venta de mostrador en un paso, con cobro en efectivo y vuelto", async 
   const heading = page.getByRole("heading", { level: 1 });
 
   // Acceso directo desde la barra superior.
-  await page.getByRole("link", { name: "Vender" }).click();
+  await page.getByRole("link", { name: "Vender", exact: true }).click();
   await expect(heading).toHaveText("Nueva venta");
   await selectByText(page.getByRole("combobox", { name: "Producto 1" }), world.productName);
   await page.getByLabel("Cantidad 1").fill("2");

@@ -4,7 +4,7 @@ import { PERMISSIONS as P, type CurrentUser } from "@bakery/shared";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { HOME_ITEM, activeNavHref, visibleNavigation } from "@/lib/navigation";
+import { HOME_ITEM, activeNavHref, canOpenRoute, visibleNavigation } from "@/lib/navigation";
 import { FlashProvider } from "./ui/flash";
 import { Icon } from "./ui/icons";
 import { UserProvider } from "./user-context";
@@ -169,7 +169,26 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
         )}
         <main className="content" id="contenido" tabIndex={-1}>
           <UserProvider user={user}>
-            <FlashProvider>{children}</FlashProvider>
+            <FlashProvider>
+              {canOpenRoute(pathname, user.permissions) ? (
+                children
+              ) : (
+                <div className="page">
+                  <section className="panel panel--empty" role="alert">
+                    <p className="upcoming">No tenés acceso a esta sección</p>
+                    <p className="muted">
+                      Tu rol no incluye este módulo. Si lo necesitás, pedile a un administrador que
+                      te asigne el permiso.
+                    </p>
+                    <div className="alert__actions" style={{ justifyContent: "center" }}>
+                      <Link className="button" href="/">
+                        Ir al inicio
+                      </Link>
+                    </div>
+                  </section>
+                </div>
+              )}
+            </FlashProvider>
           </UserProvider>
         </main>
       </div>
