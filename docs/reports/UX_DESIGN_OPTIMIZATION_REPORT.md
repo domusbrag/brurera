@@ -18,7 +18,7 @@ pricing ni de invariantes. No hay migraciones.
 | ----------- | --------------------------------------------------------------------------------------- |
 | Base commit | `2a78810` (main con el PR #8 de Fase 5B mergeado)                                       |
 | Rama        | `ux-design-optimization`                                                                |
-| PR          | Ver el PR abierto desde `ux-design-optimization` hacia `main` (enlace en el hilo).      |
+| PR          | [#9](https://github.com/domusbrag/brurera/pull/9)                                       |
 | Alcance     | 78 archivos fuera de capturas (+14.107 / −4.141 líneas), casi todo en `apps/web` y docs |
 
 **Para correr en Windows después de traer la rama:** `pnpm install` y `pnpm build` (o `pnpm dev`). No
