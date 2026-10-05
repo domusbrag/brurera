@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { crumb, openSection, selectByText, summaryValue } from "./support";
 
 /*
  * Fase 4.5: lotes, conservación y vida útil contra la aplicación construida y la
@@ -17,25 +18,6 @@ const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 const WEB_ORIGIN = "http://localhost:3000";
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -221,7 +203,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(conservation.getByRole("row", { name: /^Descongelado/ })).toContainText("12 horas");
 
   // Producir 100 kg desde la pantalla: la revisión anuncia el lote fresco.
-  await openSection(page, "Órdenes");
+  await openSection(page, "Órdenes de producción");
   await expect(
     page.getByRole("heading", { level: 1, name: "Órdenes de producción" }),
   ).toBeVisible();
@@ -249,7 +231,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(heading).toContainText("Completada");
 
   // La orden muestra su lote; el lote, su origen y vencimiento.
-  const lotLink = page.locator("dl.details").getByRole("link", { name: /LOT-\d{8}-\d{3}/ });
+  const lotLink = page.locator("dl.metrics").getByRole("link", { name: /LOT-\d{8}-\d{3}/ });
   const lotCode = (await lotLink.textContent())!.trim();
   await lotLink.click();
   await expect(heading).toContainText(`Lote ${lotCode}`);
@@ -301,7 +283,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(history).toContainText("Merma de lote registrada");
 
   // Stock del producto: 95 kg físicos por estado, lotes FEFO y disponibilidad a 3 días.
-  await page.getByRole("link", { name: `← ${pan}` }).click();
+  await crumb(page, `${pan}`).click();
   const stock = section(page, "Existencias");
   await expect(summaryValue(stock, "Stock físico")).toHaveText("95 kg");
   await expect(summaryValue(stock, "Utilizable ahora")).toHaveText("95 kg");
@@ -331,7 +313,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(availability).toContainText("75 kg vencen antes de la fecha");
 
   // Listado de productos terminados con columnas por conservación.
-  await page.getByRole("link", { name: "← Stock de productos terminados" }).click();
+  await crumb(page, "Stock de productos terminados").click();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);
   const row = page.getByRole("row").filter({ hasText: pan });
@@ -359,7 +341,9 @@ test("Fase 4.5: producto sin congelado habilitado no ofrece congelar", async ({
   await expect(page.getByRole("link", { name: "Registrar merma" })).toBeVisible();
   // Aun entrando directo, la operación explica por qué no se puede.
   await page.goto(`/stock/lotes/${lot.id}/congelar`);
-  await expect(page.getByRole("status")).toContainText("no tiene habilitado el estado congelado");
+  await expect(
+    page.getByRole("status").filter({ hasText: "no tiene habilitado el estado congelado" }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Revisar" })).toHaveCount(0);
 
   expect(consoleErrors).toEqual([]);
@@ -376,8 +360,7 @@ test("Fase 4.5: lote de vida corta en Próximos a vencer y fuera de la disponibi
   await configureConservation(page, world.productId, [["Fresco", "2", "horas", true]]);
   const lot = await world.produce("30");
 
-  await openSection(page, "Stock");
-  await page.getByRole("link", { name: "Próximos a vencer" }).click();
+  await openSection(page, "Próximos a vencer");
   await expect(page.getByRole("heading", { level: 1, name: "Próximos a vencer" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(lot.code);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(lot.code);
@@ -388,7 +371,7 @@ test("Fase 4.5: lote de vida corta en Próximos a vencer y fuera de la disponibi
 
   await row.getByRole("link", { name: lot.code, exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Próximo a vencer");
-  await page.getByRole("link", { name: `← ${world.productName}` }).click();
+  await crumb(page, `${world.productName}`).click();
   const availability = section(page, "Disponibilidad a una fecha");
   // Por defecto mira dentro de dos días: el lote ya venció para entonces.
   await expect(summaryValue(availability, /^Utilizable el/)).toHaveText("0 kg");

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  COVERAGE_STATUS_LABELS,
   PERMISSIONS as P,
   type OrderDetailDto,
   type OrderOperationResultDto,
@@ -12,8 +11,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
+import { describeError } from "@/lib/errors";
 import { formatQuantity } from "@/lib/format";
-import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { useFlash } from "../ui/flash";
 import { useCan, useCurrentUser } from "../user-context";
 import {
   LinesEditor,
@@ -35,25 +36,29 @@ import {
 } from "./order-shared";
 
 /*
- * Modificar un pedido confirmado (REPLAN explícito): se cambia fecha y/o
- * productos, la API muestra el antes y el después (qué reservas se liberan,
- * cuáles se toman, cómo cambian producción y materias primas) y recién al
- * aplicar se crea una revisión nueva del plan. La anterior queda en el historial.
+ * Modificar un pedido confirmado: se cambia fecha y/o productos y la API
+ * muestra el antes y el después (si llega con la fecha, qué reservas se
+ * liberan o se toman, cómo cambia lo que falta producir) antes de aplicar.
+ * Recién al aplicar se recalcula el plan; el anterior queda en el historial.
  */
 
 export function OrderReplan({ id }: { id: string }) {
   const catalog = useOrderCatalog();
   const { data, error } = useResource<OrderDetailDto>(`/api/orders/${id}`);
   if (error) return <ErrorState error={error} />;
-  if (!catalog || !data) return <Loading />;
+  if (!catalog || !data) return <Loading label="Cargando el pedido…" />;
   if (!data.actions.canReplan) {
     return (
-      <section className="panel panel--empty">
-        <p className="upcoming">Este pedido no se puede modificar</p>
-        <p className="muted">
-          Sólo se modifican pedidos confirmados, en preparación o listos.{" "}
-          <Link href={`${ORDERS_BASE}/${id}`}>Volver al pedido</Link>
-        </p>
+      <section className="panel">
+        <EmptyState
+          title={`El pedido ${data.code} no se puede modificar`}
+          description="Sólo se modifican pedidos confirmados, en preparación o listos, y hace falta permiso para replanificar."
+          action={
+            <Link className="button" href={`${ORDERS_BASE}/${id}`}>
+              Volver al pedido
+            </Link>
+          }
+        />
       </section>
     );
   }
@@ -62,6 +67,7 @@ export function OrderReplan({ id }: { id: string }) {
 
 function ReplanEditor({ order, catalog }: { order: OrderDetailDto; catalog: OrderCatalog }) {
   const router = useRouter();
+  const flash = useFlash();
   const can = useCan();
   const tz = useCurrentUser().company.timezone;
   const [requestedAt, setRequestedAt] = useState(order.requestedAtLocal);
@@ -94,7 +100,10 @@ function ReplanEditor({ order, catalog }: { order: OrderDetailDto; catalog: Orde
             setPreview({
               key,
               data: null,
-              error: err instanceof ApiError ? err : new ApiError(0, "UNKNOWN", "Sin vista previa"),
+              error:
+                err instanceof ApiError
+                  ? err
+                  : new ApiError(0, "UNKNOWN", "No se pudo calcular el resultado."),
             }),
         );
     }, 400);
@@ -115,22 +124,43 @@ function ReplanEditor({ order, catalog }: { order: OrderDetailDto; catalog: Orde
         method: "POST",
         body: { ...body, operationId },
       });
+      flash(`Pedido ${order.code} modificado: la cobertura se recalculó.`, {
+        afterNavigation: true,
+      });
       router.push(`${ORDERS_BASE}/${order.id}`);
     } catch (err) {
-      setApplyError(err instanceof ApiError ? err.message : "No se pudo modificar el pedido.");
+      setApplyError(
+        err instanceof ApiError ? describeError(err) : "No se pudo modificar el pedido.",
+      );
       setPending(false);
     }
   }
 
   const fieldErrors = current?.error?.fieldErrors ?? {};
+  const allowed = can(P.ORDERS_REPLAN);
+  const blockedReason = !allowed
+    ? "No tenés permiso para modificar pedidos."
+    : !ready
+      ? "Completá fecha y productos para ver el resultado."
+      : current?.error
+        ? "Corregí lo marcado para poder aplicar."
+        : !current?.data
+          ? "Calculando el resultado…"
+          : null;
   return (
     <div className="page">
       <PageHeader
-        breadcrumb={{ href: `${ORDERS_BASE}/${order.id}`, label: `Pedido ${order.code}` }}
+        breadcrumb={[
+          { href: ORDERS_BASE, label: "Pedidos" },
+          { href: `${ORDERS_BASE}/${order.id}`, label: order.code },
+        ]}
         title={`Modificar pedido ${order.code}`}
-        subtitle="Cambiá fecha o productos y revisá cómo queda antes de aplicar. Nada cambia hasta que apliques."
+        subtitle="Cambiá la fecha o los productos y revisá cómo queda antes de aplicar. Nada cambia hasta que apliques."
       />
-      <section className="panel">
+      <section className="panel" aria-labelledby="replan-date">
+        <h2 id="replan-date" className="sr-only">
+          Para cuándo
+        </h2>
         <div className="form-grid">
           <div className="form__field">
             <label htmlFor="r-requestedAt">Entrega o retiro</label>
@@ -139,9 +169,17 @@ function ReplanEditor({ order, catalog }: { order: OrderDetailDto; catalog: Orde
               value={requestedAt}
               timeZone={tz}
               invalid={!!fieldErrors.requestedAt}
+              describedBy={fieldErrors.requestedAt ? "r-requestedAt-error" : "r-requestedAt-before"}
               onChange={setRequestedAt}
             />
-            <span className="muted small">Antes: {formatWallClock(order.requestedAtLocal)}</span>
+            <span className="form__hint" id="r-requestedAt-before">
+              Antes: {formatWallClock(order.requestedAtLocal)}
+            </span>
+            {fieldErrors.requestedAt && (
+              <span className="form__error" id="r-requestedAt-error">
+                {fieldErrors.requestedAt}
+              </span>
+            )}
           </div>
         </div>
       </section>
@@ -157,32 +195,41 @@ function ReplanEditor({ order, catalog }: { order: OrderDetailDto; catalog: Orde
       </section>
 
       {!ready ? (
-        <p className="muted">Completá fecha y productos para ver el resultado.</p>
+        <p className="muted small">Completá fecha y productos para ver el resultado.</p>
       ) : current?.error ? (
-        <p className="notice">{current.error.message}</p>
+        <p className="alert alert--warn" role="status">
+          {describeError(current.error)}
+        </p>
       ) : !current?.data ? (
-        <Loading />
+        <Loading label="Calculando el resultado…" />
       ) : (
         <ReplanComparison preview={current.data} />
       )}
 
       {applyError && (
-        <p className="form__error" role="alert">
+        <p className="alert" role="alert">
           {applyError}
         </p>
       )}
       <div className="form__footer">
+        <Link href={`${ORDERS_BASE}/${order.id}`} className="button button--tertiary">
+          Cancelar
+        </Link>
         <button
           type="button"
           className="button button--primary"
-          disabled={!current?.data || pending || !can(P.ORDERS_REPLAN)}
+          disabled={blockedReason !== null || pending}
+          aria-describedby={blockedReason ? "replan-blocked" : undefined}
+          aria-busy={pending || undefined}
           onClick={apply}
         >
           {pending ? "Aplicando…" : "Aplicar cambios"}
         </button>
-        <Link href={`${ORDERS_BASE}/${order.id}`} className="button">
-          Cancelar
-        </Link>
+        {blockedReason && (
+          <span className="muted small" id="replan-blocked">
+            {blockedReason}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -190,14 +237,14 @@ function ReplanEditor({ order, catalog }: { order: OrderDetailDto; catalog: Orde
 
 type Change = { label: string; unit: string; before: string; after: string };
 
-function ChangeTable({ title, rows }: { title: string; rows: Change[] }) {
+function ChangeTable({ title, column, rows }: { title: string; column: string; rows: Change[] }) {
   if (rows.length === 0) return null;
   return (
     <div className="table-wrap">
       <table className="table" aria-label={title}>
         <thead>
           <tr>
-            <th scope="col">{title}</th>
+            <th scope="col">{column}</th>
             <th scope="col" className="num">
               Antes
             </th>
@@ -296,17 +343,13 @@ export function ReplanComparison({ preview }: { preview: ReplanPreviewDto }) {
       <h2 id="compare-title">Antes y después</h2>
       <dl className="cost-summary">
         <div>
-          <dt>Cobertura actual (revisión {preview.revisionFrom})</dt>
+          <dt>Cobertura actual</dt>
           <dd>
-            {preview.currentCoverage ? (
-              COVERAGE_STATUS_LABELS[preview.currentCoverage]
-            ) : (
-              <span className="muted">—</span>
-            )}
+            <CoverageBadge coverage={preview.currentCoverage} />
           </dd>
         </div>
         <div>
-          <dt>Cobertura nueva (revisión {preview.revisionTo})</dt>
+          <dt>Cobertura nueva</dt>
           <dd>
             <CoverageBadge coverage={p.coverageStatus} />
           </dd>
@@ -331,20 +374,24 @@ export function ReplanComparison({ preview }: { preview: ReplanPreviewDto }) {
       </div>
       <ChangeTable
         title="Producción"
+        column="Falta producir"
         rows={preview.productionChange.map((c) => ({ ...c, label: c.product }))}
       />
       <ChangeTable
         title="Materia prima"
+        column="Materia prima necesaria"
         rows={preview.materialChange.map((c) => ({ ...c, label: c.rawMaterial }))}
       />
-      <h3 className="section-title">Cobertura propuesta por producto</h3>
-      <div className="cards">
-        {p.lines.map((line, i) => (
-          <LineCoverage key={`${line.product.id}-${i}`} line={line} />
-        ))}
-      </div>
-      <h3 className="section-title">Materias primas</h3>
-      <MaterialProjection materials={p.materials} />
+      <details>
+        <summary>Cobertura propuesta por producto y materia prima</summary>
+        <div className="cards">
+          {p.lines.map((line, i) => (
+            <LineCoverage key={`${line.product.id}-${i}`} line={line} />
+          ))}
+        </div>
+        <h3 className="section-title">Materias primas</h3>
+        <MaterialProjection materials={p.materials} />
+      </details>
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { openSection, selectByText, summaryValue } from "./support";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 /*
@@ -19,25 +20,6 @@ const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 const WEB_ORIGIN = "http://localhost:3000";
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -265,8 +247,8 @@ test("Fase 5B: pedido con seña, entrega parcial, cobro, entrega final y cuenta 
   // Entrega parcial: 50 de 80 kg.
   await page.getByRole("link", { name: "Entregar y vender" }).click();
   await expect(heading).toHaveText(`Entregar pedido ${order.code}`);
-  await expect(page.getByRole("table", { name: "Productos de la venta" })).toContainText(
-    "Pendiente: 80 kg",
+  await expect(page.getByRole("group", { name: "Productos de la venta" })).toContainText(
+    "Pendiente del pedido: 80 kg",
   );
   await page.getByLabel("Cantidad 1").fill("50");
   await expect(page.getByTestId("draft-total")).toContainText("$60.000,00");
@@ -368,25 +350,26 @@ test("Fase 5B: venta de mostrador con FEFO, precio cambiado, margen negativo y c
   await openSection(page, "Ventas");
   await expect(page.getByRole("heading", { level: 1, name: "Ventas" })).toBeVisible();
   await page.getByRole("link", { name: "Nueva venta" }).click();
-  await expect(heading).toHaveText("Nueva venta directa");
-  await expect(page.getByRole("combobox", { name: "Cliente" })).toHaveValue(/.+/);
-  await expect(
-    page.getByRole("combobox", { name: "Cliente" }).locator("option:checked"),
-  ).toHaveText("Consumidor Final");
+  await expect(heading).toHaveText("Nueva venta");
+  // Mostrador: Consumidor Final por defecto y cobro en el momento.
+  await expect(page.getByRole("combobox", { name: "Cliente" })).toHaveValue("Consumidor Final");
+  await expect(page.getByLabel("Cobrar ahora")).toBeChecked();
   await selectByText(page.getByRole("combobox", { name: "Producto 1" }), world.productName);
   await page.getByLabel("Cantidad 1").fill("30");
-  await expect(page.getByRole("table", { name: "Productos de la venta" })).toContainText(
+  await expect(page.getByRole("group", { name: "Productos de la venta" })).toContainText(
     "Precio del producto",
   );
   await expect(page.getByTestId("draft-total")).toContainText("$45.000,00");
 
   // Precio por debajo del costo: exige motivo.
   await page.getByLabel("Precio 1").fill("500");
-  await page.getByRole("button", { name: "Guardar y ver la entrega" }).click();
+  await page.getByRole("button", { name: "Confirmar venta y cobrar" }).click();
   await expect(page.getByText("Indicá el motivo del cambio de precio.")).toBeVisible();
   await page.getByLabel("Motivo del cambio de precio 1").fill("Producto del día anterior");
-  await page.getByRole("button", { name: "Guardar y ver la entrega" }).click();
+  // Con avisos (margen negativo) la venta no se confirma sola: queda en borrador para revisarla.
+  await page.getByRole("button", { name: "Confirmar venta y cobrar" }).click();
   await expect(heading).toContainText("Borrador");
+  await expect(page.getByTestId("flash")).toContainText("quedó en borrador");
 
   // FEFO: primero los 20 kg del lote más viejo, después 10 del nuevo.
   const preview = page.getByTestId("sale-preview");
@@ -421,6 +404,39 @@ test("Fase 5B: venta de mostrador con FEFO, precio cambiado, margen negativo y c
   // Stock: quedan 90 kg.
   await page.goto(`/stock/productos/${world.productId}`);
   await expect(summaryValue(section(page, "Existencias"), "Stock físico")).toHaveText("90 kg");
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("UX: venta de mostrador en un paso, con cobro en efectivo y vuelto", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const run = `${Date.now().toString(36)}${testInfo.project.name[0]}r`;
+  const consoleErrors = trackConsoleErrors(page);
+  await login(page);
+  const world = await apiWorld(page.request, run);
+  await world.produce("20");
+  const heading = page.getByRole("heading", { level: 1 });
+
+  // Acceso directo desde la barra superior.
+  await page.getByRole("link", { name: "Vender", exact: true }).click();
+  await expect(heading).toHaveText("Nueva venta");
+  await selectByText(page.getByRole("combobox", { name: "Producto 1" }), world.productName);
+  await page.getByLabel("Cantidad 1").fill("2");
+  await expect(page.getByTestId("draft-total")).toContainText("$3.000,00");
+  await expect(page.getByLabel("Efectivo")).toBeChecked();
+  await page.getByLabel("Paga con (opcional)").fill("5000");
+  await expect(page.getByTestId("sale-change")).toHaveText("Vuelto: $2.000,00");
+
+  // Un solo paso: registra, descuenta por vencimiento y cobra.
+  await page.getByRole("button", { name: "Confirmar venta y cobrar" }).click();
+  await expect(heading).toContainText("Entregada");
+  await expect(heading).toContainText("Cobrada");
+  await expect(page.getByTestId("flash")).toContainText("vuelto $2.000,00");
+  await expect(page.getByTestId("sale-pending")).toHaveText("$0,00");
+  // Después de vender, el paso siguiente natural es otra venta.
+  await expect(page.getByRole("link", { name: "Otra venta" })).toHaveClass(/button--primary/);
 
   expect(consoleErrors).toEqual([]);
 });
@@ -462,14 +478,15 @@ test("Fase 5B: lista de precios, asignación al cliente y ajuste de cuenta", asy
   await selectByText(page.getByRole("combobox", { name: "Cliente" }), world.customerName);
   await selectByText(page.getByRole("combobox", { name: "Producto 1" }), world.productName);
   await page.getByLabel("Cantidad 1").fill("10");
-  await expect(page.getByRole("table", { name: "Productos de la venta" })).toContainText(
+  await expect(page.getByRole("group", { name: "Productos de la venta" })).toContainText(
     "Lista del cliente",
   );
   await expect(page.getByTestId("draft-total")).toContainText("$11.000,00");
-  await page.getByRole("button", { name: "Guardar y ver la entrega" }).click();
-  await page.getByRole("button", { name: "Confirmar entrega y venta" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Confirmar entrega y venta" }).click();
+  // Cliente con cuenta corriente: por defecto no se cobra en el momento y la venta va a la cuenta.
+  await expect(page.getByLabel("Cobrar ahora")).not.toBeChecked();
+  await page.getByRole("button", { name: "Confirmar venta", exact: true }).click();
   await expect(heading).toContainText("Entregada");
+  await expect(heading).toContainText("Sin cobrar");
 
   // Ajuste a favor con motivo.
   await page.goto(`/cuentas-a-cobrar/${world.customerId}`);

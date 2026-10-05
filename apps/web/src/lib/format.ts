@@ -81,13 +81,47 @@ export function formatDate(value: string | null | undefined): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Instante ISO en la zona de la empresa. */
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Instante ISO en la zona de la empresa, con el mismo formato que la hora de
+ * pared de pedidos y ventas: "05/10/2026 14:30" (un único formato en toda la app).
+ */
 export function formatDateTime(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone,
-  }).format(new Date(iso));
+  let fmt = dateTimeFormats.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone,
+    });
+    dateTimeFormats.set(timeZone, fmt);
+  }
+  const p = Object.fromEntries(fmt.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
+}
+
+/**
+ * Tiempo relativo corto: "hace 5 min", "hace 3 h", "hace 2 días", "en 4 h".
+ * Para precisión comercial (entregas, vencimientos) acompañar con la fecha.
+ */
+export function formatRelative(iso: string, now: Date = new Date()): string {
+  const diffMin = Math.round((new Date(iso).getTime() - now.getTime()) / 60_000);
+  const abs = Math.abs(diffMin);
+  const text =
+    abs < 1
+      ? "menos de 1 min"
+      : abs < 60
+        ? `${abs} min`
+        : abs < 48 * 60
+          ? `${Math.round(abs / 60)} h`
+          : `${Math.round(abs / 1440)} días`;
+  if (abs < 1) return "recién";
+  return diffMin < 0 ? `hace ${text}` : `en ${text}`;
 }
 
 export function orDash(value: string | number | null | undefined): string {

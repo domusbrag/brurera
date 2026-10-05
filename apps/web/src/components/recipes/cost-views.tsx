@@ -12,10 +12,11 @@ import {
   type TheoreticalCostDto,
   type UnitDto,
 } from "@bakery/shared";
+import { RECIPE_VERSION_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import {
-  formatDecimal,
   formatMoney,
   formatPercent,
   formatQuantity,
@@ -43,8 +44,11 @@ export function toCostingUnit(u: UnitDto): CostingUnit {
 }
 
 export function VersionStatusBadge({ status }: { status: RecipeVersionStatus }) {
-  const cls = status === "ACTIVE" ? "" : status === "DRAFT" ? "badge--draft" : "badge--off";
-  return <span className={`badge ${cls}`}>{RECIPE_VERSION_STATUS_LABELS[status]}</span>;
+  return (
+    <StatusBadge tone={RECIPE_VERSION_TONE[status]}>
+      {RECIPE_VERSION_STATUS_LABELS[status]}
+    </StatusBadge>
+  );
 }
 
 export function IncompleteCostAlert({ missing }: { missing: { rawMaterialName: string }[] }) {
@@ -344,8 +348,8 @@ export function DiffView({ diff }: { diff: RecipeVersionDiffDto }) {
       )}
       {diff.waste && (
         <li>
-          Merma teórica: {diff.waste.from === null ? "—" : `${formatDecimal(diff.waste.from)} %`} →{" "}
-          {diff.waste.to === null ? "—" : `${formatDecimal(diff.waste.to)} %`}
+          Merma teórica: {diff.waste.from === null ? "sin merma" : formatPercent(diff.waste.from)} →{" "}
+          {diff.waste.to === null ? "sin merma" : formatPercent(diff.waste.to)}
         </li>
       )}
       {diff.instructionsChanged && <li>Instrucciones modificadas</li>}
@@ -373,7 +377,13 @@ export function PublishVersionButton({
   return (
     <ConfirmAction
       label="Publicar"
+      variant="primary"
       title={`¿Publicar la versión ${versionNumber}?`}
+      validate={() =>
+        incomplete && !acknowledged
+          ? "El costo está incompleto: marcá «Publicar igual, con el costo incompleto» para continuar."
+          : null
+      }
       confirmLabel="Publicar versión"
       message={
         <>

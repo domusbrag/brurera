@@ -133,7 +133,7 @@ export const createUserSchema = z
       .min(MIN_USER_PASSWORD_LENGTH, `Mínimo ${MIN_USER_PASSWORD_LENGTH} caracteres`)
       .max(200),
     employeeId: optionalUuid(),
-    roleIds: z.array(uuid()).min(1, "Asigne al menos un rol").max(20),
+    roleIds: z.array(uuid()).min(1, "Asigná al menos un rol").max(20),
   })
   .refine((v) => v.password.toLowerCase() !== v.email, {
     message: "La contraseña no puede ser el email",
@@ -143,7 +143,7 @@ export const updateUserSchema = withChanges(
   z.object({ displayName: requiredText(120), employeeId: optionalUuid() }).partial(),
 );
 export const assignRolesSchema = z.object({
-  roleIds: z.array(uuid()).min(1, "Asigne al menos un rol").max(20),
+  roleIds: z.array(uuid()).min(1, "Asigná al menos un rol").max(20),
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 

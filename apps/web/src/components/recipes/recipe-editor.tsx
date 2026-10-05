@@ -6,22 +6,24 @@ import {
   recipeCostToWire,
   type IngredientCostInput,
 } from "@bakery/domain";
-import type {
-  ProductDto,
-  RawMaterialDto,
-  RecipeDto,
-  RecipeListItemDto,
-  RecipeVersionDto,
-  TheoreticalCostDto,
-  UnitDto,
+import {
+  PERMISSIONS as P,
+  type ProductDto,
+  type RawMaterialDto,
+  type RecipeDto,
+  type RecipeListItemDto,
+  type RecipeVersionDto,
+  type TheoreticalCostDto,
+  type UnitDto,
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
 import { formatMoney, formatReferenceCost } from "@/lib/format";
-import { useCurrentUser } from "../user-context";
-import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { describeError } from "@/lib/errors";
+import { useCan, useCurrentUser } from "../user-context";
+import { EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
 import { CostSummary, IncompleteCostAlert, toCostingUnit } from "./cost-views";
 
 /*
@@ -62,26 +64,71 @@ interface Catalog {
   withRecipe: Set<string>;
 }
 
-function useCatalog(): Catalog | null {
+function useCatalog(): { catalog: Catalog | null; error: ApiError | null; retry: () => void } {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
       fetchOptions<ProductDto>("/api/products"),
       fetchOptions<RawMaterialDto>("/api/raw-materials"),
       fetchOptions<UnitDto>("/api/units"),
       fetchOptions<RecipeListItemDto>("/api/recipes", { status: "active" }),
     ])
-      .then(([products, materials, units, recipes]) =>
+      .then(([products, materials, units, recipes]) => {
+        if (cancelled) return;
+        setError(null);
         setCatalog({
           products,
           materials,
           units,
           withRecipe: new Set(recipes.map((r) => r.product.id)),
-        }),
-      )
-      .catch(() => setCatalog({ products: [], materials: [], units: [], withRecipe: new Set() }));
-  }, []);
-  return catalog;
+        });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled)
+          setError(err instanceof ApiError ? err : new ApiError(0, "UNKNOWN", "Error"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+  return {
+    catalog,
+    error,
+    retry: () => {
+      setError(null);
+      setAttempt((a) => a + 1);
+    },
+  };
+}
+
+/** Pantalla de "no se puede" con su encabezado (sin permiso, versión no editable). */
+function Blocked({
+  title,
+  crumbs,
+  message,
+  back,
+}: {
+  title: string;
+  crumbs: { href: string; label: string }[];
+  message: string;
+  back: { href: string; label: string };
+}) {
+  return (
+    <div className="page">
+      <PageHeader title={title} breadcrumb={crumbs} />
+      <EmptyState
+        title={message}
+        action={
+          <Link className="button" href={back.href}>
+            {back.label}
+          </Link>
+        }
+      />
+    </div>
+  );
 }
 
 export function RecipeCreate() {
@@ -94,7 +141,18 @@ export function RecipeCreate() {
 
 function RecipeCreateInner() {
   const params = useSearchParams();
-  const catalog = useCatalog();
+  const can = useCan();
+  const { catalog, error, retry } = useCatalog();
+  if (!can(P.RECIPES_CREATE))
+    return (
+      <Blocked
+        title="Nueva receta"
+        crumbs={[{ href: "/recetas", label: "Recetas" }]}
+        message="No tenés permiso para crear recetas."
+        back={{ href: "/recetas", label: "Ver recetas" }}
+      />
+    );
+  if (error) return <ErrorState error={error} onRetry={retry} />;
   if (!catalog) return <Loading />;
   const preset = params.get("producto") ?? "";
   return (
@@ -114,19 +172,35 @@ function RecipeCreateInner() {
 }
 
 export function DraftEdit({ recipeId, versionId }: { recipeId: string; versionId: string }) {
-  const catalog = useCatalog();
+  const can = useCan();
+  const { catalog, error: catalogError, retry } = useCatalog();
   const { data, error } = useResource<RecipeVersionDto>(`/api/recipe-versions/${versionId}`);
+  if (!can(P.RECIPES_UPDATE))
+    return (
+      <Blocked
+        title="Editar borrador"
+        crumbs={[
+          { href: "/recetas", label: "Recetas" },
+          { href: `/recetas/${recipeId}`, label: data?.recipe.name ?? "Receta" },
+        ]}
+        message="No tenés permiso para editar recetas."
+        back={{ href: `/recetas/${recipeId}`, label: "Ver la receta" }}
+      />
+    );
   if (error) return <ErrorState error={error} />;
+  if (catalogError) return <ErrorState error={catalogError} onRetry={retry} />;
   if (!data || !catalog) return <Loading />;
   if (data.status !== "DRAFT" || data.recipe.id !== recipeId) {
     return (
-      <section className="panel panel--empty">
-        <p className="upcoming">Esta versión no es un borrador</p>
-        <p className="muted">
-          Las versiones publicadas no se modifican.{" "}
-          <Link href={`/recetas/${recipeId}`}>Volver</Link>
-        </p>
-      </section>
+      <Blocked
+        title="Editar borrador"
+        crumbs={[
+          { href: "/recetas", label: "Recetas" },
+          { href: `/recetas/${recipeId}`, label: data.recipe.name },
+        ]}
+        message="Esta versión no es un borrador: las versiones publicadas no se modifican."
+        back={{ href: `/recetas/${recipeId}`, label: "Ver la receta" }}
+      />
     );
   }
   // Una materia prima ya desactivada sigue visible en el borrador para poder quitarla.
@@ -198,6 +272,11 @@ function RecipeEditor({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  // Al fallar, el error aparece junto al botón de guardar y recibe el foco.
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   const units = useMemo(() => catalog.units.filter((u) => u.active), [catalog.units]);
   const unitById = useMemo(() => new Map(catalog.units.map((u) => [u.id, u])), [catalog.units]);
@@ -339,9 +418,11 @@ function RecipeEditor({
     } catch (err) {
       if (err instanceof ApiError) {
         setFieldErrors(remapLineErrors(err.fieldErrors, form.lines, lines));
-        setError(err.code === "RECIPE_INVALID" || err.status === 422 ? describe(err) : err.message);
+        setError(
+          err.code === "RECIPE_INVALID" || err.status === 422 ? describe(err) : describeError(err),
+        );
       } else {
-        setError("No se pudo guardar.");
+        setError("No se pudo guardar el borrador.");
       }
       setPending(false);
     }
@@ -361,17 +442,15 @@ function RecipeEditor({
         title={title}
         breadcrumb={
           version
-            ? { href: `/recetas/${version.recipe.id}`, label: "Volver a la receta" }
+            ? [
+                { href: "/recetas", label: "Recetas" },
+                { href: `/recetas/${version.recipe.id}`, label: version.recipe.name },
+              ]
             : { href: "/recetas", label: "Recetas" }
         }
         subtitle="Los cambios se guardan como borrador. La receta se vuelve vigente recién al publicarla."
       />
-      <form className="page" onSubmit={submit} noValidate>
-        {error && (
-          <p className="alert" role="alert">
-            {error}
-          </p>
-        )}
+      <form className="page" onSubmit={submit} noValidate aria-label={title}>
         <section className="panel" aria-labelledby="step-product">
           <h2 id="step-product">1. Producto y rendimiento</h2>
           <div className="form-grid">
@@ -391,7 +470,9 @@ function RecipeEditor({
                 <select
                   id="productId"
                   value={form.productId}
+                  aria-required
                   aria-invalid={fieldErrors.productId ? true : undefined}
+                  aria-describedby={fieldErrors.productId ? "productId-error" : undefined}
                   onChange={(e) => chooseProduct(e.target.value)}
                 >
                   <option value="">Elegí un producto</option>
@@ -402,7 +483,9 @@ function RecipeEditor({
                   ))}
                 </select>
                 {fieldErrors.productId && (
-                  <span className="form__error">{fieldErrors.productId}</span>
+                  <span className="form__error" id="productId-error">
+                    {fieldErrors.productId}
+                  </span>
                 )}
                 {availableProducts.length === 0 && (
                   <span className="form__hint">Todos los productos activos ya tienen receta.</span>
@@ -434,12 +517,18 @@ function RecipeEditor({
                 autoComplete="off"
                 placeholder="Ej.: 100"
                 value={form.yieldQuantity}
+                aria-required
                 aria-invalid={fieldErrors.yieldQuantity ? true : undefined}
+                aria-describedby={`yieldQuantity-hint${fieldErrors.yieldQuantity ? " yieldQuantity-error" : ""}`}
                 onChange={(e) => set("yieldQuantity", e.target.value)}
               />
-              <span className="form__hint">Producción útil final que se espera de un lote.</span>
+              <span className="form__hint" id="yieldQuantity-hint">
+                Producción útil final que se espera de una tanda.
+              </span>
               {fieldErrors.yieldQuantity && (
-                <span className="form__error">{fieldErrors.yieldQuantity}</span>
+                <span className="form__error" id="yieldQuantity-error">
+                  {fieldErrors.yieldQuantity}
+                </span>
               )}
             </div>
             <div className="form__field">
@@ -453,7 +542,9 @@ function RecipeEditor({
                 id="yieldUnitId"
                 value={form.yieldUnitId}
                 disabled={!saleUnit}
+                aria-required
                 aria-invalid={fieldErrors.yieldUnitId ? true : undefined}
+                aria-describedby={fieldErrors.yieldUnitId ? "yieldUnitId-error" : undefined}
                 onChange={(e) => set("yieldUnitId", e.target.value)}
               >
                 <option value="">
@@ -472,7 +563,9 @@ function RecipeEditor({
                 </span>
               )}
               {fieldErrors.yieldUnitId && (
-                <span className="form__error">{fieldErrors.yieldUnitId}</span>
+                <span className="form__error" id="yieldUnitId-error">
+                  {fieldErrors.yieldUnitId}
+                </span>
               )}
             </div>
             <div className="form__field">
@@ -484,14 +577,17 @@ function RecipeEditor({
                 placeholder="Opcional"
                 value={form.wastePercentage}
                 aria-invalid={fieldErrors.wastePercentage ? true : undefined}
+                aria-describedby={`waste-hint${fieldErrors.wastePercentage ? " waste-error" : ""}`}
                 onChange={(e) => set("wastePercentage", e.target.value)}
               />
-              <span className="form__hint">
+              <span className="form__hint" id="waste-hint">
                 Informativa: el rendimiento ya es la producción útil, la merma no se descuenta otra
                 vez del costo.
               </span>
               {fieldErrors.wastePercentage && (
-                <span className="form__error">{fieldErrors.wastePercentage}</span>
+                <span className="form__error" id="waste-error">
+                  {fieldErrors.wastePercentage}
+                </span>
               )}
             </div>
           </div>
@@ -516,7 +612,7 @@ function RecipeEditor({
                     Costo usado
                   </th>
                   <th scope="col" className="num">
-                    Costo ingrediente
+                    Costo del ingrediente
                   </th>
                   <th scope="col">
                     <span className="sr-only">Quitar</span>
@@ -541,6 +637,9 @@ function RecipeEditor({
                           aria-label={`Materia prima ${index + 1}`}
                           value={line.rawMaterialId}
                           aria-invalid={err("rawMaterialId") ? true : undefined}
+                          aria-describedby={
+                            err("rawMaterialId") ? `line-${line.key}-material-error` : undefined
+                          }
                           onChange={(e) => chooseMaterial(line.key, e.target.value)}
                         >
                           <option value="">Elegí…</option>
@@ -555,7 +654,9 @@ function RecipeEditor({
                             ))}
                         </select>
                         {err("rawMaterialId") && (
-                          <span className="form__error">{err("rawMaterialId")}</span>
+                          <span className="form__error" id={`line-${line.key}-material-error`}>
+                            {err("rawMaterialId")}
+                          </span>
                         )}
                       </td>
                       <td className="col-qty">
@@ -565,9 +666,16 @@ function RecipeEditor({
                           autoComplete="off"
                           value={line.quantity}
                           aria-invalid={err("quantity") ? true : undefined}
+                          aria-describedby={
+                            err("quantity") ? `line-${line.key}-qty-error` : undefined
+                          }
                           onChange={(e) => setLine(line.key, { quantity: e.target.value })}
                         />
-                        {err("quantity") && <span className="form__error">{err("quantity")}</span>}
+                        {err("quantity") && (
+                          <span className="form__error" id={`line-${line.key}-qty-error`}>
+                            {err("quantity")}
+                          </span>
+                        )}
                       </td>
                       <td className="col-unit">
                         <select
@@ -575,6 +683,9 @@ function RecipeEditor({
                           value={line.unitId}
                           disabled={!m}
                           aria-invalid={err("unitId") ? true : undefined}
+                          aria-describedby={
+                            err("unitId") ? `line-${line.key}-unit-error` : undefined
+                          }
                           onChange={(e) => setLine(line.key, { unitId: e.target.value })}
                         >
                           <option value="">—</option>
@@ -584,25 +695,27 @@ function RecipeEditor({
                             </option>
                           ))}
                         </select>
-                        {err("unitId") && <span className="form__error">{err("unitId")}</span>}
+                        {err("unitId") && (
+                          <span className="form__error" id={`line-${line.key}-unit-error`}>
+                            {err("unitId")}
+                          </span>
+                        )}
                       </td>
                       <td className="num hide-sm">
-                        {!m ? (
-                          "—"
-                        ) : m.effectiveCost === null ? (
+                        {!m ? null : m.effectiveCost === null ? (
                           <span className="badge badge--warn">Sin costo</span>
                         ) : (
                           formatReferenceCost(m.effectiveCost, currency, m.baseUnit.symbol)
                         )}
                       </td>
                       <td className="num">
-                        {costLine?.cost ? formatMoney(costLine.cost, currency) : "—"}
+                        {costLine?.cost ? formatMoney(costLine.cost, currency) : null}
                       </td>
                       <td>
                         <button
                           type="button"
                           className="button button--small"
-                          aria-label={`Quitar ingrediente ${index + 1}`}
+                          aria-label={`Quitar ingrediente ${index + 1}${m ? ` (${m.name})` : ""}`}
                           onClick={() =>
                             setForm((f) => ({
                               ...f,
@@ -613,7 +726,7 @@ function RecipeEditor({
                             }))
                           }
                         >
-                          ✕
+                          Quitar
                         </button>
                       </td>
                     </tr>
@@ -667,6 +780,14 @@ function RecipeEditor({
               onChange={(e) => set("instructions", e.target.value)}
             />
           </div>
+          {error && (
+            <p className="alert" role="alert" ref={errorRef} tabIndex={-1}>
+              {error}
+            </p>
+          )}
+          <p className="muted small">
+            <span aria-hidden="true">*</span> Obligatorio.
+          </p>
           <div className="form__footer">
             <button type="submit" className="button button--primary" disabled={pending}>
               {pending ? "Guardando…" : "Guardar borrador"}

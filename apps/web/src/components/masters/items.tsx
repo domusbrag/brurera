@@ -24,6 +24,8 @@ import {
   formatReferenceCost,
   formatUnitCost,
 } from "@/lib/format";
+import { useFlash } from "../ui/flash";
+import { StatusBadge as UiStatusBadge } from "../ui/status";
 import { useCan, useCurrentUser } from "../user-context";
 import { EntityForm, toFormValues, toPayload, type FieldDef } from "./entity-form";
 import { PresentationsPanel } from "../inventory/presentations";
@@ -103,12 +105,23 @@ export function RawMaterialList() {
       canCreate={can(P.RAW_MATERIALS_CREATE)}
       emptyText="Todavía no hay materias primas cargadas."
       statusLabels={{ active: "Activas", inactive: "Inactivas" }}
-      extraFilters={[{ name: "categoryId", label: "Categoría", options: categories ?? [] }]}
+      extraFilters={[
+        {
+          name: "categoryId",
+          label: "Categoría",
+          allLabel: "Todas las categorías",
+          options: categories ?? [],
+        },
+      ]}
       columns={[
-        { header: "Código", cell: (m) => <span className="code">{m.code}</span> },
         { header: "Materia prima", cell: (m) => <Link href={`${MP_BASE}/${m.id}`}>{m.name}</Link> },
-        { header: "Categoría", cell: (m) => m.category.name, className: "hide-sm" },
-        { header: "Unidad base", cell: (m) => m.baseUnit.symbol, className: "hide-sm" },
+        {
+          header: "Código",
+          cell: (m) => <span className="code">{m.code}</span>,
+          className: "hide-md",
+        },
+        { header: "Categoría", cell: (m) => m.category.name, className: "hide-md" },
+        { header: "Unidad base", cell: (m) => m.baseUnit.symbol, className: "hide-md" },
         {
           header: "Costo usado",
           cell: (m) =>
@@ -137,6 +150,7 @@ export function RawMaterialList() {
 
 export function RawMaterialForm({ id }: { id?: string }) {
   const router = useRouter();
+  const flash = useFlash();
   const can = useCan();
   const user = useCurrentUser();
   const { data, error } = useResource<RawMaterialDto>(id ? `${MP_API}/${id}` : null);
@@ -155,17 +169,7 @@ export function RawMaterialForm({ id }: { id?: string }) {
   if ((id && !data) || !categories || !units || !suppliers) return <Loading />;
 
   const defs: FieldDef[] = [
-    ...(!id
-      ? [
-          {
-            name: "code",
-            label: "Código",
-            placeholder: "Automático (MP-0001…)",
-            hint: "Dejalo vacío para generarlo solo.",
-          },
-        ]
-      : []),
-    { name: "name", label: "Nombre", required: true },
+    { name: "name", label: "Nombre", required: true, placeholder: "Ej.: Harina 0000" },
     {
       name: "categoryId",
       label: "Categoría",
@@ -174,7 +178,7 @@ export function RawMaterialForm({ id }: { id?: string }) {
       options: withCurrent(categories, data?.category),
       hint:
         categories.length === 0
-          ? "Primero creá una categoría de materias primas en Configuración."
+          ? "Primero creá una categoría de materias primas en Configuración → Categorías."
           : undefined,
     },
     {
@@ -183,14 +187,25 @@ export function RawMaterialForm({ id }: { id?: string }) {
       kind: "select",
       required: true,
       options: units,
-      hint: "Unidad en la que se medirá el stock y el costo (kg, l, unidad…).",
+      hint: "La unidad en que se miden el stock y el costo (kg, l, unidad…). Las bolsas o cajas se cargan después como presentaciones de compra.",
     },
+    ...(!id
+      ? [
+          {
+            name: "code",
+            label: "Código",
+            placeholder: "MP-0001",
+            hint: "Opcional: si lo dejás vacío se genera solo.",
+          },
+        ]
+      : []),
     {
       name: "minimumStock",
       label: "Stock mínimo",
       kind: "decimal",
       placeholder: "0",
-      hint: "En la unidad base. Se usará para alertas desde la fase de inventario.",
+      section: "Stock y compras",
+      hint: "En la unidad base. Por debajo de este valor aparece en «Bajo mínimo».",
     },
     {
       name: "preferredSupplierId",
@@ -212,7 +227,7 @@ export function RawMaterialForm({ id }: { id?: string }) {
             label: `Costo de referencia (${user.company.currencyCode} por unidad base)`,
             kind: "decimal" as const,
             placeholder: "Sin costo",
-            hint: "Precio por kg, litro o unidad (la unidad base), no por bolsa ni caja. Es una referencia manual hasta que las compras (Fase 3) lo calculen.",
+            hint: "Precio por kg, litro o unidad (la unidad base), no por bolsa ni caja. Se usa mientras no haya compras recibidas que calculen el costo promedio.",
           },
         ]
       : []),
@@ -232,11 +247,16 @@ export function RawMaterialForm({ id }: { id?: string }) {
   return (
     <div className="page">
       <PageHeader
-        title={id ? `Editar ${data?.name}` : "Nueva materia prima"}
-        breadcrumb={{
-          href: id ? `${MP_BASE}/${id}` : MP_BASE,
-          label: id ? "Volver a la materia prima" : "Materias primas",
-        }}
+        title={id ? "Editar materia prima" : "Nueva materia prima"}
+        subtitle={id && data ? <span className="code">{data.code}</span> : undefined}
+        breadcrumb={
+          id && data
+            ? [
+                { href: MP_BASE, label: "Materias primas" },
+                { href: `${MP_BASE}/${id}`, label: data.name },
+              ]
+            : { href: MP_BASE, label: "Materias primas" }
+        }
       />
       <EntityForm
         fields={defs}
@@ -249,6 +269,9 @@ export function RawMaterialForm({ id }: { id?: string }) {
           const saved = id
             ? await apiFetch<RawMaterialDto>(`${MP_API}/${id}`, { method: "PATCH", body })
             : await apiFetch<RawMaterialDto>(MP_API, { method: "POST", body });
+          flash(id ? "Cambios guardados." : `Materia prima ${saved.code} creada.`, {
+            afterNavigation: true,
+          });
           router.push(`${MP_BASE}/${saved.id}`);
         }}
       />
@@ -261,8 +284,8 @@ export function RawMaterialDetail({ id }: { id: string }) {
   const user = useCurrentUser();
   const [version, setVersion] = useState(0);
   const { data, error, reload } = useResource<RawMaterialDto>(`${MP_API}/${id}`);
-  if (error) return <ErrorState error={error} />;
-  if (!data) return <Loading />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!data) return <Loading label="Cargando la materia prima…" />;
   const refresh = () => {
     reload();
     setVersion((v) => v + 1);
@@ -272,15 +295,20 @@ export function RawMaterialDetail({ id }: { id: string }) {
       <PageHeader
         breadcrumb={{ href: MP_BASE, label: "Materias primas" }}
         title={data.name}
+        status={<StatusBadge active={data.active} on="Activa" off="Inactiva" />}
         subtitle={
           <>
             <span className="code">{data.code}</span> ·{" "}
-            <span className="badge badge--info">Materia prima</span> ·{" "}
-            <StatusBadge active={data.active} on="Activa" off="Inactiva" />
+            <UiStatusBadge tone="tag">Materia prima</UiStatusBadge>
           </>
         }
         actions={
           <>
+            {can(P.INVENTORY_READ) && (
+              <Link className="button" href={`/stock/${id}`}>
+                Ver stock
+              </Link>
+            )}
             {can(P.RAW_MATERIALS_UPDATE) && (
               <Link className="button" href={`${MP_BASE}/${id}/editar`}>
                 Editar
@@ -291,6 +319,7 @@ export function RawMaterialDetail({ id }: { id: string }) {
                 active={data.active}
                 endpoint={`${MP_API}/${id}`}
                 noun="esta materia prima"
+                deactivateMessage="Deja de aparecer al elegir materia prima en compras y recetas nuevas. Su stock, las recetas que ya la usan y su historial se conservan, y se puede reactivar."
                 onChange={refresh}
               />
             )}
@@ -299,11 +328,22 @@ export function RawMaterialDetail({ id }: { id: string }) {
       />
       <section className="panel">
         <Details
+          hideEmpty
           items={[
             ["Categoría", data.category.name],
             ["Unidad base", `${data.baseUnit.symbol}`],
             ["Stock mínimo", `${formatDecimal(data.minimumStock)} ${data.baseUnit.symbol}`],
-            ["Proveedor preferido", data.preferredSupplier?.legalName],
+            [
+              "Proveedor preferido",
+              data.preferredSupplier &&
+                (can(P.SUPPLIERS_READ) ? (
+                  <Link href={`/proveedores/${data.preferredSupplier.id}`}>
+                    {data.preferredSupplier.legalName}
+                  </Link>
+                ) : (
+                  data.preferredSupplier.legalName
+                )),
+            ],
             ["Descripción", data.description],
           ]}
         />
@@ -369,12 +409,6 @@ export function RawMaterialDetail({ id }: { id: string }) {
           ]}
         />
       </section>
-      {can(P.INVENTORY_READ) && (
-        <p className="notice">
-          Existencias, movimientos y costo promedio en{" "}
-          <Link href={`/stock/${id}`}>Inventario → Stock</Link>.
-        </p>
-      )}
       <PresentationsPanel rawMaterialId={id} baseUnit={data.baseUnit} />
       <AuditHistory entityType="raw_material" entityId={id} version={version} />
     </div>
@@ -418,7 +452,7 @@ function ReferenceCostAction({
         }
       }}
     >
-      <div className="form__field" style={{ marginTop: "0.8rem" }}>
+      <div className="form__field">
         <label htmlFor="reference-cost">
           Costo por {material.baseUnit.symbol} ({user.company.currencyCode})
         </label>
@@ -429,10 +463,19 @@ function ReferenceCostAction({
           placeholder="Sin costo"
           value={value}
           aria-invalid={fieldError ? true : undefined}
+          aria-describedby={
+            fieldError ? "reference-cost-hint reference-cost-error" : "reference-cost-hint"
+          }
           onChange={(e) => setValue(e.target.value)}
         />
-        {fieldError && <span className="form__error">{fieldError}</span>}
-        <span className="form__hint">Dejalo vacío para quitar el costo.</span>
+        <span className="form__hint" id="reference-cost-hint">
+          Dejalo vacío para quitar el costo.
+        </span>
+        {fieldError && (
+          <span className="form__error" id="reference-cost-error">
+            {fieldError}
+          </span>
+        )}
       </div>
     </ConfirmAction>
   );
@@ -457,15 +500,30 @@ export function ProductList() {
       createLabel="Nuevo producto"
       canCreate={can(P.PRODUCTS_CREATE)}
       emptyText="Todavía no hay productos cargados."
-      extraFilters={[{ name: "categoryId", label: "Categoría", options: categories ?? [] }]}
-      columns={[
-        { header: "Código", cell: (p) => <span className="code">{p.code}</span> },
-        { header: "Producto", cell: (p) => <Link href={`${PR_BASE}/${p.id}`}>{p.name}</Link> },
-        { header: "Categoría", cell: (p) => p.category.name, className: "hide-sm" },
-        { header: "Unidad", cell: (p) => p.saleUnit.symbol, className: "hide-sm" },
+      extraFilters={[
         {
-          header: "Precio",
-          cell: (p) => formatMoney(p.salePrice, user.company.currencyCode),
+          name: "categoryId",
+          label: "Categoría",
+          allLabel: "Todas las categorías",
+          options: categories ?? [],
+        },
+      ]}
+      columns={[
+        { header: "Producto", cell: (p) => <Link href={`${PR_BASE}/${p.id}`}>{p.name}</Link> },
+        {
+          header: "Código",
+          cell: (p) => <span className="code">{p.code}</span>,
+          className: "hide-md",
+        },
+        { header: "Categoría", cell: (p) => p.category.name, className: "hide-md" },
+        {
+          header: "Precio de venta",
+          cell: (p) => (
+            <>
+              {formatMoney(p.salePrice, user.company.currencyCode)}
+              <span className="muted small"> / {p.saleUnit.symbol}</span>
+            </>
+          ),
           className: "num",
         },
         { header: "Estado", cell: (p) => <StatusBadge active={p.active} /> },
@@ -476,6 +534,7 @@ export function ProductList() {
 
 export function ProductForm({ id }: { id?: string }) {
   const router = useRouter();
+  const flash = useFlash();
   const { data, error } = useResource<ProductDto>(id ? `${PR_API}/${id}` : null);
   const categories = useCategoryOptions("PRODUCT");
   const units = useUnitOptions(false);
@@ -483,17 +542,7 @@ export function ProductForm({ id }: { id?: string }) {
   if ((id && !data) || !categories || !units) return <Loading />;
 
   const defs: FieldDef[] = [
-    ...(!id
-      ? [
-          {
-            name: "code",
-            label: "Código",
-            placeholder: "Automático (PROD-0001…)",
-            hint: "Dejalo vacío para generarlo solo.",
-          },
-        ]
-      : []),
-    { name: "name", label: "Nombre", required: true },
+    { name: "name", label: "Nombre", required: true, placeholder: "Ej.: Pan de campo" },
     {
       name: "categoryId",
       label: "Categoría",
@@ -502,22 +551,35 @@ export function ProductForm({ id }: { id?: string }) {
       options: withCurrent(categories, data?.category),
       hint:
         categories.length === 0
-          ? "Primero creá una categoría de productos en Configuración."
+          ? "Primero creá una categoría de productos en Configuración → Categorías."
           : undefined,
     },
+    ...(!id
+      ? [
+          {
+            name: "code",
+            label: "Código",
+            placeholder: "PROD-0001",
+            hint: "Opcional: si lo dejás vacío se genera solo.",
+          },
+        ]
+      : []),
     {
       name: "saleUnitId",
       label: "Unidad de venta",
       kind: "select",
       required: true,
+      section: "Venta",
       options: units,
+      hint: "Cómo se vende: por kg, por unidad, por docena…",
     },
     {
       name: "salePrice",
       label: "Precio de venta",
       kind: "decimal",
       required: true,
-      placeholder: "0,00",
+      placeholder: "Ej.: 3200",
+      hint: "Por unidad de venta. Las listas de precios pueden fijar otro precio por cliente.",
     },
     {
       name: "controlsStock",
@@ -525,7 +587,14 @@ export function ProductForm({ id }: { id?: string }) {
       kind: "checkbox",
       hint: "Si está marcado, el producto lleva stock: se produce con órdenes de producción y entra al stock al completarlas.",
     },
-    { name: "imageUrl", label: "URL de imagen", kind: "url", full: true },
+    {
+      name: "imageUrl",
+      label: "Dirección web de la imagen",
+      kind: "url",
+      full: true,
+      placeholder: "https://…",
+      hint: "Opcional: el enlace a una foto ya publicada en internet.",
+    },
     { name: "description", label: "Descripción", kind: "textarea" },
   ];
   const initial = toFormValues(
@@ -537,11 +606,16 @@ export function ProductForm({ id }: { id?: string }) {
   return (
     <div className="page">
       <PageHeader
-        title={id ? `Editar ${data?.name}` : "Nuevo producto"}
-        breadcrumb={{
-          href: id ? `${PR_BASE}/${id}` : PR_BASE,
-          label: id ? "Volver al producto" : "Productos",
-        }}
+        title={id ? "Editar producto" : "Nuevo producto"}
+        subtitle={id && data ? <span className="code">{data.code}</span> : undefined}
+        breadcrumb={
+          id && data
+            ? [
+                { href: PR_BASE, label: "Productos" },
+                { href: `${PR_BASE}/${id}`, label: data.name },
+              ]
+            : { href: PR_BASE, label: "Productos" }
+        }
       />
       <EntityForm
         fields={defs}
@@ -549,7 +623,7 @@ export function ProductForm({ id }: { id?: string }) {
         submitLabel={id ? "Guardar cambios" : "Crear producto"}
         cancelHref={id ? `${PR_BASE}/${id}` : PR_BASE}
         intro={
-          <p className="notice" style={{ marginBottom: "0.9rem" }}>
+          <p className="alert alert--info">
             El costo no se carga a mano: se calcula desde la receta del producto.
           </p>
         }
@@ -558,6 +632,9 @@ export function ProductForm({ id }: { id?: string }) {
           const saved = id
             ? await apiFetch<ProductDto>(`${PR_API}/${id}`, { method: "PATCH", body })
             : await apiFetch<ProductDto>(PR_API, { method: "POST", body });
+          flash(id ? "Cambios guardados." : `Producto ${saved.code} creado.`, {
+            afterNavigation: true,
+          });
           router.push(`${PR_BASE}/${saved.id}`);
         }}
       />
@@ -570,8 +647,8 @@ export function ProductDetail({ id }: { id: string }) {
   const user = useCurrentUser();
   const [version, setVersion] = useState(0);
   const { data, error, reload } = useResource<ProductDto>(`${PR_API}/${id}`);
-  if (error) return <ErrorState error={error} />;
-  if (!data) return <Loading />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!data) return <Loading label="Cargando el producto…" />;
   const refresh = () => {
     reload();
     setVersion((v) => v + 1);
@@ -581,11 +658,11 @@ export function ProductDetail({ id }: { id: string }) {
       <PageHeader
         breadcrumb={{ href: PR_BASE, label: "Productos" }}
         title={data.name}
+        status={<StatusBadge active={data.active} />}
         subtitle={
           <>
             <span className="code">{data.code}</span> ·{" "}
-            <span className="badge badge--info">Producto terminado</span> ·{" "}
-            <StatusBadge active={data.active} />
+            <UiStatusBadge tone="tag">Producto terminado</UiStatusBadge>
           </>
         }
         actions={
@@ -600,6 +677,7 @@ export function ProductDetail({ id }: { id: string }) {
                 active={data.active}
                 endpoint={`${PR_API}/${id}`}
                 noun="este producto"
+                deactivateMessage="Deja de aparecer al elegir producto en ventas, pedidos y recetas nuevas. Su stock, las ventas ya hechas y su historial se conservan, y se puede reactivar."
                 onChange={refresh}
               />
             )}
@@ -608,6 +686,7 @@ export function ProductDetail({ id }: { id: string }) {
       />
       <section className="panel">
         <Details
+          hideEmpty
           items={[
             ["Categoría", data.category.name],
             ["Unidad de venta", data.saleUnit.symbol],

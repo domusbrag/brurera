@@ -19,7 +19,9 @@ import {
   formatQuantity,
   formatUnitCost,
 } from "@/lib/format";
+import { PRODUCTION_STATUS_TONE } from "@/lib/status";
 import { toCostingUnit } from "../recipes/cost-views";
+import { StatusBadge } from "../ui/status";
 import { useCan } from "../user-context";
 
 /*
@@ -29,16 +31,12 @@ import { useCan } from "../user-context";
 
 export const PRODUCTION_BASE = "/produccion";
 
-const STATUS_BADGE: Record<ProductionStatusDto, string> = {
-  DRAFT: "badge badge--draft",
-  PLANNED: "badge badge--info",
-  IN_PROGRESS: "badge badge--warn",
-  COMPLETED: "badge",
-  CANCELLED: "badge badge--off",
-};
-
 export function ProductionStatusBadge({ status }: { status: ProductionStatusDto }) {
-  return <span className={STATUS_BADGE[status]}>{PRODUCTION_STATUS_LABELS[status]}</span>;
+  return (
+    <StatusBadge tone={PRODUCTION_STATUS_TONE[status]}>
+      {PRODUCTION_STATUS_LABELS[status]}
+    </StatusBadge>
+  );
 }
 
 /** Unidades activas de la empresa (para elegir en qué unidad se carga una cantidad). */
@@ -61,7 +59,14 @@ export function compatibleUnits(units: UnitDto[], unitId: string): UnitDto[] {
 }
 
 /** "Necesario / disponible / diferencia" por materia prima en el depósito de origen. */
-export function AvailabilityTable({ availability }: { availability: ProductionAvailabilityDto }) {
+export function AvailabilityTable({
+  availability,
+  buyInNewTab = false,
+}: {
+  availability: ProductionAvailabilityDto;
+  /** En un formulario sin guardar: "Comprar" abre otra pestaña para no perder lo cargado. */
+  buyInNewTab?: boolean;
+}) {
   const can = useCan();
   const short = availability.lines.filter((l) => l.status === "SHORT");
   const canBuy = can(P.PURCHASES_CREATE);
@@ -123,8 +128,12 @@ export function AvailabilityTable({ availability }: { availability: ProductionAv
                           {" "}
                           <Link
                             href={listPath("/compras/nueva", { rawMaterialId: l.rawMaterial.id })}
+                            {...(buyInNewTab ? { target: "_blank", rel: "noopener" } : {})}
                           >
                             Comprar
+                            {buyInNewTab && (
+                              <span className="sr-only"> (se abre en otra pestaña)</span>
+                            )}
                           </Link>
                         </>
                       )}

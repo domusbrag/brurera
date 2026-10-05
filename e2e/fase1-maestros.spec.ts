@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openSection, selectByText as pick } from "./support";
 
 /*
  * Flujo completo de Fase 1 (19 pasos) contra la aplicación construida y la base
@@ -8,17 +9,9 @@ import { expect, test, type Page } from "@playwright/test";
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
 /** Elige en un select la opción cuyo texto contiene `text`. */
 async function selectByText(page: Page, label: string, text: string) {
-  const select = page.getByRole("combobox", { name: label });
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
+  await pick(page.getByRole("combobox", { name: label }), text);
 }
 
 test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, testInfo) => {
@@ -84,8 +77,8 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByRole("checkbox", { name: "Producción" }).check();
   await page.getByRole("button", { name: "Guardar roles" }).click();
   const roles = page.locator("section", { has: page.getByRole("heading", { name: "Roles" }) });
-  await expect(roles.getByText("Producción")).toBeVisible();
-  await expect(roles.getByText("Ventas")).toBeVisible();
+  await expect(roles.getByText("Producción", { exact: true })).toBeVisible();
+  await expect(roles.getByText("Ventas", { exact: true })).toBeVisible();
 
   // 6. Cliente
   await openSection(page, "Clientes");
@@ -104,9 +97,9 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByLabel("Razón social").fill(`Molino ${run} S.A.`);
   await page.getByRole("button", { name: "Crear proveedor" }).click();
   await expect(page.getByRole("heading", { name: `Molino ${run} S.A.` })).toBeVisible();
-  await expect(
-    page.getByText("Cuenta corriente y pagos estarán disponibles en una fase posterior."),
-  ).toBeVisible();
+  // Desde el proveedor se llega a sus compras (sin avisos de fases futuras).
+  await expect(page.getByRole("link", { name: "Ver compras" })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("fase posterior");
 
   // 8. Unidad derivada: bolsa de 25 kg, y prueba de conversión
   await page.goto("/configuracion/unidades/nuevo");
@@ -225,7 +218,7 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await expect(nav.getByRole("link", { name: "Usuarios", exact: true })).toHaveCount(0);
   await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toHaveCount(0);
   await page.goto("/usuarios");
-  await expect(page.getByText("No tenés permiso para esta operación.")).toBeVisible();
+  await expect(page.getByText("No tenés acceso a esta sección")).toBeVisible();
   await page.getByRole("button", { name: "Salir" }).click();
   await expect(page).toHaveURL(/\/login$/);
 

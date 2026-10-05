@@ -2,7 +2,6 @@
 
 import { D } from "@bakery/domain";
 import {
-  CONSERVATION_STATE_LABELS,
   PERMISSIONS as P,
   type Page,
   type ProductCostDto,
@@ -18,10 +17,19 @@ import {
   formatMoney,
   formatPercent,
   formatQuantity,
-  formatReferenceCost,
+  formatUnitCost,
 } from "@/lib/format";
 import { MasterList } from "../masters/master-list";
-import { Details, ErrorState, Loading, PageHeader, StatusBadge, useResource } from "../masters/ui";
+import {
+  Details,
+  EmptyState,
+  ErrorState,
+  Loading,
+  PageHeader,
+  StatusBadge,
+  useResource,
+} from "../masters/ui";
+import { StatusBadge as ToneBadge } from "../ui/status";
 import { useCan, useCurrentUser } from "../user-context";
 import { AvailabilityAtDate, ProductLotsPanel, StateBreakdown } from "../lots/lot-pages";
 import { EXPIRING_PATH } from "../lots/lot-shared";
@@ -39,6 +47,72 @@ import {
  * es el costo material de los lotes producidos.
  */
 
+const isZero = (v: string) => new D(v).isZero();
+
+/** Lo que pide atención en el stock de un producto: vencido, bloqueado, próximo a vencer. */
+function StockAlerts({ lots, unit }: { lots: ProductStockItemDto["lots"]; unit: string }) {
+  const items: { tone: "danger" | "warning"; label: string; qty: string }[] = [];
+  if (!isZero(lots.expired)) items.push({ tone: "danger", label: "Vencido", qty: lots.expired });
+  if (!isZero(lots.blocked)) items.push({ tone: "danger", label: "Bloqueado", qty: lots.blocked });
+  if (!isZero(lots.nearExpiry))
+    items.push({ tone: "warning", label: "Próximo a vencer", qty: lots.nearExpiry });
+  if (items.length === 0) return <span className="muted">Sin alertas</span>;
+  return (
+    <span className="chips">
+      {items.map((i) => (
+        <ToneBadge key={i.label} tone={i.tone}>
+          {i.label} {formatQuantity(i.qty, unit)}
+        </ToneBadge>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Resumen de vencimientos de la empresa (total de lotes, no sólo la página):
+ * se cuenta con el listado de próximos a vencer que ya existe.
+ */
+function ExpiryAttention() {
+  const can = useCan();
+  const allowed = can(P.INVENTORY_EXPIRY_READ);
+  const { data: near } = useResource<Page<{ id: string }>>(
+    allowed ? listPath("/api/inventory/expiring", { status: "near_expiry", pageSize: 1 }) : null,
+  );
+  const { data: expired } = useResource<Page<{ id: string }>>(
+    allowed ? listPath("/api/inventory/expiring", { status: "expired", pageSize: 1 }) : null,
+  );
+  if (!allowed || !near || !expired) return null;
+  const lots = (n: number) => `${n} ${n === 1 ? "lote" : "lotes"}`;
+  return (
+    <div className="attention" aria-label="Vencimientos">
+      <Link
+        href={listPath(EXPIRING_PATH, { estado: "expired" })}
+        className={`attention__item ${expired.total > 0 ? "attention__item--danger" : "attention__item--ok"}`}
+      >
+        <span className="attention__count">{expired.total}</span>
+        <span className="attention__title">Vencidos</span>
+        <span className="attention__hint">
+          {expired.total > 0
+            ? `${lots(expired.total)} sin usar: registrá la merma.`
+            : "Ningún lote vencido con stock."}
+        </span>
+      </Link>
+      <Link
+        href={listPath(EXPIRING_PATH, { estado: "near_expiry" })}
+        className={`attention__item ${near.total > 0 ? "attention__item--warning" : "attention__item--ok"}`}
+      >
+        <span className="attention__count">{near.total}</span>
+        <span className="attention__title">Próximos a vencer</span>
+        <span className="attention__hint">
+          {near.total > 0
+            ? `${lots(near.total)}: usalos primero o congelalos.`
+            : "Nada vence pronto."}
+        </span>
+      </Link>
+    </div>
+  );
+}
+
 export function ProductStockList() {
   const user = useCurrentUser();
   const can = useCan();
@@ -48,11 +122,11 @@ export function ProductStockList() {
   return (
     <MasterList<ProductStockItemDto>
       title="Stock de productos terminados"
-      subtitle="Existencias de lo que se produjo, por lote y conservación. Entran al completar una producción; salen por merma."
+      subtitle="Qué hay, qué está reservado para pedidos y qué se puede vender ahora. Entra al completar una producción; sale por venta, entrega o merma."
       endpoint="/api/inventory/products"
       basePath={PRODUCT_STOCK_BASE}
       searchPlaceholder="Buscar producto"
-      emptyText="No hay productos que controlen stock."
+      emptyText="No hay productos que controlen stock. Se configura en la ficha del producto (“Controla stock”)."
       statusParam="stock"
       defaultStatus="all"
       statusOptions={[
@@ -68,9 +142,12 @@ export function ProductStockList() {
         },
       ]}
       headerExtra={
-        <div className="toolbar">
-          <StockTabs />
-        </div>
+        <>
+          <div className="toolbar">
+            <StockTabs />
+          </div>
+          <ExpiryAttention />
+        </>
       }
       columns={[
         {
@@ -84,34 +161,32 @@ export function ProductStockList() {
         },
         {
           header: "Depósito",
-          cell: (i) => i.warehouse?.name ?? "Todos",
-          className: "hide-sm",
+          cell: (i) => i.warehouse?.name ?? <span className="muted">Todos los depósitos</span>,
+          className: "hide-md",
         },
         {
-          header: "Físico",
-          cell: (i) => <strong>{formatQuantity(i.quantity, i.saleUnit.symbol)}</strong>,
+          header: "Stock físico",
+          cell: (i) => formatQuantity(i.quantity, i.saleUnit.symbol),
           className: "num",
         },
-        ...(["FRESH", "REFRIGERATED", "FROZEN"] as const).map((state) => ({
-          header: CONSERVATION_STATE_LABELS[state],
-          cell: (i: ProductStockItemDto) =>
-            new D(i.lots.byState[state]).isZero()
-              ? "—"
-              : formatQuantity(i.lots.byState[state], i.saleUnit.symbol),
-          className: "num hide-md",
-        })),
         {
-          header: "Utilizable ahora",
-          cell: (i: ProductStockItemDto) => formatQuantity(i.lots.usableNow, i.saleUnit.symbol),
-          className: "num",
+          header: "Conservación",
+          cell: (i: ProductStockItemDto) => (
+            <span className="small">
+              <StateBreakdown byState={i.lots.byState} unit={i.saleUnit.symbol} />
+            </span>
+          ),
+          className: "hide-md",
         },
         {
           header: "Comprometido",
           cell: (i: ProductStockItemDto) =>
-            new D(i.lots.committed).isZero()
-              ? "—"
-              : formatQuantity(i.lots.committed, i.saleUnit.symbol),
-          className: "num hide-sm",
+            isZero(i.lots.committed) ? (
+              <span className="muted">{formatQuantity("0", i.saleUnit.symbol)}</span>
+            ) : (
+              formatQuantity(i.lots.committed, i.saleUnit.symbol)
+            ),
+          className: "num",
         },
         {
           header: "Disponible ahora",
@@ -121,29 +196,21 @@ export function ProductStockList() {
           className: "num",
         },
         {
-          header: "Próximo a vencer",
-          cell: (i: ProductStockItemDto) =>
-            new D(i.lots.nearExpiry).isZero() ? (
-              "—"
-            ) : (
-              <span className="badge badge--warn">
-                {formatQuantity(i.lots.nearExpiry, i.saleUnit.symbol)}
-              </span>
-            ),
-          className: "num",
+          header: "Vencimientos y bloqueos",
+          cell: (i: ProductStockItemDto) => <StockAlerts lots={i.lots} unit={i.saleUnit.symbol} />,
         },
         ...(showCosts
           ? [
               {
                 header: "Costo material promedio",
                 cell: (i: ProductStockItemDto) =>
-                  formatReferenceCost(i.averageMaterialCost, currency, i.saleUnit.symbol),
-                className: "num hide-sm",
+                  formatUnitCost(i.averageMaterialCost, currency, i.saleUnit.symbol),
+                className: "num hide-md",
               },
               {
                 header: "Valor",
                 cell: (i: ProductStockItemDto) => formatMoney(i.inventoryValue, currency),
-                className: "num",
+                className: "num hide-md",
               },
             ]
           : []),
@@ -152,15 +219,19 @@ export function ProductStockList() {
           cell: (i) =>
             i.lastProduction ? (
               <>
-                <Link href={`/produccion/${i.lastProduction.id}`}>{i.lastProduction.code}</Link>
+                {can(P.PRODUCTION_ORDERS_READ) ? (
+                  <Link href={`/produccion/${i.lastProduction.id}`}>{i.lastProduction.code}</Link>
+                ) : (
+                  i.lastProduction.code
+                )}
                 <span className="cost-source">
                   {formatDateTime(i.lastProduction.completedAt, user.company.timezone)}
                 </span>
               </>
             ) : (
-              "—"
+              <span className="muted">Sin producciones</span>
             ),
-          className: "hide-sm",
+          className: "hide-md",
         },
       ]}
     />
@@ -180,11 +251,8 @@ export function ProductStockDetail({ id }: { id: string }) {
     <div className="page">
       <PageHeader
         breadcrumb={{ href: PRODUCT_STOCK_BASE, label: "Stock de productos terminados" }}
-        title={
-          <>
-            {data.product.name} {!data.product.active && <StatusBadge active={false} />}
-          </>
-        }
+        title={data.product.name}
+        status={!data.product.active ? <StatusBadge active={false} /> : undefined}
         subtitle={
           <>
             Código <span className="code">{data.product.code}</span> · Se vende por {unit}
@@ -208,53 +276,63 @@ export function ProductStockDetail({ id }: { id: string }) {
           {can(P.INVENTORY_EXPIRY_READ) && <Link href={EXPIRING_PATH}>Ver próximos a vencer</Link>}
         </div>
         <dl className="cost-summary">
-          <div>
+          <div className="metric">
             <dt>Stock físico</dt>
-            <dd>{formatQuantity(data.quantity, unit)}</dd>
+            <dd className="metric__value">{formatQuantity(data.quantity, unit)}</dd>
           </div>
-          <div>
-            <dt>Utilizable ahora</dt>
-            <dd>{formatQuantity(data.lots.usableNow, unit)}</dd>
-          </div>
-          <div>
+          <div className="metric">
             <dt>Comprometido con pedidos</dt>
-            <dd>{formatQuantity(data.lots.committed, unit)}</dd>
+            <dd className="metric__value">{formatQuantity(data.lots.committed, unit)}</dd>
           </div>
-          <div>
+          <div className="metric metric--emphasis">
             <dt>Disponible ahora</dt>
-            <dd>
-              <strong>{formatQuantity(data.lots.availableNow, unit)}</strong>
-            </dd>
+            <dd className="metric__value">{formatQuantity(data.lots.availableNow, unit)}</dd>
           </div>
-          <div>
+          <div className="metric">
+            <dt>Utilizable ahora</dt>
+            <dd className="metric__value">{formatQuantity(data.lots.usableNow, unit)}</dd>
+          </div>
+          <div className={`metric ${new D(data.lots.nearExpiry).gt(0) ? "metric--warning" : ""}`}>
             <dt>Próximo a vencer</dt>
-            <dd className={new D(data.lots.nearExpiry).gt(0) ? "text-negative" : undefined}>
-              {formatQuantity(data.lots.nearExpiry, unit)}
-            </dd>
+            <dd className="metric__value">{formatQuantity(data.lots.nearExpiry, unit)}</dd>
           </div>
+          {new D(data.lots.expired).gt(0) && (
+            <div className="metric metric--danger">
+              <dt>Vencido</dt>
+              <dd className="metric__value">{formatQuantity(data.lots.expired, unit)}</dd>
+            </div>
+          )}
+          {new D(data.lots.blocked).gt(0) && (
+            <div className="metric metric--danger">
+              <dt>Bloqueado</dt>
+              <dd className="metric__value">{formatQuantity(data.lots.blocked, unit)}</dd>
+            </div>
+          )}
           {data.canSeeCosts && (
             <>
-              <div>
+              <div className="metric">
                 <dt>Costo promedio de inventario</dt>
-                <dd>
+                <dd className="metric__value">
                   {data.averageMaterialCost === null
                     ? "Sin producciones"
-                    : formatReferenceCost(data.averageMaterialCost, currency, unit)}
+                    : formatUnitCost(data.averageMaterialCost, currency, unit)}
                 </dd>
               </div>
-              <div>
+              <div className="metric">
                 <dt>Valor de inventario</dt>
-                <dd>{formatMoney(data.inventoryValue, currency)}</dd>
+                <dd className="metric__value">{formatMoney(data.inventoryValue, currency)}</dd>
               </div>
             </>
           )}
         </dl>
         <p className="muted small">
+          <strong>Disponible ahora</strong> es lo utilizable (sin vencer ni bloquear) que no está
+          reservado para pedidos: lo que se puede vender ya.
+          {(new D(data.lots.expired).gt(0) || new D(data.lots.blocked).gt(0)) &&
+            " Lo vencido y lo bloqueado siguen en el stock físico hasta registrar la merma o desbloquearlo."}
+        </p>
+        <p className="muted small">
           Por conservación: <StateBreakdown byState={data.lots.byState} unit={unit} />
-          {new D(data.lots.expired).gt(0) &&
-            ` · vencido ${formatQuantity(data.lots.expired, unit)}`}
-          {new D(data.lots.blocked).gt(0) &&
-            ` · bloqueado ${formatQuantity(data.lots.blocked, unit)}`}
           {!data.conservationConfigured &&
             " · Sin conservación configurada: los lotes no tienen vencimiento."}
         </p>
@@ -298,7 +376,7 @@ export function ProductStockDetail({ id }: { id: string }) {
         <dl className="cost-summary cost-summary--costs">
           <div>
             <dt>Precio de venta</dt>
-            <dd>{formatReferenceCost(data.product.salePrice, currency, unit)}</dd>
+            <dd>{formatUnitCost(data.product.salePrice, currency, unit)}</dd>
           </div>
           {data.canSeeCosts && (
             <div>
@@ -308,7 +386,7 @@ export function ProductStockDetail({ id }: { id: string }) {
                   "Sin costo promedio todavía"
                 ) : (
                   <>
-                    {formatReferenceCost(data.theoreticalMargin.amount, currency, unit)}
+                    {formatUnitCost(data.theoreticalMargin.amount, currency, unit)}
                     {data.theoreticalMargin.percentage !== null && (
                       <span className="cost-summary__note">
                         {" "}
@@ -353,14 +431,14 @@ export function ProductStockDetail({ id }: { id: string }) {
           )}
         </div>
         {data.recentProductions.length === 0 ? (
-          <p className="muted">Todavía no se produjo.</p>
+          <EmptyState compact title="Todavía no se produjo." />
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   <th scope="col">Orden</th>
-                  <th scope="col" className="hide-sm">
+                  <th scope="col" className="hide-md">
                     Lote
                   </th>
                   <th scope="col">Completada</th>
@@ -384,11 +462,11 @@ export function ProductStockDetail({ id }: { id: string }) {
                         p.code
                       )}
                     </td>
-                    <td className="hide-sm">{p.batchCode ?? "—"}</td>
+                    <td className="hide-md">{p.batchCode ?? "—"}</td>
                     <td>{formatDateTime(p.completedAt, tz)}</td>
                     <td className="num">{formatQuantity(p.quantity, unit)}</td>
                     {data.canSeeCosts && (
-                      <td className="num">{formatReferenceCost(p.unitCost, currency, unit)}</td>
+                      <td className="num">{formatUnitCost(p.unitCost, currency, unit)}</td>
                     )}
                   </tr>
                 ))}
@@ -406,6 +484,7 @@ export function ProductStockDetail({ id }: { id: string }) {
 
 function ProductCostHistory({ productId, unit }: { productId: string; unit: string }) {
   const user = useCurrentUser();
+  const can = useCan();
   const [page, setPage] = useState(1);
   const { data, error } = useResource<{
     cost: ProductCostDto;
@@ -416,7 +495,7 @@ function ProductCostHistory({ productId, unit }: { productId: string; unit: stri
     <section className="panel" aria-labelledby="cost-history-title">
       <h2 id="cost-history-title">Historial de costo promedio</h2>
       {error ? (
-        <p className="muted">{error.message}</p>
+        <ErrorState error={error} />
       ) : !data ? (
         <Loading />
       ) : data.history.items.length === 0 ? (
@@ -449,9 +528,13 @@ function ProductCostHistory({ productId, unit }: { productId: string; unit: stri
                     <td>{formatDateTime(h.createdAt, user.company.timezone)}</td>
                     <td>
                       {h.productionOrder ? (
-                        <Link href={`/produccion/${h.productionOrder.id}`}>
-                          {h.productionOrder.code}
-                        </Link>
+                        can(P.PRODUCTION_ORDERS_READ) ? (
+                          <Link href={`/produccion/${h.productionOrder.id}`}>
+                            {h.productionOrder.code}
+                          </Link>
+                        ) : (
+                          h.productionOrder.code
+                        )
                       ) : (
                         "—"
                       )}
@@ -459,18 +542,18 @@ function ProductCostHistory({ productId, unit }: { productId: string; unit: stri
                     <td className="num">
                       {formatQuantity(h.batchQuantity, unit)}
                       <span className="cost-source">
-                        {formatReferenceCost(h.batchUnitCost, currency, unit)}
+                        {formatUnitCost(h.batchUnitCost, currency, unit)}
                       </span>
                     </td>
                     <td className="num">
                       {h.averageBefore === null
                         ? "—"
-                        : formatReferenceCost(h.averageBefore, currency, unit)}
+                        : formatUnitCost(h.averageBefore, currency, unit)}
                     </td>
                     <td className="num">
                       {h.averageAfter === null
                         ? "—"
-                        : formatReferenceCost(h.averageAfter, currency, unit)}
+                        : formatUnitCost(h.averageAfter, currency, unit)}
                       {!h.averageChanged && <span className="cost-source">sin cambio</span>}
                     </td>
                     <td className="num hide-sm">{formatQuantity(h.quantityAfter, unit)}</td>

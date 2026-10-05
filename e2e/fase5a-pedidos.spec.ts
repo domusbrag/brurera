@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { crumb, openSection, selectByText, summaryValue } from "./support";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 /*
@@ -22,25 +23,6 @@ const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 const WEB_ORIGIN = "http://localhost:3000";
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -309,6 +291,7 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   // Un segundo pedido para la misma fecha no reutiliza lo ya comprometido.
   await openSection(page, "Pedidos");
   await page.getByRole("link", { name: "Nuevo pedido" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Nuevo pedido" })).toBeVisible();
   await selectByText(page.getByRole("combobox", { name: "Cliente" }), world.customerName);
   await page.getByLabel("Entrega o retiro").fill(world.tomorrow);
   await page.getByLabel("Hora", { exact: true }).fill("10:00");
@@ -338,8 +321,8 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(page.getByLabel("Cantidad a producir")).toHaveValue("200");
   await page.getByRole("button", { name: "Crear borrador" }).click();
   await expect(heading).toContainText("Borrador");
-  await expect(page.locator("dl.details")).toContainText(`Creada para ${orderCode}`);
-  await page.locator("dl.details").getByRole("link", { name: orderCode }).click();
+  await expect(page.locator("dl.metrics")).toContainText(orderCode);
+  await page.locator("dl.metrics").getByRole("link", { name: orderCode }).click();
   await expect(heading).toContainText(orderCode);
   await expect(section(page, "Producción necesaria").locator("tbody tr")).toContainText(
     "Orden de producción creada",
@@ -358,14 +341,14 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(section(page, "Reservado para pedidos")).toContainText(orderCode);
 
   // Stock del producto: comprometido y disponible ahora.
-  await page.getByRole("link", { name: `← ${world.productName}` }).click();
+  await crumb(page, `${world.productName}`).click();
   const stock = section(page, "Existencias");
   await expect(summaryValue(stock, "Stock físico")).toHaveText("300 kg");
   await expect(summaryValue(stock, "Comprometido con pedidos")).toHaveText("300 kg");
   await expect(summaryValue(stock, "Disponible ahora")).toHaveText("0 kg");
 
   // Necesidades: producción y materia prima del pedido.
-  await openSection(page, "Necesidades");
+  await openSection(page, "Planificación");
   await expect(page.getByRole("heading", { level: 1, name: "Necesidades" })).toBeVisible();
   const need = page.getByRole("row").filter({ hasText: world.productName });
   await expect(need).toContainText("200 kg");
@@ -494,7 +477,7 @@ test("Fase 5A: lo reservado no se transforma y bloquear el lote deja el pedido p
   );
   await page.getByLabel(/^Cantidad a/).fill("50");
   await expect(page.getByLabel(/^Cantidad a/)).toHaveAttribute("aria-invalid", "true");
-  await page.getByRole("link", { name: `← Lote ${lot.code}` }).click();
+  await crumb(page, `Lote ${lot.code}`).click();
 
   // Bloquear por calidad: avisa que invalida reservas.
   await page.getByRole("button", { name: "Bloquear", exact: true }).click();
