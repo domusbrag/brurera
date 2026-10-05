@@ -15,6 +15,8 @@
   --color-surface-hover: #f6efe6;
   --color-border: #e2dcd2;
   --color-border-strong: #cbc2b5;
+  /* Borde de campos y controles: 3,4:1 sobre blanco (WCAG 1.4.11). */
+  --color-border-input: #938a7e;
 
   /* Texto */
   --color-text: #26211b;
@@ -391,7 +393,7 @@ textarea {
 .control {
   font: inherit;
   padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-input);
   border-radius: var(--radius);
   min-height: var(--control-height);
   background: var(--color-surface);
@@ -1684,7 +1686,7 @@ a.card:hover {
   min-width: 0;
   min-height: 2.375rem;
   padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-input);
   border-radius: var(--radius);
   font: inherit;
   background: var(--color-surface);
@@ -1903,7 +1905,7 @@ a.card:hover {
   align-items: center;
   min-height: var(--control-height);
   padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-input);
   border-radius: var(--radius);
   cursor: pointer;
   background: var(--color-surface);

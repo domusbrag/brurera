@@ -53,6 +53,22 @@ Quien no tiene permiso de costos no ve la columna ni el dato: no se muestra "Cos
 | **Receta** / **Versión vigente** | Ingredientes y rendimiento con que se produce hoy un producto.                                           |
 | **Compra** (`OC-…`)              | Pedido a un proveedor. **Recepción** (`REC-…`): lo que efectivamente llegó; es lo que suma stock.        |
 
+## Estados y colores
+
+Un solo componente de estado (`StatusBadge`) con cinco tonos. El color nunca es la única señal: el
+texto del estado siempre está y el badge lleva un punto de forma, no sólo color.
+
+| Tono               | Significa                         | Ejemplos                                                                          |
+| ------------------ | --------------------------------- | --------------------------------------------------------------------------------- |
+| Verde (success)    | Terminado o en orden              | Listo, Entregado, Cobrada, Cubierto, Activo                                       |
+| Amarillo (warning) | Requiere atención pronto          | Cobertura parcial, Sin cobrar, Cobro parcial, Próximo a vencer, Recibida en parte |
+| Rojo (danger)      | Impide operar o ya es un problema | Sin cobertura, Necesita recalcular, Vencido, Bloqueado                            |
+| Azul (info)        | En curso, espera el próximo paso  | Confirmado, En preparación, Planificada, En curso, Pedida                         |
+| Gris (neutral)     | No requiere acción                | Borrador, Cancelado, Agotado, Inactivo                                            |
+
+La conservación (Fresco, Refrigerado, Congelado, Descongelado) es una etiqueta sin semántica de
+alerta.
+
 ## Formatos
 
 - **Plata:** `$ 12.345,67` (separador de miles con punto, decimales con coma, siempre dos decimales).

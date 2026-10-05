@@ -1283,6 +1283,10 @@ function ReviewDialog({
           </>
         )}
       </p>
+      <p className="small muted">
+        Lo cargado en consumo y salida ya quedó guardado. Si volvés sin confirmar, la orden sigue en
+        curso con esos datos.
+      </p>
       <dl className="cost-summary">
         <div>
           <dt>Planificado</dt>
