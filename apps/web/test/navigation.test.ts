@@ -1,19 +1,44 @@
+import { SYSTEM_ROLES, type SystemRoleCode } from "@bakery/shared";
 import { describe, expect, it } from "vitest";
-import { NAVIGATION, findNavItem, safeNextPath } from "@/lib/navigation";
+import {
+  NAVIGATION,
+  UPCOMING_SECTIONS,
+  activeNavHref,
+  findUpcomingSection,
+  safeNextPath,
+  visibleNavigation,
+} from "@/lib/navigation";
+
+const permsOf = (code: SystemRoleCode) => SYSTEM_ROLES.find((r) => r.code === code)!.permissions;
+const labelsFor = (code: SystemRoleCode) =>
+  visibleNavigation(permsOf(code)).flatMap((g) => g.items.map((i) => i.label));
+const groupsFor = (code: SystemRoleCode) => visibleNavigation(permsOf(code)).map((g) => g.label);
 
 describe("navegación", () => {
-  it("los slugs del menú son únicos", () => {
-    const slugs = NAVIGATION.flatMap((g) => g.items.map((i) => i.slug));
-    expect(new Set(slugs).size).toBe(slugs.length);
+  it("las rutas y los rótulos del menú son únicos (un nombre, un destino)", () => {
+    const items = NAVIGATION.flatMap((g) => g.items);
+    expect(new Set(items.map((i) => i.href)).size).toBe(items.length);
+    expect(new Set(items.map((i) => i.label)).size).toBe(items.length);
   });
 
-  it("todo módulo apunta a una fase del roadmap (1 o posterior)", () => {
-    for (const g of NAVIGATION) for (const i of g.items) expect(i.phase).toBeGreaterThanOrEqual(1);
+  it("todo ítem declara al menos un permiso que lo habilita", () => {
+    for (const g of NAVIGATION) for (const i of g.items) expect(i.anyOf.length).toBeGreaterThan(0);
   });
 
-  it("encuentra secciones existentes y rechaza inexistentes", () => {
-    expect(findNavItem("ventas")?.label).toBe("Ventas");
-    expect(findNavItem("no-existe")).toBeUndefined();
+  it("los módulos futuros no ocupan lugar en el menú, pero su ruta directa existe", () => {
+    const hrefs = NAVIGATION.flatMap((g) => g.items.map((i) => i.href));
+    for (const s of UPCOMING_SECTIONS) expect(hrefs).not.toContain(`/${s.slug}`);
+    expect(findUpcomingSection("caja")?.label).toBe("Caja");
+    expect(findUpcomingSection("ventas")).toBeUndefined();
+  });
+
+  it("el ítem activo es el más específico que contiene la ruta", () => {
+    const items = NAVIGATION.flatMap((g) => g.items);
+    expect(activeNavHref("/stock/productos/por-vencer", items)).toBe("/stock/productos/por-vencer");
+    expect(activeNavHref("/stock/productos/abc", items)).toBe("/stock/productos");
+    expect(activeNavHref("/stock/lotes/abc", items)).toBe("/stock");
+    expect(activeNavHref("/ventas/nueva", items)).toBe("/ventas");
+    expect(activeNavHref("/ventasx", items)).toBeNull();
   });
 });
 
@@ -30,85 +55,71 @@ describe("safeNextPath (prevención de open redirect)", () => {
   });
 });
 
-describe("menú según permisos", () => {
-  it("Comercial (Fase 5B): Pedidos, Ventas y Listas de precios; Finanzas → Cuentas a cobrar", async () => {
-    const { visibleNavigation } = await import("@/lib/navigation");
-    const groups = visibleNavigation([
-      "orders.read",
-      "sales.read",
-      "price_lists.read",
-      "customer_accounts.read",
+describe("menú por rol (sólo lo que cada persona puede usar)", () => {
+  it("Ventas / mostrador: comercial y cobranza; sin producción, inventario, compras ni costos", () => {
+    expect(groupsFor("SALES")).toEqual(["Comercial", "Finanzas", "Catálogo"]);
+    expect(labelsFor("SALES")).toEqual([
+      "Pedidos",
+      "Ventas",
+      "Clientes",
+      "Listas de precios",
+      "Cuentas a cobrar",
+      "Productos",
     ]);
-    const commercial = groups.find((g) => g.label === "Comercial")?.items.map((i) => i.slug);
-    expect(commercial).toEqual(["pedidos", "ventas", "listas-de-precios"]);
-    const finance = groups.find((g) => g.label === "Finanzas")?.items.map((i) => i.slug);
-    expect(finance).toContain("cuentas-a-cobrar");
-    const warehouse = visibleNavigation(["sales.read"]).flatMap((g) => g.items.map((i) => i.slug));
-    expect(warehouse).not.toContain("listas-de-precios");
-    expect(warehouse).not.toContain("cuentas-a-cobrar");
   });
 
-  it("oculta módulos implementados sin permiso y conserva los de fases futuras", async () => {
-    const { visibleNavigation } = await import("@/lib/navigation");
-    const slugs = visibleNavigation(["customers.read"]).flatMap((g) => g.items.map((i) => i.slug));
-    expect(slugs).toContain("clientes");
-    expect(slugs).toContain("caja");
-    expect(slugs).not.toContain("ventas");
-    expect(slugs).not.toContain("proveedores");
-    expect(slugs).not.toContain("usuarios");
-    expect(slugs).not.toContain("configuracion");
-  });
-
-  it("Producción → Recetas aparece sólo con recipes.read", async () => {
-    const { visibleNavigation } = await import("@/lib/navigation");
-    const withRecipes = visibleNavigation(["recipes.read"]);
-    const production = withRecipes.find((g) => g.label === "Producción");
-    expect(production?.items.map((i) => i.slug)).toContain("recetas");
-    const without = visibleNavigation(["products.read"]).flatMap((g) => g.items.map((i) => i.slug));
-    expect(without).not.toContain("recetas");
-  });
-
-  it("configuración aparece con cualquiera de sus permisos de lectura", async () => {
-    const { visibleNavigation } = await import("@/lib/navigation");
-    const slugs = visibleNavigation(["units.read"]).flatMap((g) => g.items.map((i) => i.slug));
-    expect(slugs).toContain("configuracion");
-  });
-
-  it("Compras y Stock (Fase 3) aparecen sólo con su permiso de lectura", async () => {
-    const { visibleNavigation } = await import("@/lib/navigation");
-    const slugsOf = (perms: string[]) =>
-      visibleNavigation(perms).flatMap((g) => g.items.map((i) => i.slug));
-    expect(slugsOf(["purchases.read"])).toContain("compras");
-    expect(slugsOf(["purchases.read"])).not.toContain("stock");
-    expect(slugsOf(["inventory.read"])).toContain("stock");
-    expect(slugsOf(["inventory.read"])).not.toContain("compras");
-  });
-
-  it("Producción → Órdenes (Fase 4) aparece sólo con production_orders.read, antes que Recetas", async () => {
-    const { visibleNavigation, CURRENT_PHASE } = await import("@/lib/navigation");
-    expect(CURRENT_PHASE).toBe(5);
-    const group = (perms: string[]) =>
-      visibleNavigation(perms).find((g) => g.label === "Producción")?.items ?? [];
-    const both = group(["production_orders.read", "recipes.read"]);
-    expect(both.map((i) => [i.slug, i.label])).toEqual([
-      ["produccion", "Órdenes"],
-      ["recetas", "Recetas"],
-    ]);
-    expect(group(["recipes.read"]).map((i) => i.slug)).toEqual(["recetas"]);
-    expect(group(["inventory.read"])).toEqual([]);
-  });
-
-  it("Comercial → Pedidos y Planificación → Necesidades (Fase 5A) aparecen con su permiso", async () => {
-    const { visibleNavigation } = await import("@/lib/navigation");
-    const slugsOf = (perms: string[]) =>
-      visibleNavigation(perms).flatMap((g) => g.items.map((i) => i.slug));
-    expect(slugsOf(["orders.read"])).toContain("pedidos");
-    expect(slugsOf(["orders.read"])).not.toContain("necesidades");
-    expect(slugsOf(["order_planning.read"])).toContain("necesidades");
-    expect(slugsOf(["customers.read"])).not.toContain("pedidos");
-    const commercial = visibleNavigation(["orders.read", "customers.read"]).find(
-      (g) => g.label === "Comercial",
+  it("Producción: planificación, órdenes, recetas e inventario; sin finanzas ni precios", () => {
+    const groups = groupsFor("PRODUCTION");
+    expect(groups).toContain("Producción");
+    expect(groups).not.toContain("Finanzas");
+    expect(groups).not.toContain("Organización");
+    expect(labelsFor("PRODUCTION")).not.toContain("Listas de precios");
+    expect(labelsFor("PRODUCTION")).toEqual(
+      expect.arrayContaining(["Planificación", "Órdenes de producción", "Recetas"]),
     );
-    expect(commercial?.items[0]?.slug).toBe("pedidos");
+  });
+
+  it("Depósito: stock, lotes por vencer y movimientos; sin listas de precios ni finanzas", () => {
+    const labels = labelsFor("WAREHOUSE");
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "Stock de materias primas",
+        "Productos terminados",
+        "Próximos a vencer",
+        "Movimientos",
+      ]),
+    );
+    expect(labels).not.toContain("Listas de precios");
+    expect(groupsFor("WAREHOUSE")).not.toContain("Finanzas");
+  });
+
+  it("Compras: compras, proveedores y stock de materias primas", () => {
+    expect(labelsFor("PURCHASING")).toEqual(
+      expect.arrayContaining(["Compras", "Proveedores", "Stock de materias primas"]),
+    );
+    expect(groupsFor("PURCHASING")).not.toContain("Comercial");
+  });
+
+  it("Configuración sólo para quien administra algo, aunque todos lean unidades", () => {
+    for (const code of ["SALES", "PURCHASING", "PRODUCTION", "WAREHOUSE"] as const)
+      expect(labelsFor(code)).not.toContain("Configuración");
+    for (const code of ["ADMIN", "OWNER", "ADMINISTRATION"] as const)
+      expect(labelsFor(code)).toContain("Configuración");
+  });
+
+  it("Dueño ve todos los grupos, en orden de frecuencia", () => {
+    expect(groupsFor("OWNER")).toEqual([
+      "Comercial",
+      "Producción",
+      "Inventario",
+      "Compras",
+      "Finanzas",
+      "Catálogo",
+      "Organización",
+    ]);
+  });
+
+  it("sin permisos no hay grupos", () => {
+    expect(visibleNavigation([])).toEqual([]);
   });
 });

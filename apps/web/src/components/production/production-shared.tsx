@@ -19,7 +19,9 @@ import {
   formatQuantity,
   formatUnitCost,
 } from "@/lib/format";
+import { PRODUCTION_STATUS_TONE } from "@/lib/status";
 import { toCostingUnit } from "../recipes/cost-views";
+import { StatusBadge } from "../ui/status";
 import { useCan } from "../user-context";
 
 /*
@@ -29,16 +31,12 @@ import { useCan } from "../user-context";
 
 export const PRODUCTION_BASE = "/produccion";
 
-const STATUS_BADGE: Record<ProductionStatusDto, string> = {
-  DRAFT: "badge badge--draft",
-  PLANNED: "badge badge--info",
-  IN_PROGRESS: "badge badge--warn",
-  COMPLETED: "badge",
-  CANCELLED: "badge badge--off",
-};
-
 export function ProductionStatusBadge({ status }: { status: ProductionStatusDto }) {
-  return <span className={STATUS_BADGE[status]}>{PRODUCTION_STATUS_LABELS[status]}</span>;
+  return (
+    <StatusBadge tone={PRODUCTION_STATUS_TONE[status]}>
+      {PRODUCTION_STATUS_LABELS[status]}
+    </StatusBadge>
+  );
 }
 
 /** Unidades activas de la empresa (para elegir en qué unidad se carga una cantidad). */

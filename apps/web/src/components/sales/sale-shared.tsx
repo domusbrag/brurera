@@ -17,6 +17,8 @@ import { useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { isPositive, toDecimal } from "@/lib/decimal-input";
 import { formatMoney, formatPercent } from "@/lib/format";
+import { PAYMENT_STATUS_TONE, SALE_STATUS_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 
 /*
  * Piezas comunes de ventas, cobros y cuenta corriente (Fase 5B).
@@ -26,27 +28,15 @@ export const SALES_BASE = "/ventas";
 export const PRICE_LISTS_BASE = "/listas-de-precios";
 export const RECEIVABLES_BASE = "/cuentas-a-cobrar";
 
-const SALE_STATUS_CLASS: Record<SaleStatusDto, string> = {
-  DRAFT: "badge--draft",
-  POSTED: "",
-  CANCELLED: "badge--off",
-};
-
 export function SaleStatusBadge({ status }: { status: SaleStatusDto }) {
-  return <span className={`badge ${SALE_STATUS_CLASS[status]}`}>{SALE_STATUS_LABELS[status]}</span>;
+  return <StatusBadge tone={SALE_STATUS_TONE[status]}>{SALE_STATUS_LABELS[status]}</StatusBadge>;
 }
-
-const PAYMENT_STATUS_CLASS: Record<SalePaymentStatusDto, string> = {
-  UNPAID: "badge--warn",
-  PARTIALLY_PAID: "badge--info",
-  PAID: "",
-};
 
 export function PaymentStatusBadge({ status }: { status: SalePaymentStatusDto }) {
   return (
-    <span className={`badge ${PAYMENT_STATUS_CLASS[status]}`}>
+    <StatusBadge tone={PAYMENT_STATUS_TONE[status]}>
       {SALE_PAYMENT_STATUS_LABELS[status]}
-    </span>
+    </StatusBadge>
   );
 }
 

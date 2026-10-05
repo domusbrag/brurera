@@ -15,6 +15,8 @@ import {
 import { D } from "@bakery/domain";
 import Link from "next/link";
 import { formatQuantity } from "@/lib/format";
+import { COVERAGE_TONE, ORDER_STATUS_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 import { LOTS_BASE, ConservationBadge } from "../lots/lot-shared";
 
 /*
@@ -25,31 +27,14 @@ import { LOTS_BASE, ConservationBadge } from "../lots/lot-shared";
 export const ORDERS_BASE = "/pedidos";
 export const NEEDS_BASE = "/necesidades";
 
-const STATUS_CLASS: Record<OrderStatusDto, string> = {
-  DRAFT: "badge--draft",
-  CONFIRMED: "badge--info",
-  IN_PREPARATION: "badge--warn",
-  READY: "",
-  PARTIALLY_DELIVERED: "badge--info",
-  DELIVERED: "",
-  CANCELLED: "badge--off",
-};
-
 export function OrderStatusBadge({ status }: { status: OrderStatusDto }) {
-  return <span className={`badge ${STATUS_CLASS[status]}`}>{ORDER_STATUS_LABELS[status]}</span>;
+  return <StatusBadge tone={ORDER_STATUS_TONE[status]}>{ORDER_STATUS_LABELS[status]}</StatusBadge>;
 }
-
-const COVERAGE_CLASS: Record<CoverageStatusDto, string> = {
-  FULLY_COVERED: "",
-  PARTIALLY_COVERED: "badge--warn",
-  NOT_COVERED: "badge--danger",
-  NEEDS_REPLAN: "badge--danger",
-};
 
 export function CoverageBadge({ coverage }: { coverage: CoverageStatusDto | null }) {
   if (coverage === null) return <span className="muted">Sin calcular</span>;
   return (
-    <span className={`badge ${COVERAGE_CLASS[coverage]}`}>{COVERAGE_STATUS_LABELS[coverage]}</span>
+    <StatusBadge tone={COVERAGE_TONE[coverage]}>{COVERAGE_STATUS_LABELS[coverage]}</StatusBadge>
   );
 }
 

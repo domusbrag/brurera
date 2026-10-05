@@ -12,6 +12,8 @@ import {
   type TheoreticalCostDto,
   type UnitDto,
 } from "@bakery/shared";
+import { RECIPE_VERSION_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import {
@@ -43,8 +45,11 @@ export function toCostingUnit(u: UnitDto): CostingUnit {
 }
 
 export function VersionStatusBadge({ status }: { status: RecipeVersionStatus }) {
-  const cls = status === "ACTIVE" ? "" : status === "DRAFT" ? "badge--draft" : "badge--off";
-  return <span className={`badge ${cls}`}>{RECIPE_VERSION_STATUS_LABELS[status]}</span>;
+  return (
+    <StatusBadge tone={RECIPE_VERSION_TONE[status]}>
+      {RECIPE_VERSION_STATUS_LABELS[status]}
+    </StatusBadge>
+  );
 }
 
 export function IncompleteCostAlert({ missing }: { missing: { rawMaterialName: string }[] }) {

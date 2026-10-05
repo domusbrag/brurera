@@ -16,6 +16,8 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch, fetchOptions } from "@/lib/api-client";
+import { PURCHASE_STATUS_TONE, RECEIPT_STATUS_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 import {
   formatDate,
   formatDateTime,
@@ -43,26 +45,16 @@ import { useCan, useCurrentUser } from "../user-context";
 
 export const PURCHASES_BASE = "/compras";
 
-const STATUS_BADGE: Record<PurchaseStatus, string> = {
-  DRAFT: "badge badge--draft",
-  ORDERED: "badge badge--info",
-  PARTIALLY_RECEIVED: "badge badge--warn",
-  RECEIVED: "badge",
-  CANCELLED: "badge badge--off",
-};
-
 export function PurchaseStatusBadge({ status }: { status: PurchaseStatus }) {
-  return <span className={STATUS_BADGE[status]}>{PURCHASE_STATUS_LABELS[status]}</span>;
+  return (
+    <StatusBadge tone={PURCHASE_STATUS_TONE[status]}>{PURCHASE_STATUS_LABELS[status]}</StatusBadge>
+  );
 }
 
-const RECEIPT_BADGE: Record<ReceiptStatus, string> = {
-  DRAFT: "badge badge--draft",
-  POSTED: "badge",
-  CANCELLED: "badge badge--off",
-};
-
 export function ReceiptStatusBadge({ status }: { status: ReceiptStatus }) {
-  return <span className={RECEIPT_BADGE[status]}>{RECEIPT_STATUS_LABELS[status]}</span>;
+  return (
+    <StatusBadge tone={RECEIPT_STATUS_TONE[status]}>{RECEIPT_STATUS_LABELS[status]}</StatusBadge>
+  );
 }
 
 /** "4 × Bolsa 25 kg" o "20 kg" (sin presentación). */

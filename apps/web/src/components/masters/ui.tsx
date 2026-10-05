@@ -8,8 +8,9 @@ import {
   type Page,
 } from "@bakery/shared";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
+import { describeError } from "@/lib/errors";
 import {
   formatDate,
   formatDateTime,
@@ -17,6 +18,8 @@ import {
   formatQuantity,
   formatReferenceCost,
 } from "@/lib/format";
+import { Icon } from "../ui/icons";
+import { StatusBadge as Badge } from "../ui/status";
 import { useCan, useCurrentUser } from "../user-context";
 
 /** Carga un recurso de la API con estado de carga/error y recarga manual. */
@@ -24,6 +27,7 @@ export function useResource<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [version, setVersion] = useState(0);
+  const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
 
   useEffect(() => {
@@ -34,41 +38,65 @@ export function useResource<T>(path: string | null) {
         if (!cancelled) {
           setData(result);
           setError(null);
+          setLoadedPath(path);
         }
       })
       .catch((err: unknown) => {
-        if (!cancelled)
+        if (!cancelled) {
           setError(err instanceof ApiError ? err : new ApiError(0, "UNKNOWN", "Error"));
+          setLoadedPath(path);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [path, version]);
 
-  return { data, error, reload, setData };
+  /** Hay datos, pero corresponden a una consulta anterior (cambió el filtro o la página). */
+  const stale = data !== null && loadedPath !== path;
+  return { data, error, reload, setData, stale };
 }
 
+type Crumb = { href: string; label: string };
+
+/**
+ * Encabezado único de página: migas (en jerarquías profundas), título con
+ * estado, subtítulo y acciones. Por pantalla, una sola acción primaria.
+ * `breadcrumb` acepta un nivel o la ruta completa; el último nivel es la página.
+ */
 export function PageHeader({
   title,
   subtitle,
   breadcrumb,
+  status,
   actions,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
-  breadcrumb?: { href: string; label: string };
+  breadcrumb?: Crumb | Crumb[];
+  status?: ReactNode;
   actions?: ReactNode;
 }) {
+  const crumbs = breadcrumb ? (Array.isArray(breadcrumb) ? breadcrumb : [breadcrumb]) : [];
   return (
     <header className="page__header">
       <div className="page__title">
-        {breadcrumb && (
+        {crumbs.length > 0 && (
           <nav className="breadcrumb" aria-label="Ubicación">
-            <Link href={breadcrumb.href}>← {breadcrumb.label}</Link>
+            <ol>
+              {crumbs.map((c) => (
+                <li key={c.href}>
+                  <Link href={c.href}>{c.label}</Link>
+                </li>
+              ))}
+            </ol>
           </nav>
         )}
-        <h1>{title}</h1>
-        {subtitle && <p className="muted">{subtitle}</p>}
+        <div className="page__heading">
+          <h1>{title}</h1>
+          {status}
+        </div>
+        {subtitle && <p className="page__subtitle">{subtitle}</p>}
       </div>
       {actions && <div className="actions">{actions}</div>}
     </header>
@@ -84,42 +112,123 @@ export function StatusBadge({
   on?: string;
   off?: string;
 }) {
-  return <span className={`badge ${active ? "" : "badge--off"}`}>{active ? on : off}</span>;
+  return <Badge tone={active ? "success" : "neutral"}>{active ? on : off}</Badge>;
 }
 
-export function Loading() {
+/** Carga: esqueleto de líneas que reserva lugar (sin saltos ni bloquear la página). */
+export function Loading({ label = "Cargando…" }: { label?: string }) {
   return (
-    <p className="loading" role="status">
-      Cargando…
-    </p>
+    <div className="skeleton" role="status" aria-live="polite">
+      <span className="sr-only">{label}</span>
+      <span className="skeleton__line" aria-hidden="true" />
+      <span className="skeleton__line" aria-hidden="true" />
+      <span className="skeleton__line" aria-hidden="true" />
+    </div>
   );
 }
 
-export function ErrorState({ error }: { error: ApiError }) {
+/** Error al cargar: qué pasó en lenguaje simple y cómo seguir (nunca un código interno). */
+export function ErrorState({ error, onRetry }: { error: ApiError; onRetry?: () => void }) {
+  const notFound = error.status === 404;
   return (
-    <section className="panel panel--empty">
-      <p className="upcoming">{error.status === 404 ? "No encontrado" : "No se pudo cargar"}</p>
-      <p className="muted">{error.message}</p>
+    <section className="panel panel--empty" role="alert">
+      <p className="upcoming">{notFound ? "No encontrado" : "No se pudo cargar"}</p>
+      <p className="muted">{describeError(error)}</p>
+      <div className="alert__actions" style={{ justifyContent: "center" }}>
+        {onRetry && !notFound && (
+          <button type="button" className="button" onClick={onRetry}>
+            Reintentar
+          </button>
+        )}
+        <Link className="button button--tertiary" href="/">
+          Ir al inicio
+        </Link>
+      </div>
     </section>
   );
 }
 
-export function Details({ items }: { items: [string, ReactNode][] }) {
+/**
+ * Estado vacío útil: dice qué falta y ofrece la acción para resolverlo sólo si
+ * el usuario puede ejecutarla.
+ */
+export function EmptyState({
+  title,
+  description,
+  action,
+  compact,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  action?: ReactNode;
+  compact?: boolean;
+}) {
   return (
-    <dl className="details">
-      {items.map(([label, value]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd>{value === null || value === undefined || value === "" ? "—" : value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className={`empty-state ${compact ? "empty-state--compact" : ""}`}>
+      <p className="empty-state__title">{title}</p>
+      {description && <p>{description}</p>}
+      {action}
+    </div>
   );
 }
 
 /**
- * Botón que pide confirmación en un diálogo antes de ejecutar una acción
- * (desactivar, dar de baja…). Muestra el error de la API si falla.
+ * Datos de un registro. Con `hideEmpty` los vacíos no se muestran (evita la
+ * pared de "—"); sin él, un vacío se muestra como "—".
+ */
+export function Details({
+  items,
+  hideEmpty,
+}: {
+  items: [string, ReactNode][];
+  hideEmpty?: boolean;
+}) {
+  const empty = (v: ReactNode) => v === null || v === undefined || v === "" || v === false;
+  return (
+    <dl className="details">
+      {items
+        .filter(([, value]) => !hideEmpty || !empty(value))
+        .map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{empty(value) ? "—" : value}</dd>
+          </div>
+        ))}
+    </dl>
+  );
+}
+
+/** Código de negocio (PED-0001, VTA-0001, OP-0001, LOT-…) con botón para copiarlo. */
+export function CopyableCode({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="code-chip">
+      <span className="code">{code}</span>
+      <button
+        type="button"
+        className="copy-button"
+        aria-label={copied ? `${code} copiado` : `Copiar ${code}`}
+        title={copied ? "Copiado" : "Copiar código"}
+        onClick={() => {
+          void navigator.clipboard?.writeText(code).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        <Icon name={copied ? "check" : "copy"} size="sm" />
+      </button>
+    </span>
+  );
+}
+
+/**
+ * Botón que abre un diálogo de confirmación antes de ejecutar una acción.
+ * - `variant="primary"`: el paso que hace avanzar el flujo (confirmar, planificar…).
+ * - `danger`: acción destructiva; el diálogo explica la consecuencia y el botón
+ *   de confirmación es rojo.
+ * `validate` permite exigir datos del diálogo (p. ej. un motivo) antes de llamar a la API.
+ * El foco vuelve al botón que abrió el diálogo al cerrarlo.
  */
 export function ConfirmAction({
   label,
@@ -127,6 +236,11 @@ export function ConfirmAction({
   message,
   confirmLabel,
   danger,
+  variant,
+  small,
+  disabled,
+  disabledReason,
+  validate,
   onConfirm,
   children,
 }: {
@@ -135,31 +249,51 @@ export function ConfirmAction({
   message: ReactNode;
   confirmLabel: string;
   danger?: boolean;
+  variant?: "primary" | "default";
+  small?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  validate?: () => string | null;
   onConfirm: () => Promise<void>;
   children?: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function confirm() {
-    setPending(true);
     setError(null);
+    const invalid = validate?.() ?? null;
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    setPending(true);
     try {
       await onConfirm();
       dialogRef.current?.close();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo completar la operación.");
+      setError(err instanceof ApiError ? describeError(err) : "No se pudo completar la operación.");
     } finally {
       setPending(false);
     }
   }
 
+  const openerClass = danger
+    ? "button--danger"
+    : variant === "primary"
+      ? "button--primary"
+      : "";
   return (
     <>
       <button
         type="button"
-        className={`button ${danger ? "button--danger" : ""}`}
+        ref={openerRef}
+        className={`button ${openerClass} ${small ? "button--small" : ""}`}
+        disabled={disabled}
+        title={disabled ? disabledReason : undefined}
         onClick={() => {
           setError(null);
           dialogRef.current?.showModal();
@@ -167,9 +301,14 @@ export function ConfirmAction({
       >
         {label}
       </button>
-      <dialog ref={dialogRef} className="dialog" aria-labelledby={`${label}-title`}>
-        <h2 id={`${label}-title`}>{title}</h2>
-        <div className="muted">{message}</div>
+      <dialog
+        ref={dialogRef}
+        className="dialog"
+        aria-labelledby={titleId}
+        onClose={() => openerRef.current?.focus()}
+      >
+        <h2 id={titleId}>{title}</h2>
+        <div className={danger ? "dialog__consequence" : "muted"}>{message}</div>
         {children}
         {error && (
           <p className="form__error" role="alert">
@@ -179,19 +318,20 @@ export function ConfirmAction({
         <div className="form__footer">
           <button
             type="button"
-            className={`button ${danger ? "button--danger" : "button--primary"}`}
-            onClick={confirm}
-            disabled={pending}
-          >
-            {pending ? "Procesando…" : confirmLabel}
-          </button>
-          <button
-            type="button"
             className="button"
             onClick={() => dialogRef.current?.close()}
             disabled={pending}
           >
-            Cancelar
+            Volver
+          </button>
+          <button
+            type="button"
+            className={`button ${danger ? "button--danger-solid" : "button--primary"}`}
+            onClick={confirm}
+            disabled={pending}
+            aria-busy={pending || undefined}
+          >
+            {pending ? "Procesando…" : confirmLabel}
           </button>
         </div>
       </dialog>

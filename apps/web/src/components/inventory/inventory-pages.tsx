@@ -25,6 +25,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fetchOptions, listPath } from "@/lib/api-client";
 import { formatDateTime, formatMoney, formatQuantity, formatReferenceCost } from "@/lib/format";
+import { STOCK_STATUS_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 import { MasterList } from "../masters/master-list";
 import { Details, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
 import { useCan, useCurrentUser } from "../user-context";
@@ -38,14 +40,8 @@ import { PresentationsPanel } from "./presentations";
 
 export const STOCK_BASE = "/stock";
 
-const STATUS_BADGE: Record<StockStatusDto, string> = {
-  OK: "badge",
-  LOW: "badge badge--warn",
-  OUT_OF_STOCK: "badge badge--danger",
-};
-
 export function StockStatusBadge({ status }: { status: StockStatusDto }) {
-  return <span className={STATUS_BADGE[status]}>{STOCK_STATUS_LABELS[status]}</span>;
+  return <StatusBadge tone={STOCK_STATUS_TONE[status]}>{STOCK_STATUS_LABELS[status]}</StatusBadge>;
 }
 
 export const PRODUCT_STOCK_BASE = `${STOCK_BASE}/productos`;

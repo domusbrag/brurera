@@ -7,6 +7,8 @@ import {
   type ConservationStateDto,
   type LotStatusDto,
 } from "@bakery/shared";
+import { LOT_STATUS_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 
 /*
  * Piezas compartidas de lotes (Fase 4.5): estados, vida útil y vencimiento
@@ -16,27 +18,13 @@ import {
 export const LOTS_BASE = "/stock/lotes";
 export const EXPIRING_PATH = "/stock/productos/por-vencer";
 
-const STATUS_BADGE: Record<LotStatusDto, string> = {
-  AVAILABLE: "",
-  NEAR_EXPIRY: "badge--warn",
-  EXPIRED: "badge--danger",
-  BLOCKED: "badge--danger",
-  DEPLETED: "badge--off",
-};
-
 export function LotStatusBadge({ status }: { status: LotStatusDto }) {
-  return <span className={`badge ${STATUS_BADGE[status]}`}>{LOT_STATUS_LABELS[status]}</span>;
+  return <StatusBadge tone={LOT_STATUS_TONE[status]}>{LOT_STATUS_LABELS[status]}</StatusBadge>;
 }
 
-const STATE_BADGE: Record<ConservationStateDto, string> = {
-  FRESH: "",
-  REFRIGERATED: "badge--draft",
-  FROZEN: "badge--draft",
-  THAWED: "badge--info",
-};
-
+/** Conservación: atributo del lote (etiqueta), no un estado con color. */
 export function ConservationBadge({ state }: { state: ConservationStateDto }) {
-  return <span className={`badge ${STATE_BADGE[state]}`}>{CONSERVATION_STATE_LABELS[state]}</span>;
+  return <StatusBadge tone="tag">{CONSERVATION_STATE_LABELS[state]}</StatusBadge>;
 }
 
 const plural = (n: string, one: string, many: string) => `${n} ${n === "1" ? one : many}`;
