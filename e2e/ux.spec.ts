@@ -63,7 +63,9 @@ async function userWithRole(page: Page, roleCode: string, run: string): Promise<
 async function menuLabels(page: Page): Promise<string[]> {
   const menuButton = page.getByRole("button", { name: "Abrir menú" });
   if (await menuButton.isVisible()) await menuButton.click();
-  return page.getByRole("navigation", { name: "Menú principal" }).getByRole("link").allInnerTexts();
+  const nav = page.getByRole("navigation", { name: "Menú principal" });
+  await expect(nav.getByRole("link", { name: "Inicio", exact: true })).toBeVisible();
+  return nav.getByRole("link").allInnerTexts();
 }
 
 async function logout(page: Page) {

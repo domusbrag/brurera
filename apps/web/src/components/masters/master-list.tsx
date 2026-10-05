@@ -277,7 +277,13 @@ function MasterListInner<T extends { id: string }>({
               }
             />
           ) : (
-            <EmptyState title={emptyText} action={createAction} />
+            // La acción de alta ya está en el encabezado: no se duplica la primaria.
+            <EmptyState
+              title={emptyText}
+              description={
+                createAction ? `Usá «${createLabel}» para cargar el primero.` : undefined
+              }
+            />
           )
         ) : (
           <>

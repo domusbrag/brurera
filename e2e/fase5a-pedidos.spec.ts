@@ -291,6 +291,7 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   // Un segundo pedido para la misma fecha no reutiliza lo ya comprometido.
   await openSection(page, "Pedidos");
   await page.getByRole("link", { name: "Nuevo pedido" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Nuevo pedido" })).toBeVisible();
   await selectByText(page.getByRole("combobox", { name: "Cliente" }), world.customerName);
   await page.getByLabel("Entrega o retiro").fill(world.tomorrow);
   await page.getByLabel("Hora", { exact: true }).fill("10:00");
