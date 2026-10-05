@@ -92,10 +92,11 @@ export function PageHeader({
             </ol>
           </nav>
         )}
-        <div className="page__heading">
-          <h1>{title}</h1>
-          {status}
-        </div>
+        {/* El estado va dentro del h1: se anuncia junto con el título. */}
+        <h1 className="page__heading">
+          <span>{title}</span>
+          {status && <span className="page__status">{status}</span>}
+        </h1>
         {subtitle && <p className="page__subtitle">{subtitle}</p>}
       </div>
       {actions && <div className="actions">{actions}</div>}

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openSection, selectByText, summaryValue } from "./support";
 
 /*
  * Fase 4: producción contra la aplicación construida y la base de desarrollo
@@ -12,25 +13,6 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -103,7 +85,7 @@ async function createProductWithRecipe(
 }
 
 async function initialStock(page: Page, material: string, quantity: string, cost: string) {
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(material);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(material);
   await page.getByRole("link", { name: material, exact: true }).click();
@@ -118,7 +100,7 @@ async function initialStock(page: Page, material: string, quantity: string, cost
 
 /** Nueva orden desde el menú Producción → Órdenes (depósitos por defecto). */
 async function newOrder(page: Page, product: string, quantity: string) {
-  await openSection(page, "Órdenes");
+  await openSection(page, "Órdenes de producción");
   await expect(
     page.getByRole("heading", { level: 1, name: "Órdenes de producción" }),
   ).toBeVisible();
@@ -237,7 +219,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   const orderUrl = page.url();
 
   // Stock de producto terminado: 96 kg a $800/kg, margen teórico $700 (46,67 %).
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await page.getByRole("link", { name: "Productos terminados" }).click();
   await expect(
     page.getByRole("heading", { level: 1, name: "Stock de productos terminados" }),
@@ -260,7 +242,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   await expect(page.locator("main")).not.toContainText(UUID);
 
   // Materias primas: 200 − 76,05 = 123,95 kg de harina; 10 − 1,5 = 8,5 kg de sal.
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(harina);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(harina);
   await expect(page.getByRole("row").filter({ hasText: harina })).toContainText("123,95 kg");
@@ -279,7 +261,7 @@ test("Fase 4: crear, planificar, iniciar, cargar real con extra y completar", as
   await expect(page).toHaveURL(orderUrl);
 
   // Listado de órdenes: filtro por estado.
-  await openSection(page, "Órdenes");
+  await openSection(page, "Órdenes de producción");
   await page.getByRole("combobox", { name: "Estado" }).selectOption("COMPLETED");
   await page.getByRole("searchbox", { name: "Buscar" }).fill(pan);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(pan);

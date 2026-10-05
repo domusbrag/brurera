@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { openSection, selectByText, summaryValue } from "./support";
 
 /*
  * Fase 4.5: lotes, conservación y vida útil contra la aplicación construida y la
@@ -17,25 +18,6 @@ const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 const WEB_ORIGIN = "http://localhost:3000";
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -221,7 +203,7 @@ test("Fase 4.5: conservación, lote al producir, congelar, descongelar, merma y 
   await expect(conservation.getByRole("row", { name: /^Descongelado/ })).toContainText("12 horas");
 
   // Producir 100 kg desde la pantalla: la revisión anuncia el lote fresco.
-  await openSection(page, "Órdenes");
+  await openSection(page, "Órdenes de producción");
   await expect(
     page.getByRole("heading", { level: 1, name: "Órdenes de producción" }),
   ).toBeVisible();
@@ -376,7 +358,7 @@ test("Fase 4.5: lote de vida corta en Próximos a vencer y fuera de la disponibi
   await configureConservation(page, world.productId, [["Fresco", "2", "horas", true]]);
   const lot = await world.produce("30");
 
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await page.getByRole("link", { name: "Próximos a vencer" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Próximos a vencer" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(lot.code);

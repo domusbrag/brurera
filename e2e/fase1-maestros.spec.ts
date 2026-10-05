@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openSection, selectByText as pick } from "./support";
 
 /*
  * Flujo completo de Fase 1 (19 pasos) contra la aplicación construida y la base
@@ -8,17 +9,9 @@ import { expect, test, type Page } from "@playwright/test";
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
 /** Elige en un select la opción cuyo texto contiene `text`. */
 async function selectByText(page: Page, label: string, text: string) {
-  const select = page.getByRole("combobox", { name: label });
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
+  await pick(page.getByRole("combobox", { name: label }), text);
 }
 
 test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, testInfo) => {

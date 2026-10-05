@@ -22,9 +22,10 @@ import {
 } from "@bakery/shared";
 import { D } from "@bakery/domain";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
 import { isPositive, toDecimal } from "@/lib/decimal-input";
+import { describeError, localizeNumbers } from "@/lib/errors";
 import { formatDateTime, formatMoney, formatQuantity, formatUnitCost } from "@/lib/format";
 import { MasterList } from "../masters/master-list";
 import {
@@ -211,9 +212,10 @@ export function SaleDetail({ id }: { id: string }) {
     <div className="page">
       <PageHeader
         breadcrumb={{ href: SALES_BASE, label: "Ventas" }}
-        title={
+        title={`Venta ${data.code}`}
+        status={
           <>
-            Venta {data.code} <SaleStatusBadge status={data.status} />{" "}
+            <SaleStatusBadge status={data.status} />
             {data.status === "POSTED" && <PaymentStatusBadge status={data.paymentStatus} />}
           </>
         }
@@ -230,6 +232,7 @@ export function SaleDetail({ id }: { id: string }) {
             )}
             {a.canRegisterPayment && new D(pending).gt(0) && (
               <PaymentDialog
+                primary
                 label="Registrar cobro"
                 title={`Cobro de la venta ${data.code}`}
                 endpoint={`/api/sales/${id}/payments`}
@@ -243,12 +246,20 @@ export function SaleDetail({ id }: { id: string }) {
               />
             )}
             {a.canCancel && <CancelSale sale={data} onDone={replace} />}
+            {data.status === "POSTED" && can(P.SALES_CREATE) && (
+              <Link
+                className={`button ${new D(pending).gt(0) && a.canRegisterPayment ? "" : "button--primary"}`}
+                href={`${SALES_BASE}/nueva`}
+              >
+                Otra venta
+              </Link>
+            )}
           </>
         }
       />
       <Warnings warnings={warnings} />
       {data.status === "DRAFT" && (
-        <p className="notice">
+        <p className="alert alert--info">
           Borrador: todavía no descuenta stock ni genera deuda. Revisá la vista previa y confirmá la
           entrega.
         </p>
@@ -291,7 +302,7 @@ export function SaleDetail({ id }: { id: string }) {
           ]}
         />
         {data.amounts && (
-          <dl className="cost-summary" aria-label="Totales">
+          <dl className="metrics" aria-label="Totales">
             <div>
               <dt>Total</dt>
               <dd data-testid="sale-total">{formatMoney(data.amounts.total, currency)}</dd>
@@ -308,7 +319,7 @@ export function SaleDetail({ id }: { id: string }) {
                   <dt>Cobrado</dt>
                   <dd>{formatMoney(data.amounts.paid, currency)}</dd>
                 </div>
-                <div>
+                <div className={new D(data.amounts.pending).gt(0) ? "metric--warning" : ""}>
                   <dt>Pendiente</dt>
                   <dd data-testid="sale-pending">{formatMoney(data.amounts.pending, currency)}</dd>
                 </div>
@@ -489,7 +500,9 @@ function SalePayments({ sale, tz }: { sale: SaleDetailDto; tz: string }) {
             <tbody>
               {payments.map((p) => (
                 <tr key={`${p.paymentId}-${p.appliedAt}`}>
-                  <td className="code">{p.code}</td>
+                  <td>
+                    <span className="code">{p.code}</span>
+                  </td>
                   <td>{formatDateTime(p.appliedAt, tz)}</td>
                   <td>
                     {APPLICATION_ORIGIN_LABELS[p.origin]}
@@ -510,7 +523,7 @@ function SalePayments({ sale, tz }: { sale: SaleDetailDto; tz: string }) {
 /** Vista previa de la entrega: qué lotes salen, costo y margen, señas, crédito y avisos. */
 function SalePreview({ id, version, sale }: { id: string; version: number; sale: SaleDetailDto }) {
   const { data, error } = useResource<SalePreviewDto>(`/api/sales/${id}/preview?v=${version}`);
-  if (error) return <p className="notice">{error.message}</p>;
+  if (error) return <ErrorState error={error} />;
   if (!data) return <Loading />;
   return <PreviewView preview={data} sale={sale} />;
 }
@@ -533,7 +546,7 @@ export function PreviewView({ preview, sale }: { preview: SalePreviewDto; sale: 
           <strong>No se puede confirmar</strong>
           <ul>
             {blocking.map((i) => (
-              <li key={`${i.code}-${i.message}`}>{i.message}</li>
+              <li key={`${i.code}-${i.message}`}>{localizeNumbers(i.message)}</li>
             ))}
           </ul>
         </div>
@@ -542,7 +555,7 @@ export function PreviewView({ preview, sale }: { preview: SalePreviewDto; sale: 
         <div className="alert alert--warn" role="status" data-testid="preview-warnings">
           <ul>
             {warnings.map((i) => (
-              <li key={`${i.code}-${i.message}`}>{i.message}</li>
+              <li key={`${i.code}-${i.message}`}>{localizeNumbers(i.message)}</li>
             ))}
           </ul>
         </div>
@@ -608,7 +621,7 @@ export function PreviewView({ preview, sale }: { preview: SalePreviewDto; sale: 
           </tbody>
         </table>
       </div>
-      <dl className="cost-summary" aria-label="Resumen de la entrega">
+      <dl className="metrics" aria-label="Resumen de la entrega">
         {preview.total !== null && (
           <div>
             <dt>Total de la venta</dt>
@@ -673,8 +686,11 @@ function PostSale({
 }) {
   const can = useCan();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   const [operationId, renew] = useOperationId();
-  const [collect, setCollect] = useState(false);
+  // Consumidor final paga en el momento; un cliente con cuenta, en general, no.
+  const [collect, setCollect] = useState(sale.customer.walkIn);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [reference, setReference] = useState("");
@@ -714,7 +730,7 @@ function PostSale({
       dialogRef.current?.close();
       onDone(result);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo confirmar la venta.");
+      setError(err instanceof ApiError ? describeError(err) : "No se pudo confirmar la venta.");
     } finally {
       setPending(false);
     }
@@ -724,6 +740,7 @@ function PostSale({
     <>
       <button
         type="button"
+        ref={openerRef}
         className="button button--primary"
         disabled={preview ? !preview.canPost : false}
         title={preview && !preview.canPost ? "Revisá los avisos de la vista previa" : undefined}
@@ -735,8 +752,13 @@ function PostSale({
       >
         Confirmar entrega y venta
       </button>
-      <dialog ref={dialogRef} className="dialog" aria-labelledby="post-sale-title">
-        <h2 id="post-sale-title">¿Confirmar la entrega y la venta {sale.code}?</h2>
+      <dialog
+        ref={dialogRef}
+        className="dialog"
+        aria-labelledby={titleId}
+        onClose={() => openerRef.current?.focus()}
+      >
+        <h2 id={titleId}>¿Confirmar la entrega y la venta {sale.code}?</h2>
         <div className="muted">
           Se descuentan del stock los lotes de la vista previa, se registra su costo material real y
           la deuda del cliente
@@ -749,7 +771,7 @@ function PostSale({
           .filter((i) => !i.blocking)
           .map((i) => (
             <p key={i.code} className="alert alert--warn">
-              {i.message}
+              {localizeNumbers(i.message)}
             </p>
           ))}
         {canCollect && due && new D(due).gt(0) && (
@@ -809,19 +831,20 @@ function PostSale({
         <div className="form__footer">
           <button
             type="button"
-            className="button button--primary"
-            onClick={confirm}
-            disabled={pending}
-          >
-            {pending ? "Confirmando…" : "Confirmar entrega y venta"}
-          </button>
-          <button
-            type="button"
             className="button"
             onClick={() => dialogRef.current?.close()}
             disabled={pending}
           >
             Volver
+          </button>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={confirm}
+            disabled={pending}
+            aria-busy={pending || undefined}
+          >
+            {pending ? "Confirmando…" : "Confirmar entrega y venta"}
           </button>
         </div>
       </dialog>

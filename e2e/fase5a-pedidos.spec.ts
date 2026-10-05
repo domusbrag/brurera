@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { openSection, selectByText, summaryValue } from "./support";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 /*
@@ -22,25 +23,6 @@ const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 const WEB_ORIGIN = "http://localhost:3000";
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -365,7 +347,7 @@ test("Fase 5A: alta con vista previa, confirmar, producir desde la necesidad, co
   await expect(summaryValue(stock, "Disponible ahora")).toHaveText("0 kg");
 
   // Necesidades: producción y materia prima del pedido.
-  await openSection(page, "Necesidades");
+  await openSection(page, "Planificación");
   await expect(page.getByRole("heading", { level: 1, name: "Necesidades" })).toBeVisible();
   const need = page.getByRole("row").filter({ hasText: world.productName });
   await expect(need).toContainText("200 kg");
