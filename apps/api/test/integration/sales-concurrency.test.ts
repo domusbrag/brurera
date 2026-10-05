@@ -354,10 +354,10 @@ describe("idempotencia de imputaciones manuales y ajustes de cuenta", () => {
 
   beforeAll(async () => {
     w = await buildOrderWorld(api, " C7");
-    for (let i = 0; i < 3; i++) await produce(api, w, "100");
+    for (let i = 0; i < 4; i++) await produce(api, w, "100");
   });
 
-  it("C1/C5 imputación: reintento idéntico = replay; otro monto u otra venta = OPERATION_ID_REUSED", async () => {
+  it("C1/C5 imputación: 5 envíos secuenciales = una imputación de $20.000; otro monto u otra venta = OPERATION_ID_REUSED", async () => {
     const { sale, paymentId } = await saleAndPayment();
     const other = await postedSale(api, w, [{ productId: w.panFrances, quantity: "1" }], {
       customerId: w.customerId,
@@ -367,9 +367,12 @@ describe("idempotencia de imputaciones manuales y ajustes de cuenta", () => {
     const first = await applyTo(api, paymentId, sale.id, "20000", opId);
     expect(first.statusCode).toBe(201);
     expect(first.json().replayed).toBe(false);
-    const again = await applyTo(api, paymentId, sale.id, "20000", opId);
-    expect(again.statusCode).toBe(200);
-    expect(again.json().replayed).toBe(true);
+    // Cuatro reintentos secuenciales más (5 envíos en total): todos replay.
+    for (let i = 0; i < 4; i++) {
+      const again = await applyTo(api, paymentId, sale.id, "20000", opId);
+      expect(again.statusCode).toBe(200);
+      expect(again.json().replayed).toBe(true);
+    }
     const before = await count("customer_payment_applications");
     for (const reuse of [
       applyTo(api, paymentId, sale.id, "30000", opId),
@@ -399,37 +402,8 @@ describe("idempotencia de imputaciones manuales y ajustes de cuenta", () => {
     await invariants();
   });
 
-  it("C3/C5 ajuste: reintento idéntico = replay; otro monto, tipo o motivo = OPERATION_ID_REUSED", async () => {
-    const body = { direction: "CREDIT", amount: "20000", reason: "Bonificación" } as const;
-    const opId = randomUUID();
-    const audits = await auditCount("CUSTOMER_ACCOUNT_ADJUSTED");
-    const start = dec((await accountOf(api, w.customerId)).balance)!;
-    const first = await adjust(api, w.customerId, body, opId);
-    expect(first.statusCode).toBe(201);
-    expect(first.json().replayed).toBe(false);
-    // Las notas no son parte de la huella: un reintento con otra nota sigue siendo replay.
-    const again = await adjust(api, w.customerId, { ...body, notes: "reintento" }, opId);
-    expect(again.statusCode).toBe(200);
-    expect(again.json().replayed).toBe(true);
-    const before = await count("customer_account_movements");
-    for (const changed of [
-      { ...body, amount: "30000" },
-      { ...body, direction: "DEBIT" as const },
-      { ...body, reason: "Otro motivo" },
-    ]) {
-      const res = await adjust(api, w.customerId, changed, opId);
-      expect(res.statusCode).toBe(409);
-      expect(res.json().error.code).toBe("OPERATION_ID_REUSED");
-    }
-    const otherCustomer = await adjust(api, w.otherCustomerId, body, opId);
-    expect(otherCustomer.statusCode).toBe(409);
-    expect(await count("customer_account_movements")).toBe(before);
-    expect(await auditCount("CUSTOMER_ACCOUNT_ADJUSTED")).toBe(audits + 1);
-    expect(Number(dec((await accountOf(api, w.customerId)).balance)) - Number(start)).toBe(-20000);
-    await invariants();
-  });
-
-  it("C4 ajuste: saldo $100.000 y 5 créditos simultáneos de $20.000 con el mismo id = saldo $80.000", async () => {
+  /** Cliente nuevo que debe $100.000 (venta de 80 kg a $1.250). */
+  async function customerOwing100k() {
     const c = await ok(
       api.post("/api/customers", {
         type: "RETAILER",
@@ -441,11 +415,51 @@ describe("idempotencia de imputaciones manuales y ajustes de cuenta", () => {
       customerId: c.id,
     });
     expect(dec((await accountOf(api, c.id)).balance)).toBe("100000");
+    return c.id as string;
+  }
+
+  it("C3/C5 ajuste: 5 envíos secuenciales = un movimiento ($100.000 → $80.000); otra huella = OPERATION_ID_REUSED", async () => {
+    const customerId = await customerOwing100k();
+    const body = { direction: "CREDIT", amount: "20000", reason: "Bonificación" } as const;
+    const opId = randomUUID();
+    const audits = await auditCount("CUSTOMER_ACCOUNT_ADJUSTED");
+    const first = await adjust(api, customerId, body, opId);
+    expect(first.statusCode).toBe(201);
+    expect(first.json().replayed).toBe(false);
+    for (let i = 0; i < 4; i++) {
+      // Las notas no son parte de la huella: un reintento con otra nota sigue siendo replay.
+      const again = await adjust(api, customerId, { ...body, notes: `reintento ${i}` }, opId);
+      expect(again.statusCode).toBe(200);
+      expect(again.json().replayed).toBe(true);
+    }
+    expect(dec((await accountOf(api, customerId)).balance)).toBe("80000");
+    const before = await count("customer_account_movements");
+    for (const changed of [
+      { ...body, amount: "30000" },
+      { ...body, direction: "DEBIT" as const },
+      { ...body, reason: "Otro motivo" },
+    ]) {
+      const res = await adjust(api, customerId, changed, opId);
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe("OPERATION_ID_REUSED");
+    }
+    const otherCustomer = await adjust(api, w.otherCustomerId, body, opId);
+    expect(otherCustomer.statusCode).toBe(409);
+    expect(await count("customer_account_movements")).toBe(before);
+    expect(await auditCount("CUSTOMER_ACCOUNT_ADJUSTED")).toBe(audits + 1);
+    expect(dec((await accountOf(api, customerId)).balance)).toBe("80000");
+    await invariants();
+  });
+
+  it("C4 ajuste: saldo $100.000 y 5 créditos simultáneos de $20.000 con el mismo id = saldo $80.000", async () => {
+    const customerId = await customerOwing100k();
     const opId = randomUUID();
     const body = { direction: "CREDIT", amount: "20000", reason: "Bonificación" } as const;
-    const results = await Promise.all([1, 2, 3, 4, 5].map(() => adjust(api, c.id, body, opId)));
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map(() => adjust(api, customerId, body, opId)),
+    );
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 200, 200, 200, 201]);
-    const account = await accountOf(api, c.id);
+    const account = await accountOf(api, customerId);
     expect(dec(account.balance)).toBe("80000");
     expect(
       account.movements.items.filter((m: { type: string }) => m.type === "ADJUSTMENT_CREDIT"),

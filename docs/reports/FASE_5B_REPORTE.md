@@ -10,7 +10,7 @@ FASE_5B_CLOSURE_HARDENING = PASS
 FASE_5B_STATUS = COMPLETE_PENDING_HUMAN_ACCEPTANCE
 ```
 
-Todos los gates de §117 y los de cierre (C1–C14, ver [Cierre](#cierre-idempotencia-de-imputaciones-y-ajustes))
+Todos los gates de §117 y los de cierre (C1–C18, ver [Cierre](#cierre-idempotencia-de-imputaciones-y-ajustes))
 están en verde, incluido el CI remoto. No empezó UX/DESIGN OPTIMIZATION.
 
 ## Base commit
@@ -551,24 +551,36 @@ de cuenta sólo estaban protegidos por el botón deshabilitado de la UI.
 - De paso se agregó `app/favicon.ico` (el mismo ícono): el navegador a veces pedía
   `/favicon.ico`, el 404 aparecía como error de consola y hacía fallar el E2E de maestros.
 
-| Gate                              | Estado | Evidencia (`sales-concurrency.test.ts`, salvo indicación)                                                             |
-| --------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| C1 PaymentApplication retry       | ✅     | `201` y luego `200 replayed`; una aplicación, una auditoría `PAYMENT_APPLIED`                                         |
-| C2 PaymentApplication concurrency | ✅     | cobro de $50.000, venta de $50.000, 5 × $20.000 con el mismo id: `[200×4, 201]`, cobrado $20.000, sin imputar $30.000 |
-| C3 AccountAdjustment retry        | ✅     | `201` y luego `200 replayed` (también con otra nota); un movimiento, una auditoría                                    |
-| C4 AccountAdjustment concurrency  | ✅     | saldo $100.000, 5 créditos de $20.000 con el mismo id: saldo $80.000, un solo `ADJUSTMENT_CREDIT`                     |
-| C5 OPERATION_ID_REUSED            | ✅     | imputación con otro monto u otra venta; ajuste con otro monto, tipo, motivo o cliente: `409`, sin filas nuevas        |
-| C6 Rollback                       | ✅     | falla inyectada después de la fila: `500`, nada persiste, el mismo id funciona después                                |
-| C7 Tenancy                        | ✅     | empresa B usa el mismo id para su ajuste (`201`, no replay); B no imputa ni ajusta en A (`422` / `404`)               |
-| C8 Ledger reconciliation          | ✅     | `salesProblems` + `reconciliationProblems` vacíos después de cada test                                                |
-| C9 Lint                           | ✅     | `pnpm lint`                                                                                                           |
-| C10 Typecheck                     | ✅     | `pnpm typecheck`                                                                                                      |
-| C11 Build                         | ✅     | `pnpm build`                                                                                                          |
-| C12 E2E existentes                | ✅     | todas las fases, desktop y tablet                                                                                     |
-| C13 Worktree clean                | ✅     |                                                                                                                       |
-| C14 Remote CI                     | ✅     | workflow `verify` verde en el PR #8                                                                                   |
+Pedido final de cierre (C1–C18). Lo implementado no cambió respecto de la primera versión del
+cierre; se ampliaron las pruebas: 5 envíos secuenciales en C1 y C3, conciliación cobro / venta en
+C9 y una imputación histórica en la prueba de migración (C11).
 
-Regresión: dominio 170, shared 42, database 5, web 22 y API 396 (antes 389), todos en verde.
+| Gate                                  | Estado | Evidencia (`sales-concurrency.test.ts`, salvo indicación)                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 PaymentApplication retry           | ✅     | cobro $50.000, venta $50.000, imputar $20.000 cinco veces seguidas con el mismo id: `201` + 4 × `200 replayed`; cobrado $20.000, una aplicación, una auditoría `PAYMENT_APPLIED`                                                                                                                                |
+| C2 PaymentApplication concurrency     | ✅     | 5 requests simultáneos con el mismo id: `[200×4, 201]` (ningún error de integridad expuesto), cobrado $20.000, sin imputar $30.000                                                                                                                                                                              |
+| C3 AccountAdjustment retry            | ✅     | saldo $100.000, crédito de $20.000 cinco veces seguidas con el mismo id (también con otra nota): saldo $80.000, un movimiento, una auditoría                                                                                                                                                                    |
+| C4 AccountAdjustment concurrency      | ✅     | saldo $100.000, 5 créditos simultáneos de $20.000 con el mismo id: `[200×4, 201]`, saldo $80.000, un solo `ADJUSTMENT_CREDIT`                                                                                                                                                                                   |
+| C5 OPERATION_ID_REUSED                | ✅     | imputación con $30.000 u otra venta; ajuste con $30.000, otro tipo, motivo o cliente: `409`, sin aplicación, movimiento, cambio de saldo ni auditoría                                                                                                                                                           |
+| C6 Rollback                           | ✅     | falla inyectada después de insertar la fila con el id (en la auditoría): `500`, nada persiste, el mismo id funciona después                                                                                                                                                                                     |
+| C7 Tenancy                            | ✅     | empresa B usa el mismo id para su propio ajuste (`201`, no replay); B no imputa ni ajusta en A (`422` / `404`) y A no cambia                                                                                                                                                                                    |
+| C8 Ledger reconciliation              | ✅     | después de cada test: saldo = Σ movimientos = `balance_after` del último (`salesProblems`)                                                                                                                                                                                                                      |
+| C9 Payment/application reconciliation | ✅     | después de cada test: cobrado de cada venta = Σ aplicaciones; Σ aplicaciones ≤ monto del cobro y ≤ total de la venta (además de los triggers de capacidad y el CHECK `paid_amount ≤ total`)                                                                                                                     |
+| C10 Migración DB limpia               | ✅     | la base de test se crea y migra desde cero (0000–0011) en cada corrida; `database.test.ts`                                                                                                                                                                                                                      |
+| C11 Migración desde Fase 5B           | ✅     | `migration-fase4.test.ts`: base en 0010 con cobro, crédito, ajuste, venta registrada y una imputación → 0011 deja saldos, movimientos, cobros, imputaciones y ventas idénticos, `operation_id` nulo en la historia; la base rechaza un segundo ajuste con el mismo id y un id en un movimiento que no es ajuste |
+| C12 Lint                              | ✅     | `pnpm lint`                                                                                                                                                                                                                                                                                                     |
+| C13 Typecheck                         | ✅     | `pnpm typecheck`                                                                                                                                                                                                                                                                                                |
+| C14 Build                             | ✅     | `pnpm build`                                                                                                                                                                                                                                                                                                    |
+| C15 E2E                               | ✅     | `e2e/fase5b-ventas.spec.ts`, desktop y tablet                                                                                                                                                                                                                                                                   |
+| C16 Suite completa                    | ✅     | dominio, shared, database, web y API; E2E de todas las fases (Playwright completo, desktop y tablet)                                                                                                                                                                                                            |
+| C17 Worktree clean                    | ✅     |                                                                                                                                                                                                                                                                                                                 |
+| C18 Remote CI                         | ✅     | workflow `verify` (lint, typecheck, migraciones, seed, tests, build y E2E) verde en el PR #8                                                                                                                                                                                                                    |
+
+Regresión: dominio 170, shared 42, database 5, web 22 y API 396 (antes del cierre 389), todos en
+verde; build y E2E 46/46 en verde. Observación: en una corrida local completa falló una vez el test
+de concurrencia de la Fase 5A «cancelar y replanificar a la vez» (`orders-access.test.ts`, código
+que este cierre no toca); el archivo pasó 6 de 6 veces al repetirlo y el CI remoto quedó verde. Se
+deja anotado, sin corregirlo, porque está fuera del alcance de este cierre.
 
 ## Próximo paso
 

@@ -478,26 +478,59 @@ describe("migración 0011 (cierre de Fase 5B) sobre datos de Fase 5B", () => {
        values ($1, 'COB-0001', $2, 'ON_ACCOUNT', now(), 5000, 'CASH', gen_random_uuid(), now()) returning id`,
       [w.companyId, customerId],
     );
-    const move = async (type: string, signed: string, after: string, paymentId: string | null) => {
+    const move = async (
+      type: string,
+      signed: string,
+      after: string,
+      ref: { paymentId?: string; saleId?: string } = {},
+    ) => {
       const [m] = await w.q<{ id: string }>(
         `insert into customer_account_movements (company_id, customer_id, movement_type, signed_amount,
-           balance_after, occurred_at, payment_id, reason)
-         values ($1, $2, $3, $4, $5, now(), $6, $7) returning id`,
-        [w.companyId, customerId, type, signed, after, paymentId, paymentId ? null : "Corrección"],
+           balance_after, occurred_at, payment_id, sale_id, reason)
+         values ($1, $2, $3, $4, $5, now(), $6, $7, $8) returning id`,
+        [
+          w.companyId,
+          customerId,
+          type,
+          signed,
+          after,
+          ref.paymentId ?? null,
+          ref.saleId ?? null,
+          type.startsWith("ADJUSTMENT") ? "Corrección" : null,
+        ],
       );
       await w.q(
         "update customer_account_balances set balance = $3, last_movement_id = $4 where company_id = $1 and customer_id = $2",
         [w.companyId, customerId, after, m!.id],
       );
     };
-    await move("PAYMENT_CREDIT", "-5000", "-5000", payment!.id);
-    await move("ADJUSTMENT_DEBIT", "1000", "-4000", null);
+    await move("PAYMENT_CREDIT", "-5000", "-5000", { paymentId: payment!.id });
+    await move("ADJUSTMENT_DEBIT", "1000", "-4000");
+    // Una venta registrada de $3.000 con $2.000 imputados del cobro (imputación histórica).
+    const [sale] = await w.q<{ id: string }>(
+      `insert into sales (company_id, internal_code, customer_id, warehouse_id, status, sale_date,
+         subtotal, total, material_cost_total, gross_margin_amount, currency, posted_at)
+       values ($1, 'VTA-0001', $2, $3, 'POSTED', now(), 3000, 3000, 0, 3000, 'ARS', now()) returning id`,
+      [w.companyId, customerId, w.warehouse],
+    );
+    await move("SALE_DEBIT", "3000", "-1000", { saleId: sale!.id });
+    await w.q(
+      `insert into customer_payment_applications (company_id, payment_id, sale_id, customer_id, amount, origin)
+       values ($1, $2, $3, $4, 2000, 'MANUAL')`,
+      [w.companyId, payment!.id, sale!.id, customerId],
+    );
+    await w.q(
+      "update sales set paid_amount = 2000, payment_status = 'PARTIALLY_PAID' where id = $1",
+      [sale!.id],
+    );
     const state = () =>
       w.q(
         `select (select json_agg(m order by sequence) from (select id, sequence, movement_type, signed_amount,
            balance_after, payment_id, reason from customer_account_movements) m) as movements,
          (select json_agg(b) from (select balance, last_movement_id from customer_account_balances) b) as balances,
-         (select json_agg(p) from (select id, amount, operation_id from customer_payments) p) as payments`,
+         (select json_agg(p) from (select id, amount, operation_id from customer_payments) p) as payments,
+         (select json_agg(a) from (select id, payment_id, sale_id, amount, origin from customer_payment_applications) a) as applications,
+         (select json_agg(s) from (select id, total, paid_amount, payment_status from sales) s) as sales`,
       );
     const before = await state();
 
@@ -506,9 +539,10 @@ describe("migración 0011 (cierre de Fase 5B) sobre datos de Fase 5B", () => {
     expect(await applied(w)).toBe(12);
     expect(await state()).toEqual(before);
     const [nulls] = await w.q<{ n: number }>(
-      "select count(*)::int as n from customer_account_movements where operation_id is not null",
+      `select (select count(*) from customer_account_movements where operation_id is not null)
+            + (select count(*) from customer_payment_applications where operation_id is not null) as n`,
     );
-    expect(nulls!.n).toBe(0);
+    expect(Number(nulls!.n)).toBe(0);
     // El mismo intento no puede producir dos ajustes (índice único por empresa)…
     const op = "00000000-0000-4000-8000-000000000001";
     const adjustment = (after: string) =>
@@ -518,8 +552,8 @@ describe("migración 0011 (cierre de Fase 5B) sobre datos de Fase 5B", () => {
          values ($1, $2, 'ADJUSTMENT_CREDIT', -100, $3, now(), 'Bonificación', $4)`,
         [w.companyId, customerId, after, op],
       );
-    await adjustment("-4100");
-    await expect(adjustment("-4200")).rejects.toThrow(/customer_account_movements_operation_uq/);
+    await adjustment("-1100");
+    await expect(adjustment("-1200")).rejects.toThrow(/customer_account_movements_operation_uq/);
     // …y sólo los ajustes llevan operation_id (el cobro ya tiene el suyo).
     await expect(
       w.q(

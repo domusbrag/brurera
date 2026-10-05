@@ -162,6 +162,17 @@ export async function salesProblems(db: Database): Promise<string[]> {
       where s.paid_amount <> coalesce((select sum(a.amount) from customer_payment_applications a where a.sale_id = s.id), 0)`,
   );
   await check(
+    "aplicado > total de la venta",
+    sql`select count(*)::int as n from sales s
+      where coalesce((select sum(a.amount) from customer_payment_applications a where a.sale_id = s.id), 0) > s.total`,
+  );
+  await check(
+    "saldo ≠ balance_after del último movimiento",
+    sql`select count(*)::int as n from customer_account_balances b
+      where b.last_movement_id is not null and b.balance <> (select m.balance_after
+        from customer_account_movements m where m.id = b.last_movement_id)`,
+  );
+  await check(
     "aplicado > monto del cobro",
     sql`select count(*)::int as n from customer_payments p
       where p.amount < coalesce((select sum(a.amount) from customer_payment_applications a where a.payment_id = p.id), 0)`,
