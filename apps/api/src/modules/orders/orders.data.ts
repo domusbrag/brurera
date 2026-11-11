@@ -901,7 +901,7 @@ export async function getOrderDetail(
       canDeliver: deliverable && !unpriced && can(P.SALES_CREATE) && can(P.SALES_POST),
       deliverBlockedReason,
       canQuote: unpriced && demand && can(P.ORDERS_UPDATE) && seePrices,
-      canRegisterAdvance: open && can(P.ORDER_ADVANCES_CREATE),
+      canRegisterAdvance: open && order.status !== "DRAFT" && can(P.ORDER_ADVANCES_CREATE),
     },
   };
 }

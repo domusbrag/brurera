@@ -85,6 +85,22 @@ export async function purchaseRoutes(app: FastifyInstance, { db }: { db: Databas
           ),
         ),
   );
+  // Recibir en un paso (crear + confirmar atómico): lo usa la pantalla de recepción.
+  app.post(
+    "/purchases/:id/receipts/posted",
+    { preHandler: requirePermission(P.PURCHASES_RECEIVE) },
+    async (req, reply) =>
+      reply
+        .status(201)
+        .send(
+          await receipts.receiveNow(
+            db,
+            operationContext(req),
+            purchaseId(req.params),
+            parseInput(createReceiptSchema, req.body),
+          ),
+        ),
+  );
   app.get("/purchase-receipts/:id", { preHandler: requirePermission(P.PURCHASES_READ) }, (req) =>
     receipts.getReceipt(db, operationContext(req), receiptId(req.params)),
   );

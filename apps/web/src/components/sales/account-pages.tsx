@@ -6,6 +6,7 @@ import {
   PERMISSIONS as P,
   type CustomerAccountDto,
   type ReceivableDto,
+  type ReceivablesSummaryDto,
 } from "@bakery/shared";
 import { D } from "@bakery/domain";
 import Link from "next/link";
@@ -62,12 +63,51 @@ function dateOnly(value: string, tz: string): string {
   return value.length > 10 ? formatDateTime(value, tz).slice(0, 10) : formatDate(value);
 }
 
+/** Totales de la empresa: cuánto te deben, a cuántos clientes y desde cuándo. */
+function ReceivablesSummary() {
+  const tz = useCurrentUser().company.timezone;
+  const { data } = useResource<ReceivablesSummaryDto>("/api/customer-accounts/summary");
+  if (!data) return null;
+  return (
+    <dl className="metrics" aria-label="Resumen de cuentas a cobrar">
+      <div className={`metric ${data.debtors > 0 ? "metric--warning" : ""}`}>
+        <dt className="metric__label">Te deben</dt>
+        <dd className="metric__value" data-testid="receivables-total">
+          {formatMoney(data.totalDebt, data.currency)}
+        </dd>
+        <dd className="metric__note">
+          {data.debtors === 1 ? "1 cliente" : `${data.debtors} clientes`}
+        </dd>
+      </div>
+      <div className="metric">
+        <dt className="metric__label">Venta sin cobrar más antigua</dt>
+        <dd className="metric__value">
+          {data.oldestPendingSaleDate ? dateOnly(data.oldestPendingSaleDate, tz) : "—"}
+        </dd>
+      </div>
+      <div className={`metric ${data.overLimit > 0 ? "metric--danger" : ""}`}>
+        <dt className="metric__label">Límite de crédito superado</dt>
+        <dd className="metric__value">{data.overLimit}</dd>
+        <dd className="metric__note">clientes</dd>
+      </div>
+      <div className="metric">
+        <dt className="metric__label">Crédito a favor de clientes</dt>
+        <dd className="metric__value">{formatMoney(data.totalCredit, data.currency)}</dd>
+        <dd className="metric__note">
+          {data.creditors === 1 ? "1 cliente" : `${data.creditors} clientes`}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
 export function ReceivableList() {
   const user = useCurrentUser();
   const currency = user.company.currencyCode;
   const tz = user.company.timezone;
   return (
     <MasterList<ReceivableDto>
+      headerExtra={<ReceivablesSummary />}
       title="Cuentas a cobrar"
       subtitle="Quién te debe y quién tiene crédito a favor. Entrá al cliente para registrar un cobro o imputarlo a sus ventas."
       endpoint="/api/customer-accounts"
@@ -341,6 +381,16 @@ export function CustomerAccount({ customerId }: { customerId: string }) {
             Imputar es indicar qué venta paga cada cobro. No cambia el saldo: sólo marca la venta
             como cobrada.
           </p>
+          {data.canRegisterPayment && data.pendingSales.length > 0 && (
+            <ApplyOldest
+              key={stamp}
+              customerId={customerId}
+              payments={data.unappliedPayments}
+              sales={data.pendingSales}
+              currency={currency}
+              onDone={() => refresh()}
+            />
+          )}
           <div className="table-wrap">
             <table className="table" aria-label="Cobros sin imputar">
               <thead>
@@ -471,6 +521,66 @@ export function CustomerAccount({ customerId }: { customerId: string }) {
       </section>
       <AuditHistory entityType="customer" entityId={customerId} version={version} />
     </div>
+  );
+}
+
+/**
+ * Imputa todo el crédito sin imputar a las ventas pendientes, la más vieja
+ * primero (FIFO). Muestra antes qué ventas quedan cobradas.
+ */
+function ApplyOldest({
+  customerId,
+  payments,
+  sales,
+  currency,
+  onDone,
+}: {
+  customerId: string;
+  payments: CustomerAccountDto["unappliedPayments"];
+  sales: CustomerAccountDto["pendingSales"];
+  currency: string;
+  onDone: () => void;
+}) {
+  const [operationId, renew] = useOperationId();
+  // Vista previa con la misma regla que la API: ventas por fecha, el crédito se agota en orden.
+  let credit = payments.reduce((sum, p) => sum.plus(p.unapplied), new D(0));
+  const plan: { code: string; amount: string; full: boolean }[] = [];
+  for (const s of [...sales].sort((a, b) => a.saleDate.localeCompare(b.saleDate))) {
+    if (!credit.gt(0)) break;
+    const amount = D.min(credit, new D(s.pending));
+    plan.push({ code: s.code, amount: amount.toFixed(2), full: amount.eq(s.pending) });
+    credit = credit.minus(amount);
+  }
+  if (plan.length === 0) return null;
+  return (
+    <ConfirmAction
+      label="Imputar a las ventas más viejas"
+      title="Imputar el crédito a las ventas más viejas"
+      message="Se aplica todo el crédito sin imputar, empezando por la venta más antigua. No cambia el saldo de la cuenta."
+      confirmLabel="Imputar"
+      onConfirm={async () => {
+        await apiFetch(`/api/customers/${customerId}/account/apply-oldest`, {
+          method: "POST",
+          body: { operationId },
+        });
+        renew();
+        onDone();
+      }}
+    >
+      <ul>
+        {plan.map((p) => (
+          <li key={p.code}>
+            <span className="code">{p.code}</span>: {formatMoney(p.amount, currency)}{" "}
+            {p.full ? "(queda cobrada)" : "(queda cobrada en parte)"}
+          </li>
+        ))}
+      </ul>
+      {credit.gt(0) && (
+        <p className="muted small">
+          Sobran {formatMoney(credit.toFixed(2), currency)}: quedan como crédito a favor.
+        </p>
+      )}
+    </ConfirmAction>
   );
 }
 

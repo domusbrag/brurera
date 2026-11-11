@@ -37,6 +37,7 @@ import { MasterList } from "../masters/master-list";
 import { Details, EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
 import { useCan, useCurrentUser } from "../user-context";
 import { PresentationsPanel } from "./presentations";
+import { BuyShortagesPanel, purchaseDraftHref } from "../purchases/buy-shortages";
 
 /*
  * Inventario de materias primas (Fase 3) y piezas comunes con el stock de
@@ -403,19 +404,35 @@ export function MovementList() {
 
 export function LowStockList() {
   const can = useCan();
+  // Para "Armar compras": todos los faltantes (hasta 100), no sólo la página visible.
+  const { data: all } = useResource<Page<LowStockItemDto>>(
+    can(P.PURCHASES_CREATE) ? "/api/inventory/low-stock?pageSize=100" : null,
+  );
   return (
     <MasterList<LowStockItemDto>
       title="Stock bajo mínimo"
-      subtitle="Materias primas cuyo stock total está por debajo del mínimo configurado."
+      subtitle="Materias primas cuyo stock total está por debajo del mínimo configurado. Lo que ya está pedido al proveedor figura como “En camino”."
       endpoint="/api/inventory/low-stock"
       basePath={`${STOCK_BASE}/bajo-minimo`}
       searchPlaceholder="Buscar materia prima"
       emptyText="Ninguna materia prima está por debajo de su mínimo."
       hideStatusFilter
       headerExtra={
-        <div className="toolbar">
-          <StockTabs />
-        </div>
+        <>
+          <div className="toolbar">
+            <StockTabs />
+          </div>
+          {all && (
+            <BuyShortagesPanel
+              complete={all.total <= all.items.length}
+              items={all.items.map((i) => ({
+                rawMaterialId: i.rawMaterial.id,
+                toOrder: i.toOrder,
+                supplier: i.preferredSupplier,
+              }))}
+            />
+          )}
+        </>
       }
       columns={[
         {
@@ -430,11 +447,31 @@ export function LowStockList() {
         {
           header: "Mínimo",
           cell: (i) => formatQuantity(i.minimumStock, i.baseUnit.symbol),
-          className: "num",
+          className: "num hide-md",
         },
         {
           header: "Faltante",
-          cell: (i) => <strong>{formatQuantity(i.shortage, i.baseUnit.symbol)}</strong>,
+          cell: (i) => formatQuantity(i.shortage, i.baseUnit.symbol),
+          className: "num hide-md",
+        },
+        {
+          header: "En camino",
+          cell: (i) =>
+            Number(i.onOrder) > 0 ? (
+              formatQuantity(i.onOrder, i.baseUnit.symbol)
+            ) : (
+              <span className="muted">—</span>
+            ),
+          className: "num",
+        },
+        {
+          header: "Falta pedir",
+          cell: (i) =>
+            Number(i.toOrder) > 0 ? (
+              <strong>{formatQuantity(i.toOrder, i.baseUnit.symbol)}</strong>
+            ) : (
+              <span className="muted">Ya pedido</span>
+            ),
           className: "num",
         },
         { header: "Estado", cell: (i) => <StockStatusBadge status={i.status} /> },
@@ -447,17 +484,21 @@ export function LowStockList() {
           ? [
               {
                 header: "Acción",
-                cell: (i: LowStockItemDto) => (
-                  <Link
-                    className="button button--small"
-                    href={listPath("/compras/nueva", {
-                      rawMaterialId: i.rawMaterial.id,
-                      supplierId: i.preferredSupplier?.id,
-                    })}
-                  >
-                    Crear compra
-                  </Link>
-                ),
+                cell: (i: LowStockItemDto) =>
+                  Number(i.toOrder) > 0 ? (
+                    <Link
+                      className="button button--small"
+                      href={purchaseDraftHref(i.preferredSupplier?.id, [
+                        {
+                          rawMaterialId: i.rawMaterial.id,
+                          toOrder: i.toOrder,
+                          supplier: i.preferredSupplier,
+                        },
+                      ])}
+                    >
+                      Crear compra
+                    </Link>
+                  ) : null,
               },
             ]
           : []),

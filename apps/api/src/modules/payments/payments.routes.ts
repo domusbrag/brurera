@@ -3,6 +3,7 @@ import {
   PERMISSIONS,
   accountAdjustmentSchema,
   accountMovementsQuerySchema,
+  applyOldestSchema,
   applyPaymentSchema,
   onAccountPaymentSchema,
   orderAdvanceSchema,
@@ -81,6 +82,15 @@ export async function paymentRoutes(app: FastifyInstance, { db }: { db: Database
       ),
     ),
   );
+  app.post("/customers/:id/account/apply-oldest", post, async (req, reply) => {
+    const result = await payments.applyOldest(
+      db,
+      operationContext(req),
+      idParam(req.params, "Cliente"),
+      parseInput(applyOldestSchema, req.body),
+    );
+    return reply.status(result.replayed ? 200 : 201).send(result);
+  });
   app.get(
     "/customers/:id/account",
     { preHandler: requirePermission(P.CUSTOMER_ACCOUNTS_READ) },
@@ -107,6 +117,11 @@ export async function paymentRoutes(app: FastifyInstance, { db }: { db: Database
       );
       return reply.status(account.replayed ? 200 : 201).send(account);
     },
+  );
+  app.get(
+    "/customer-accounts/summary",
+    { preHandler: requirePermission(P.CUSTOMER_ACCOUNTS_READ) },
+    (req) => payments.receivablesSummary(db, operationContext(req)),
   );
   app.get(
     "/customer-accounts",

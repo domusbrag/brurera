@@ -57,6 +57,7 @@ import {
   postStockMovement,
 } from "./ledger.js";
 import { qualified } from "../../lib/sql.js";
+import { rawMaterialOnOrder, stillToOrder } from "../purchases/on-order.js";
 
 /*
  * Consultas y operaciones manuales de inventario. Ninguna función escribe un
@@ -522,6 +523,11 @@ export async function listLowStock(
       .leftJoin(rawMaterialInventoryCosts, join)
       .where(where),
   ]);
+  const onOrder = await rawMaterialOnOrder(
+    db,
+    ctx,
+    rows.map((r) => r.id),
+  );
   return toPage(
     rows.map((r) => ({
       id: r.id,
@@ -530,6 +536,8 @@ export async function listLowStock(
       quantity: fixedQty(r.quantity),
       minimumStock: r.minimumStock,
       shortage: shortage(r.quantity, r.minimumStock).toFixed(),
+      onOrder: fixedQty(onOrder.get(r.id) ?? 0),
+      toOrder: fixedQty(stillToOrder(shortage(r.quantity, r.minimumStock), onOrder.get(r.id))),
       status: stockStatus(r.quantity, r.minimumStock),
       preferredSupplier: r.supplier?.id
         ? { id: r.supplier.id, name: r.supplier.trade ?? r.supplier.legal }

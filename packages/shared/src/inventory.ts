@@ -264,6 +264,10 @@ export interface LowStockItemDto {
   quantity: string;
   minimumStock: string;
   shortage: string;
+  /** Pedido al proveedor y todavía no recibido (unidad base). */
+  onOrder: string;
+  /** Faltante menos lo que ya está en camino: lo que todavía hay que pedir. */
+  toOrder: string;
   status: StockStatusDto;
   preferredSupplier: { id: string; name: string } | null;
 }
