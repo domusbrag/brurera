@@ -129,7 +129,11 @@ async function isCodeTaken(tx: Transaction, ctx: OperationContext, code: string)
   return rows.length > 0;
 }
 
-export async function createRawMaterial(db: Database, ctx: OperationContext, input: CreateInput) {
+export async function createRawMaterial(
+  db: Database | Transaction,
+  ctx: OperationContext,
+  input: CreateInput,
+) {
   return db.transaction(async (tx) => {
     await assertReferences(tx, ctx, input);
     const { code: manualCode, ...fields } = input;
@@ -250,7 +254,7 @@ async function assertNotUsedInRecipes(tx: Transaction, ctx: OperationContext, id
  * snapshots de publicación conservan el valor con que se calcularon.
  */
 export async function setReferenceCost(
-  db: Database,
+  db: Database | Transaction,
   ctx: OperationContext,
   id: string,
   input: ReferenceCostInput,

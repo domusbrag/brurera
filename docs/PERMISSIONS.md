@@ -38,6 +38,7 @@ users (identidad global) ──< company_memberships (empresa, empleado?, estado
 | `GET/POST/PATCH /api/suppliers…`, `…/deactivate`, `…/activate` | `suppliers.read` / `.create` / `.update` / `.deactivate` |
 | `GET/POST/PATCH /api/raw-materials…`, `…/deactivate`, `…/activate` | `raw_materials.read` / `.create` / `.update` / `.deactivate` |
 | `GET/POST/PATCH /api/products…`, `…/deactivate`, `…/activate` | `products.read` / `.create` / `.update` / `.deactivate` |
+| `POST /api/product-setup` (alta de producto de corrido) | `products.create`, más según lo que se cargue: `categories.manage` (categoría nueva), `raw_materials.create` (+ `raw_materials.update_cost` si trae costo), `recipes.create` (+ `recipes.publish` si se publica) y `price_lists.manage` (precios en listas) |
 | `GET /api/units[/:id]`, `GET /api/units/convert` | `units.read` |
 | `POST /api/units` · `PATCH /api/units/:id` | `units.manage` |
 | `GET /api/categories[/:id]` · `POST` · `PATCH` | `categories.read` · `categories.manage` |

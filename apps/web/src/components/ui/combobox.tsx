@@ -32,6 +32,7 @@ export function matchOption(option: ComboOption, query: string): boolean {
 }
 
 const MAX_VISIBLE = 50;
+const CREATE_VALUE = "__crear__";
 
 export function Combobox({
   id,
@@ -46,6 +47,8 @@ export function Combobox({
   required,
   emptyText = "Sin coincidencias",
   autoFocus,
+  onCreate,
+  createLabel = (text) => `Crear «${text}»`,
 }: {
   id?: string;
   options: ComboOption[];
@@ -60,6 +63,12 @@ export function Combobox({
   required?: boolean;
   emptyText?: string;
   autoFocus?: boolean;
+  /**
+   * Alta en el momento: con texto escrito que no coincide exactamente con una
+   * opción, ofrece al final «Crear "texto"» y llama a onCreate con el texto.
+   */
+  onCreate?: (text: string) => void;
+  createLabel?: (text: string) => string;
 }) {
   const autoId = useId();
   const inputId = id ?? `combo-${autoId}`;
@@ -70,11 +79,16 @@ export function Combobox({
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
 
+  const typed = query?.trim() ?? "";
   const results = useMemo(() => {
-    const q = query?.trim() ?? "";
-    const all = q ? options.filter((o) => matchOption(o, q)) : options;
-    return all.slice(0, MAX_VISIBLE);
-  }, [options, query]);
+    const all = typed ? options.filter((o) => matchOption(o, typed)) : options;
+    const shown = all.slice(0, MAX_VISIBLE);
+    const exact = options.some((o) => normalize(o.label) === normalize(typed));
+    if (onCreate && typed && !exact) {
+      shown.push({ value: CREATE_VALUE, label: createLabel(typed), detail: "Nuevo" });
+    }
+    return shown;
+  }, [options, typed, onCreate, createLabel]);
 
   useEffect(() => {
     listRef.current
@@ -84,7 +98,8 @@ export function Combobox({
 
   function choose(option: ComboOption | undefined) {
     if (!option) return;
-    onChange(option.value);
+    if (option.value === CREATE_VALUE) onCreate?.(typed);
+    else onChange(option.value);
     setQuery(null);
     setOpen(false);
   }
@@ -108,7 +123,13 @@ export function Combobox({
         setOpen(false);
         setQuery(null);
       }
-    } else if (e.key === "Tab" && open && query && results.length > 0) {
+    } else if (
+      e.key === "Tab" &&
+      open &&
+      query &&
+      results.length > 0 &&
+      results[active]?.value !== CREATE_VALUE
+    ) {
       // Tab con texto escrito elige la coincidencia resaltada (carga rápida por teclado).
       choose(results[active]);
     }
@@ -178,7 +199,7 @@ export function Combobox({
                 data-index={i}
                 role="option"
                 aria-selected={o.value === value}
-                className={`combobox__option ${i === active ? "combobox__option--active" : ""}`}
+                className={`combobox__option ${i === active ? "combobox__option--active" : ""} ${o.value === CREATE_VALUE ? "combobox__option--create" : ""}`}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   choose(o);

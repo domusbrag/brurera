@@ -38,7 +38,9 @@ export type IconName =
   | "alert"
   | "info"
   | "logout"
-  | "cash";
+  | "cash"
+  | "sun"
+  | "moon";
 
 const PATHS: Record<IconName, ReactNode> = {
   home: (
@@ -169,6 +171,13 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   menu: <path d="M4 6.5h16M4 12h16M4 17.5h16" />,
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" />
+    </>
+  ),
+  moon: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
   plus: <path d="M12 5v14M5 12h14" />,
   search: (

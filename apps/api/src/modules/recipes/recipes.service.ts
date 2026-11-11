@@ -517,7 +517,11 @@ const draftInput = (v: RecipeVersionInput): ValidatedVersion => ({
   ingredients: v.ingredients,
 });
 
-export async function createRecipe(db: Database, ctx: OperationContext, input: CreateRecipeInput) {
+export async function createRecipe(
+  db: Database | Transaction,
+  ctx: OperationContext,
+  input: CreateRecipeInput,
+) {
   return db.transaction(async (tx) => {
     const product = await loadProduct(tx, ctx, input.productId);
     if (!product || !product.active) {
@@ -857,7 +861,7 @@ export async function updateVersion(
  * audita. Cualquier falla revierte todo.
  */
 export async function publishVersion(
-  db: Database,
+  db: Database | Transaction,
   ctx: OperationContext,
   versionId: string,
   input: PublishInput,

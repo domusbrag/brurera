@@ -1,4 +1,4 @@
-import { categories, type Database } from "@bakery/database";
+import { categories, type Database, type Transaction } from "@bakery/database";
 import type { CategoryDto, ListQuery, Page } from "@bakery/shared";
 import {
   type CATEGORY_TYPES,
@@ -67,7 +67,7 @@ export async function getCategory(db: Database, ctx: OperationContext, id: strin
 }
 
 export async function createCategory(
-  db: Database,
+  db: Database | Transaction,
   ctx: OperationContext,
   input: z.infer<typeof createCategorySchema>,
 ) {

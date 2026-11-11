@@ -268,7 +268,7 @@ export async function updatePriceList(
 
 /** Fija (o quita, active=false) el precio de un producto en la lista. */
 export async function setPriceListItem(
-  db: Database,
+  db: Database | Transaction,
   ctx: OperationContext,
   id: string,
   productId: string,

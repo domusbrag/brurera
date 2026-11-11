@@ -77,7 +77,7 @@ cliente debe (o pagó) y queda el margen sobre materiales de esos lotes.
 - **Cobros**: desde la venta (no puede superar el pendiente), al confirmar la entrega, o **a cuenta**
   desde la cuenta corriente y después **imputados** a las ventas pendientes. Estado de cobro: sin
   cobrar, cobro parcial, cobrada.
-- **Cuenta corriente** (Finanzas → Cuentas a cobrar): clientes que deben o tienen saldo a favor;
+- **Cuenta corriente** (Comercial → Cuentas a cobrar): clientes que deben o tienen saldo a favor;
   por cliente, saldo ("Debe $X" / "Sin saldo" / "A favor $X"), ventas pendientes, cobros sin
   imputar y movimientos con **Debe / Haber / Saldo**. Un cobro mal cargado se corrige con un
   **ajuste** con motivo; nunca se borra.

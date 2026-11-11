@@ -101,7 +101,11 @@ async function isCodeTaken(tx: Transaction, ctx: OperationContext, code: string)
   return rows.length > 0;
 }
 
-export async function createProduct(db: Database, ctx: OperationContext, input: CreateInput) {
+export async function createProduct(
+  db: Database | Transaction,
+  ctx: OperationContext,
+  input: CreateInput,
+) {
   return db.transaction(async (tx) => {
     await assertReferences(tx, ctx, input);
     const { code: manualCode, ...fields } = input;

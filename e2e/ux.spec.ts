@@ -92,9 +92,9 @@ test("UX: cada rol ve sólo lo que puede usar", async ({ page }, testInfo) => {
     "Pedidos",
     "Ventas",
     "Clientes",
-    "Listas de precios",
     "Cuentas a cobrar",
     "Productos",
+    "Listas de precios",
   ]);
   await page.keyboard.press("Escape");
   // Accesos rápidos de su trabajo diario; ninguno de otro rol.
