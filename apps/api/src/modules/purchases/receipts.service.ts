@@ -294,7 +294,7 @@ export async function getReceipt(db: Db, ctx: OperationContext, id: string): Pro
 /* ---------- Borrador ---------- */
 
 export async function createReceipt(
-  db: Database,
+  db: Db,
   ctx: OperationContext,
   purchaseId: string,
   input: CreateReceiptInput,
@@ -408,7 +408,7 @@ export async function cancelReceipt(db: Database, ctx: OperationContext, id: str
  *  11. marca la recepción POSTED y audita.
  * Cualquier error revierte todo: sin movimientos, saldos, costos ni auditoría.
  */
-export async function postReceipt(db: Database, ctx: OperationContext, id: string) {
+export async function postReceipt(db: Db, ctx: OperationContext, id: string) {
   return db.transaction(async (tx) => {
     const peek = await findReceipt(tx, ctx, id);
     const purchase: PurchaseRow = await findPurchase(tx, ctx, peek.purchaseId, true);
@@ -527,6 +527,22 @@ export async function postReceipt(db: Database, ctx: OperationContext, id: strin
       },
     });
     return getReceipt(tx, ctx, id);
+  });
+}
+
+/**
+ * Recibir en un paso: crea la recepción y la confirma en UNA transacción. Si la
+ * confirmación falla no queda ningún borrador (ni cancelado) como registro sin uso.
+ */
+export async function receiveNow(
+  db: Database,
+  ctx: OperationContext,
+  purchaseId: string,
+  input: CreateReceiptInput,
+) {
+  return db.transaction(async (tx) => {
+    const draft = await createReceipt(tx, ctx, purchaseId, input);
+    return postReceipt(tx, ctx, draft.id);
   });
 }
 

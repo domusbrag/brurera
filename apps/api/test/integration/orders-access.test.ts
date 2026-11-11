@@ -81,9 +81,16 @@ describe("concurrencia (§69, §70)", () => {
     const [x, y] = items;
     const results = await Promise.all([cancel(api, x.id), replan(api, y.id)]);
     expect(results.map((r) => r.statusCode)).toEqual([200, 200]);
+    // Ambas operaciones se serializan con el lock del lote. Si la cancelación
+    // entra primero, la replanificación toma los 70 kg; si la replanificación
+    // entra primero, sólo encuentra lo que quedaba libre (30 o 70 según cuál
+    // pedido ganó la carrera del test anterior). Las dos órdenes son válidas:
+    // lo que no puede pasar es que queden reservas huérfanas o sobre-reserva.
     const after = await orderOf(api, y.id);
-    expect(reservedOf(after)).toBe(70);
-    expect(await activeOn(lotId)).toBe("70");
+    expect([30, 70]).toContain(reservedOf(after));
+    expect(reservedOf(await orderOf(api, x.id))).toBe(0);
+    expect(Number(await activeOn(lotId))).toBe(reservedOf(after));
+    expect(await reconciliationProblems(db())).toEqual([]);
   });
 
   it("dos reintentos simultáneos con el mismo operationId confirman una sola vez", async () => {

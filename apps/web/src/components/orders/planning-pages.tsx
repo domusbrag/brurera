@@ -19,6 +19,7 @@ import { listPath } from "@/lib/api-client";
 import { formatDateTime, formatQuantity } from "@/lib/format";
 import type { Tone } from "@/lib/status";
 import { EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { BuyShortagesPanel } from "../purchases/buy-shortages";
 import { StatusBadge } from "../ui/status";
 import { useCan, useCurrentUser } from "../user-context";
 import {
@@ -382,7 +383,13 @@ function MaterialNeedsTable({
                 Disponible después
               </th>
               <th scope="col" className="num">
-                Falta comprar
+                Faltante
+              </th>
+              <th scope="col" className="num">
+                En camino
+              </th>
+              <th scope="col" className="num">
+                Falta pedir
               </th>
               <th scope="col">Proveedor sugerido</th>
               <th scope="col" className="hide-md">
@@ -406,6 +413,22 @@ function MaterialNeedsTable({
                       <span className="muted">No falta</span>
                     )}
                   </td>
+                  <td className="num">
+                    {gt0(m.onOrder) ? (
+                      formatQuantity(m.onOrder, u)
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td className={`num ${gt0(m.toOrder) ? "text-negative" : ""}`}>
+                    {gt0(m.toOrder) ? (
+                      <strong>{formatQuantity(m.toOrder, u)}</strong>
+                    ) : gt0(m.shortage) ? (
+                      <span className="muted">Ya pedido</span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td>
                     {m.preferredSupplier?.name ?? <span className="muted">Sin proveedor</span>}
                   </td>
@@ -426,8 +449,16 @@ function MaterialNeedsTable({
       <More page={data} />
       <p className="muted small">
         Proyección: la materia prima no se reserva. El stock es el total de la empresa (todos los
-        depósitos).
+        depósitos). “En camino” es lo pedido a proveedores y todavía no recibido.
       </p>
+      <BuyShortagesPanel
+        complete={data.total <= data.items.length}
+        items={data.items.map((m) => ({
+          rawMaterialId: m.rawMaterial.id,
+          toOrder: m.toOrder,
+          supplier: m.preferredSupplier,
+        }))}
+      />
     </Stale>
   );
 }

@@ -19,6 +19,8 @@ import {
   instantToZonedLocal,
   zonedLocalToInstant,
   type AccountAdjustmentInput,
+  type ApplyOldestInput,
+  type ApplyOldestResultDto,
   type ApplyPaymentInput,
   type CustomerAccountDto,
   type CustomerPaymentDto,
@@ -27,12 +29,13 @@ import {
   type Page,
   type PaymentResultDto,
   type ReceivableDto,
+  type ReceivablesSummaryDto,
   type SalePaymentInput,
   type accountMovementsQuerySchema,
   type paymentListQuerySchema,
   type receivablesQuerySchema,
 } from "@bakery/shared";
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { auditBase, type OperationContext } from "../../lib/context.js";
 import { invalidReference, mapUniqueViolations, notFound } from "../../lib/db-errors.js";
@@ -304,6 +307,16 @@ export async function registerOrderAdvance(
         `El pedido ${order.internalCode} está ${order.status === "CANCELLED" ? "cancelado" : "entregado"}: no admite señas.`,
       );
     }
+    if (order.status === "DRAFT") {
+      // Una seña es plata a cuenta de un compromiso: el pedido tiene que estar confirmado
+      // (precio congelado). En borrador el precio es sólo una cotización y el pedido puede
+      // no confirmarse nunca.
+      throw new AppError(
+        409,
+        "ORDER_NOT_CONFIRMED",
+        `El pedido ${order.internalCode} está en borrador: confirmalo antes de registrar una seña.`,
+      );
+    }
     await lockAccount(tx, ctx, order.customerId);
     const payment = await insertPayment(tx, ctx, {
       customerId: order.customerId,
@@ -435,6 +448,147 @@ export async function applyPayment(
     }),
   );
   return { payment: await getPayment(db, ctx, paymentId), replayed, warnings: [] };
+}
+
+/* ---------- Imputar a las ventas más viejas ---------- */
+
+/**
+ * Imputa TODO el crédito sin imputar del cliente a sus ventas pendientes, la
+ * venta más vieja primero y el cobro más viejo primero (FIFO). No cambia el
+ * saldo de la cuenta: sólo marca qué ventas quedaron cobradas. Una transacción;
+ * locks venta → pago (ADR-062), ventas y pagos por id. Idempotente: el
+ * operationId se guarda en la primera imputación (índice único, ADR-063); un
+ * reintento lo encuentra y no imputa de nuevo.
+ */
+export async function applyOldest(
+  db: Database,
+  ctx: OperationContext,
+  customerId: string,
+  input: ApplyOldestInput,
+): Promise<ApplyOldestResultDto> {
+  return reusedOnConflict(
+    "otra imputación",
+    db.transaction(async (tx) => {
+      await assertCustomer(tx, ctx, customerId);
+      const pendingSales = await tx
+        .select()
+        .from(sales)
+        .where(
+          and(
+            eq(sales.companyId, ctx.companyId),
+            eq(sales.customerId, customerId),
+            eq(sales.status, "POSTED"),
+            sql`${sales.paidAmount} < ${sales.total}`,
+          ),
+        )
+        .orderBy(asc(sales.id))
+        .for("update");
+      const payments = await tx
+        .select()
+        .from(customerPayments)
+        .where(
+          and(
+            eq(customerPayments.companyId, ctx.companyId),
+            eq(customerPayments.customerId, customerId),
+          ),
+        )
+        .orderBy(asc(customerPayments.id))
+        .for("update");
+      const [existing] = await tx
+        .select()
+        .from(customerPaymentApplications)
+        .where(
+          and(
+            eq(customerPaymentApplications.companyId, ctx.companyId),
+            eq(customerPaymentApplications.operationId, input.operationId),
+          ),
+        );
+      if (existing) {
+        if (existing.customerId !== customerId) throw operationReused("otra imputación");
+        return { replayed: true, applications: [] };
+      }
+      const appliedRows =
+        payments.length === 0
+          ? []
+          : await tx
+              .select({
+                paymentId: customerPaymentApplications.paymentId,
+                applied: sql<string>`sum(${customerPaymentApplications.amount})`,
+              })
+              .from(customerPaymentApplications)
+              .where(
+                and(
+                  eq(customerPaymentApplications.companyId, ctx.companyId),
+                  inArray(
+                    customerPaymentApplications.paymentId,
+                    payments.map((p) => p.id),
+                  ),
+                ),
+              )
+              .groupBy(customerPaymentApplications.paymentId);
+      const appliedBy = new Map(appliedRows.map((r) => [r.paymentId, new D(r.applied)]));
+      const credits = payments
+        .map((p) => ({ p, left: new D(p.amount).minus(appliedBy.get(p.id) ?? 0) }))
+        .filter((c) => c.left.gt(0))
+        .sort(
+          (a, b) =>
+            a.p.paymentDate.getTime() - b.p.paymentDate.getTime() ||
+            a.p.internalCode.localeCompare(b.p.internalCode),
+        );
+      const debts = pendingSales
+        .map((s) => ({ s, due: saleBalanceDue(s.total, s.paidAmount) }))
+        .filter((d) => d.due.gt(0))
+        .sort(
+          (a, b) =>
+            (a.s.saleDate?.getTime() ?? 0) - (b.s.saleDate?.getTime() ?? 0) ||
+            a.s.internalCode.localeCompare(b.s.internalCode),
+        );
+      const done: ApplyOldestResultDto["applications"] = [];
+      let ci = 0;
+      for (const debt of debts) {
+        const sale = {
+          id: debt.s.id,
+          customerId: debt.s.customerId,
+          total: debt.s.total,
+          paidAmount: debt.s.paidAmount,
+        };
+        while (debt.due.gt(0) && ci < credits.length) {
+          const credit = credits[ci]!;
+          const amount = D.min(debt.due, credit.left);
+          await applyToSale(tx, ctx, {
+            sale,
+            paymentId: credit.p.id,
+            amount,
+            origin: "MANUAL",
+            operationId: done.length === 0 ? input.operationId : undefined,
+          });
+          await recordAudit(tx, {
+            ...auditBase(ctx),
+            action: "PAYMENT_APPLIED",
+            entityType: "sale",
+            entityId: debt.s.id,
+            metadata: {
+              code: debt.s.internalCode,
+              payment: credit.p.internalCode,
+              amount: amount.toFixed(2),
+              origin: "MANUAL",
+              mode: "OLDEST_FIRST",
+            },
+          });
+          done.push({
+            paymentCode: credit.p.internalCode,
+            saleCode: debt.s.internalCode,
+            amount: amount.toFixed(2),
+          });
+          debt.due = debt.due.minus(amount);
+          credit.left = credit.left.minus(amount);
+          if (!credit.left.gt(0)) ci++;
+        }
+        if (ci >= credits.length) break;
+      }
+      return { replayed: false, applications: done };
+    }),
+  );
 }
 
 /* ---------- Ajuste de cuenta (política B) ---------- */
@@ -760,6 +914,45 @@ export async function getCustomerAccount(
 }
 
 /** Cuentas a cobrar: clientes con saldo (deuda o crédito a favor). */
+export async function receivablesSummary(
+  db: Database,
+  ctx: OperationContext,
+): Promise<ReceivablesSummaryDto> {
+  const [[row], [oldest], currency] = await Promise.all([
+    db
+      .select({
+        totalDebt: sql<string>`coalesce(sum(${customerAccountBalances.balance}) filter (where ${customerAccountBalances.balance} > 0), 0)`,
+        debtors: sql<number>`(count(*) filter (where ${customerAccountBalances.balance} > 0))::int`,
+        totalCredit: sql<string>`coalesce(-sum(${customerAccountBalances.balance}) filter (where ${customerAccountBalances.balance} < 0), 0)`,
+        creditors: sql<number>`(count(*) filter (where ${customerAccountBalances.balance} < 0))::int`,
+        overLimit: sql<number>`(count(*) filter (where ${customers.creditLimit} is not null and ${customerAccountBalances.balance} > ${customers.creditLimit}))::int`,
+      })
+      .from(customerAccountBalances)
+      .innerJoin(customers, eq(customers.id, customerAccountBalances.customerId))
+      .where(eq(customerAccountBalances.companyId, ctx.companyId)),
+    db
+      .select({ date: sql<Date | null>`min(${sales.saleDate})` })
+      .from(sales)
+      .where(
+        and(
+          eq(sales.companyId, ctx.companyId),
+          eq(sales.status, "POSTED"),
+          sql`${sales.paidAmount} < ${sales.total}`,
+        ),
+      ),
+    companyCurrency(db, ctx),
+  ]);
+  return {
+    currency,
+    totalDebt: new D(row?.totalDebt ?? 0).toFixed(2),
+    debtors: row?.debtors ?? 0,
+    totalCredit: new D(row?.totalCredit ?? 0).toFixed(2),
+    creditors: row?.creditors ?? 0,
+    overLimit: row?.overLimit ?? 0,
+    oldestPendingSaleDate: oldest?.date ? new Date(oldest.date).toISOString() : null,
+  };
+}
+
 export async function listReceivables(
   db: Database,
   ctx: OperationContext,

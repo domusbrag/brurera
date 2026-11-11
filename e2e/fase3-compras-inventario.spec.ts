@@ -268,7 +268,9 @@ test("Fase 3: compra, recepción parcial y total, costo promedio, recetas y merm
   await openSection(page, "Auditoría");
   await page.getByLabel("Módulo").selectOption("purchase");
   await expect(page.getByRole("cell", { name: "Recepción confirmada" }).first()).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Pedido confirmado" }).first()).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Compra pedida al proveedor" }).first(),
+  ).toBeVisible();
   await page.getByLabel("Módulo").selectOption("raw_material");
   await expect(page.getByRole("cell", { name: "Costo promedio modificado" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Merma registrada" }).first()).toBeVisible();

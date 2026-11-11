@@ -59,6 +59,12 @@ interface Line {
   quantity: string;
   unitPrice: string;
   discountAmount: string;
+  /**
+   * Cantidad sugerida en unidad base (al armar la compra desde "bajo mínimo" o
+   * "falta comprar"). Mientras el usuario no escriba una cantidad, se propone
+   * redondeada hacia arriba a la presentación elegida.
+   */
+  suggestedBase?: string;
 }
 
 interface Form {
@@ -72,14 +78,29 @@ interface Form {
 }
 
 let nextKey = 1;
-const emptyLine = (rawMaterialId = ""): Line => ({
+const emptyLine = (rawMaterialId = "", suggestedBase?: string): Line => ({
   key: nextKey++,
   rawMaterialId,
   option: "",
   quantity: "",
   unitPrice: "",
   discountAmount: "",
+  suggestedBase,
 });
+
+/**
+ * Líneas precargadas desde la URL: `items=<materiaPrimaId>:<cantidadBase>,...`
+ * (lo arman "Stock bajo mínimo" y "Necesidades → Materias primas"); si no,
+ * `rawMaterialId` como antes.
+ */
+function prefilledLines(params: URLSearchParams): Line[] {
+  const items = (params.get("items") ?? "")
+    .split(",")
+    .map((x) => x.split(":"))
+    .filter(([id]) => Boolean(id))
+    .map(([id, q]) => emptyLine(id, q && isPositive(q) ? q : undefined));
+  return items.length > 0 ? items : [emptyLine(params.get("rawMaterialId") ?? "")];
+}
 
 /** Hoy en la zona horaria de la EMPRESA (no la del navegador): "AAAA-MM-DD". */
 const companyToday = (timeZone: string) => instantToZonedLocal(new Date(), timeZone).slice(0, 10);
@@ -202,7 +223,7 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
           supplierDocumentNumber: "",
           taxTotal: "",
           notes: "",
-          lines: [emptyLine(params.get("rawMaterialId") ?? "")],
+          lines: prefilledLines(params),
         },
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -249,7 +270,35 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
     const first = presentations[material.id]?.[0];
     return first ? `p:${first.id}` : `u:${material.baseUnit.id}`;
   };
-  const lines = form.lines.map((l) => ({ ...l, option: optionOf(l) }));
+  /** Cantidad comercial sugerida: unidad base ÷ contenido de la presentación, hacia arriba. */
+  const suggestedQuantity = (l: Line, option: string): string => {
+    const material = materialById.get(l.rawMaterialId);
+    if (!l.suggestedBase || !material || !option) return "";
+    const base = new D(l.suggestedBase);
+    if (option.startsWith("p:")) {
+      const p = presentations[material.id]?.find((x) => `p:${x.id}` === option);
+      return p ? base.div(p.baseQuantity).ceil().toString() : "";
+    }
+    const unit = unitById.get(option.slice(2));
+    const baseUnit = unitById.get(material.baseUnit.id);
+    if (!unit || !baseUnit) return "";
+    try {
+      const perUnit = baseQuantityPerPurchaseUnit({
+        baseUnit: toCostingUnit(baseUnit),
+        purchaseUnit: toCostingUnit(unit),
+        presentation: null,
+      });
+      return base.div(perUnit).toDecimalPlaces(3, D.ROUND_UP).toString();
+    } catch {
+      return "";
+    }
+  };
+  const lines = form.lines.map((l) => {
+    const option = optionOf(l);
+    return l.suggestedBase && l.quantity === ""
+      ? { ...l, option, quantity: suggestedQuantity(l, option) }
+      : { ...l, option };
+  });
 
   /** Cálculo en vivo de una línea: importes, equivalencia en unidad base y costo de adquisición. */
   const compute = (line: Line) => {
@@ -584,7 +633,13 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
                         placeholder="Buscar materia prima por nombre o código"
                         emptyText="Ninguna materia prima coincide"
                         invalid={Boolean(err(line.key, "rawMaterialId"))}
-                        onChange={(v) => setLine(line.key, { rawMaterialId: v, option: "" })}
+                        onChange={(v) =>
+                          setLine(line.key, {
+                            rawMaterialId: v,
+                            option: "",
+                            suggestedBase: undefined,
+                          })
+                        }
                       />
                       <select
                         aria-label={`Presentación ${n}`}
@@ -614,10 +669,20 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
                           placeholder="0"
                           value={line.quantity}
                           aria-invalid={err(line.key, "quantity") ? true : undefined}
-                          onChange={(e) => setLine(line.key, { quantity: e.target.value })}
+                          onChange={(e) =>
+                            setLine(line.key, {
+                              quantity: e.target.value,
+                              suggestedBase: undefined,
+                            })
+                          }
                         />
                         {c?.commercial && <span className="muted">{c.commercial}</span>}
                       </div>
+                      {line.suggestedBase && material && (
+                        <span className="form__hint">
+                          Falta pedir {formatQuantity(line.suggestedBase, material.baseUnit.symbol)}
+                        </span>
+                      )}
                     </LineField>
                     <LineField label="Precio unitario" htmlFor={`purchase-price-${n}`}>
                       <input
@@ -863,9 +928,9 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
     setPending(true);
     setFormError(null);
     setFieldErrors({});
-    let receipt: ReceiptDto | null = null;
     try {
-      receipt = await apiFetch<ReceiptDto>(`/api/purchases/${purchaseId}/receipts`, {
+      // Crear y confirmar en un solo paso (transacción): si falla no queda ningún borrador.
+      await apiFetch<ReceiptDto>(`/api/purchases/${purchaseId}/receipts/posted`, {
         method: "POST",
         body: {
           warehouseId,
@@ -879,16 +944,9 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
           })),
         },
       });
-      await apiFetch(`/api/purchase-receipts/${receipt.id}/post`, { method: "POST" });
       router.push(`${PURCHASES_BASE}/${purchaseId}`);
       router.refresh();
     } catch (err) {
-      // Si se creó el borrador pero no se pudo confirmar, se descarta: no queda nada a medias.
-      if (receipt) {
-        await apiFetch(`/api/purchase-receipts/${receipt.id}/cancel`, { method: "POST" }).catch(
-          () => undefined,
-        );
-      }
       if (err instanceof ApiError) {
         setFieldErrors(err.fieldErrors);
         setFormError(

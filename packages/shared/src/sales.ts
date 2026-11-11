@@ -193,6 +193,19 @@ export const applyPaymentSchema = z.object({
 });
 export type ApplyPaymentInput = z.infer<typeof applyPaymentSchema>;
 
+/** Imputar todo el crédito sin imputar a las ventas pendientes más viejas. */
+export const applyOldestSchema = z.object({
+  /** Uno por intento: reintentar con el mismo id no vuelve a imputar. */
+  operationId: uuid(),
+});
+export type ApplyOldestInput = z.infer<typeof applyOldestSchema>;
+
+export interface ApplyOldestResultDto {
+  replayed: boolean;
+  /** Imputaciones hechas (vacío en un reintento o si no había nada que imputar). */
+  applications: { paymentCode: string; saleCode: string; amount: string }[];
+}
+
 export const accountAdjustmentSchema = z.object({
   /** DEBIT: el cliente debe más; CREDIT: a favor del cliente. */
   direction: z.enum(["DEBIT", "CREDIT"]),
@@ -582,6 +595,21 @@ export interface ReceivableDto {
   pendingSales: number;
   oldestPendingSaleDate: string | null;
   lastMovementAt: string | null;
+}
+
+/** Totales de cuentas a cobrar de la empresa (todas las cuentas, sin filtros). */
+export interface ReceivablesSummaryDto {
+  currency: string;
+  /** Σ saldos deudores. */
+  totalDebt: string;
+  debtors: number;
+  /** Σ créditos a favor (en positivo). */
+  totalCredit: string;
+  creditors: number;
+  /** Clientes con el límite de crédito superado. */
+  overLimit: number;
+  /** Venta confirmada sin cobrar más antigua de la empresa. */
+  oldestPendingSaleDate: string | null;
 }
 
 export interface PriceListDto {

@@ -45,7 +45,8 @@ test("admin ingresa, ve el shell, navega y sale", async ({ page }) => {
   await expect(page.getByTestId("current-user")).toContainText("Administrador Demo");
   await expect(page.getByTestId("current-user")).toContainText("Administrador del sistema");
   await expect(page.getByRole("heading", { name: "Actividad reciente" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Ingreso al sistema" }).first()).toBeVisible();
+  // La actividad de Inicio muestra operaciones del negocio, no ingresos al sistema.
+  await expect(page.getByRole("cell", { name: "Ingreso al sistema" })).toHaveCount(0);
 
   // En tablet el menú lateral se abre con el botón del header.
   await openSection(page, "Ventas");

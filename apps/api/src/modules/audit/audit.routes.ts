@@ -5,7 +5,7 @@ import {
   type AuditLogItemDto,
   type Page,
 } from "@bakery/shared";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, notLike } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { operationContext } from "../../lib/context.js";
@@ -16,6 +16,8 @@ import { requirePermission } from "../auth/auth.plugin.js";
 const auditQuerySchema = paginationQuerySchema.extend({
   entityType: z.string().trim().max(64).optional(),
   entityId: z.string().trim().max(100).optional(),
+  /** "1": sólo operaciones del negocio (sin ingresos, salidas ni intentos de acceso). */
+  operational: z.enum(["0", "1"]).optional(),
 });
 
 /** Consulta paginada (server-side) del registro de auditoría de la empresa de la sesión. */
@@ -30,6 +32,7 @@ export async function auditRoutes(app: FastifyInstance, opts: { db: Database }) 
         eq(auditLogs.companyId, companyId),
         query.entityType ? eq(auditLogs.entityType, query.entityType) : undefined,
         query.entityId ? eq(auditLogs.entityId, query.entityId) : undefined,
+        query.operational === "1" ? notLike(auditLogs.action, "AUTH\\_%") : undefined,
       );
 
       const [rows, totals] = await Promise.all([

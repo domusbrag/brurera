@@ -558,6 +558,10 @@ export interface MaterialDemandDto {
   openOrderDemand: string;
   availableAfterDemand: string;
   shortage: string;
+  /** Pedido al proveedor y todavía no recibido (unidad base). */
+  onOrder: string;
+  /** Faltante menos lo que ya está en camino: lo que todavía hay que pedir. */
+  toOrder: string;
   preferredSupplier: { id: string; name: string } | null;
   earliestRequestedAt: string;
   orders: { orderId: string; orderCode: string; requestedAt: string; quantity: string }[];

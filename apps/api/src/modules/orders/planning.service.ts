@@ -26,6 +26,7 @@ import type { z } from "zod";
 import type { OperationContext } from "../../lib/context.js";
 import { notFound } from "../../lib/db-errors.js";
 import { toPage } from "../../lib/listing.js";
+import { rawMaterialOnOrder, stillToOrder } from "../purchases/on-order.js";
 import { loadUnits, unitOrThrow } from "../recipes/recipes.data.js";
 import {
   DEMAND,
@@ -178,10 +179,11 @@ export async function calculateMaterialDemand(
 ): Promise<Page<MaterialDemandDto>> {
   const rows = await materialDemandRows(db, ctx, query.until);
   const ids = [...new Set(rows.map((r) => r.rawMaterialId))];
-  const [stock, info, units] = await Promise.all([
+  const [stock, info, units, onOrder] = await Promise.all([
     rawMaterialStock(db, ctx, ids),
     rawMaterialInfo(db, ctx, ids),
     loadUnits(db, ctx),
+    rawMaterialOnOrder(db, ctx, ids),
   ]);
   const lines = aggregateMaterialDemand(
     stock,
@@ -209,6 +211,8 @@ export async function calculateMaterialDemand(
         openOrderDemand: qty(l.openOrderDemand),
         availableAfterDemand: qty(l.availableAfterDemand),
         shortage: qty(l.shortage),
+        onOrder: qty(onOrder.get(l.rawMaterialId) ?? 0),
+        toOrder: qty(stillToOrder(l.shortage, onOrder.get(l.rawMaterialId))),
         preferredSupplier: m.supplierId ? { id: m.supplierId, name: m.supplierName ?? "" } : null,
         earliestRequestedAt: mine[0]!.requestedAt.toISOString(),
         orders: [...perOrder.entries()].map(([orderId, v]) => ({
