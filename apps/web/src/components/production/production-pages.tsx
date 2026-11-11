@@ -17,10 +17,12 @@ import {
   type StockMovementDto,
   type UnitDto,
 } from "@bakery/shared";
+import { D } from "@bakery/domain";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
 import { isDecimal, isPositive, toDecimal } from "@/lib/decimal-input";
+import { describeError } from "@/lib/errors";
 import {
   formatDate,
   formatDateTime,
@@ -40,6 +42,7 @@ import {
   PageHeader,
   useResource,
 } from "../masters/ui";
+import { useFlash } from "../ui/flash";
 import { useCan, useCurrentUser } from "../user-context";
 import { ConservationBadge, LOTS_BASE, formatShelfLife } from "../lots/lot-shared";
 import {
@@ -65,17 +68,22 @@ export function ProductionList() {
   const can = useCan();
   const [products, setProducts] = useState<{ value: string; label: string }[]>([]);
   const [responsibles, setResponsibles] = useState<{ value: string; label: string }[]>([]);
+  const [filtersError, setFiltersError] = useState<string | null>(null);
   useEffect(() => {
+    const fail = (err: unknown) =>
+      setFiltersError(
+        err instanceof ApiError ? describeError(err) : "No se pudieron cargar los filtros.",
+      );
     fetchOptions<ProductDto>("/api/products", { status: "all" })
       .then((items) =>
         setProducts(
           items.filter((p) => p.controlsStock).map((p) => ({ value: p.id, label: p.name })),
         ),
       )
-      .catch(() => setProducts([]));
+      .catch(fail);
     apiFetch<ResponsibleOptionDto[]>("/api/production/responsibles")
       .then((items) => setResponsibles(items.map((r) => ({ value: r.id, label: r.name }))))
-      .catch(() => setResponsibles([]));
+      .catch(fail);
   }, []);
   const showCosts = can(P.PRODUCTION_COST_READ);
   return (
@@ -90,6 +98,13 @@ export function ProductionList() {
       canCreate={can(P.PRODUCTION_ORDERS_CREATE)}
       emptyText="Todavía no hay órdenes de producción."
       defaultStatus="all"
+      headerExtra={
+        filtersError && (
+          <p className="alert alert--warn" role="status">
+            Los filtros de producto y responsable no se pudieron cargar: {filtersError}
+          </p>
+        )
+      }
       statusOptions={[
         { value: "all", label: "Todos los estados" },
         { value: "open", label: "Pendientes (sin completar)" },
@@ -124,36 +139,41 @@ export function ProductionList() {
         },
         { header: "Producto", cell: (o) => o.product.name },
         {
-          header: "Receta",
-          cell: (o) => `v${o.recipeVersion.versionNumber}`,
-          className: "hide-md",
-        },
-        { header: "Fecha", cell: (o) => formatDate(o.scheduledFor) },
-        { header: "Estado", cell: (o) => <ProductionStatusBadge status={o.status} /> },
-        {
-          header: "Planificado",
-          cell: (o) => formatQuantity(o.plannedOutputNormalized, o.saleUnit.symbol),
+          header: "Cantidad",
+          cell: (o) =>
+            o.status === "COMPLETED" && o.actualOutputNormalized !== null ? (
+              <>
+                {formatQuantity(o.actualOutputNormalized, o.saleUnit.symbol)}
+                <span className="cost-source">
+                  planificado {formatQuantity(o.plannedOutputNormalized, o.saleUnit.symbol)}
+                </span>
+              </>
+            ) : (
+              formatQuantity(o.plannedOutputNormalized, o.saleUnit.symbol)
+            ),
           className: "num",
         },
+        { header: "Para cuándo", cell: (o) => formatDate(o.scheduledFor) },
+        { header: "Estado", cell: (o) => <ProductionStatusBadge status={o.status} /> },
         {
-          header: "Producido",
-          cell: (o) =>
-            o.status === "COMPLETED"
-              ? formatQuantity(o.actualOutputNormalized, o.saleUnit.symbol)
-              : "—",
-          className: "num hide-sm",
+          header: "Lote",
+          cell: (o) => (o.batchCode ? <span className="code">{o.batchCode}</span> : null),
+          className: "hide-md",
         },
-        { header: "Lote", cell: (o) => o.batchCode ?? "—", className: "hide-sm" },
-        { header: "Responsable", cell: (o) => o.responsible?.name ?? "—", className: "hide-md" },
+        {
+          header: "Responsable",
+          cell: (o) => o.responsible?.name ?? <span className="muted">Sin asignar</span>,
+          className: "hide-md",
+        },
         ...(showCosts
           ? [
               {
                 header: "Costo real",
                 cell: (o: ProductionOrderListItemDto) =>
                   o.actualMaterialCost === null
-                    ? "—"
+                    ? null
                     : formatMoney(o.actualMaterialCost, o.currency),
-                className: "num hide-sm",
+                className: "num hide-md",
               },
             ]
           : []),
@@ -169,9 +189,18 @@ function who(at: string | null, by: { displayName: string } | null, tz: string):
   return `${formatDateTime(at, tz)}${by ? ` · ${by.displayName}` : ""}`;
 }
 
+/** Por qué una orden planificada todavía no se puede iniciar (null: se puede). */
+function startBlocker(order: ProductionOrderDto): string | null {
+  if (order.issues.length > 0) return "Resolvé los avisos de la orden para poder iniciarla.";
+  if (order.availability && !order.availability.sufficient)
+    return `Falta materia prima en ${order.sourceWarehouse.name}: registrá la compra o un ajuste de stock y tocá «Volver a verificar».`;
+  return null;
+}
+
 export function ProductionDetail({ id }: { id: string }) {
   const can = useCan();
   const user = useCurrentUser();
+  const flash = useFlash();
   const { data, error, reload, setData } = useResource<ProductionOrderDto>(
     `/api/production-orders/${id}`,
   );
@@ -184,36 +213,49 @@ export function ProductionDetail({ id }: { id: string }) {
     setData(order);
     setVersion((v) => v + 1);
   };
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!data) return <Loading />;
   const tz = user.company.timezone;
   const unit = data.saleUnit.symbol;
   const open =
     data.status === "DRAFT" || data.status === "PLANNED" || data.status === "IN_PROGRESS";
   const blocking = data.issues.length > 0;
+  const blocker = data.status === "PLANNED" ? startBlocker(data) : null;
+  const canReadLots = can(P.PRODUCT_LOTS_READ);
+  const lotLink = (lot: { id: string; code: string }) =>
+    canReadLots ? (
+      <Link href={`${LOTS_BASE}/${lot.id}`} className="code">
+        {lot.code}
+      </Link>
+    ) : (
+      <span className="code">{lot.code}</span>
+    );
+  const waste =
+    data.theoreticalWastePercentage && new D(data.theoreticalWastePercentage).gt(0)
+      ? ` · merma teórica ${formatPercent(data.theoreticalWastePercentage)}`
+      : "";
 
   return (
     <div className="page">
       <PageHeader
         breadcrumb={{ href: PRODUCTION_BASE, label: "Órdenes de producción" }}
-        title={
-          <>
-            Orden {data.code} <ProductionStatusBadge status={data.status} />
-          </>
-        }
-        subtitle={`${data.product.name} · ${formatQuantity(data.plannedOutputNormalized, unit)} · ${formatDate(data.scheduledFor)}`}
+        title={`Orden ${data.code}`}
+        status={<ProductionStatusBadge status={data.status} />}
+        subtitle={`${data.product.name} · ${formatQuantity(data.plannedOutputNormalized, unit)} · para el ${formatDate(data.scheduledFor)}${data.sourceOrder ? ` · pedido ${data.sourceOrder.orderCode}` : ""}`}
         actions={
           <>
             {data.status === "DRAFT" && can(P.PRODUCTION_ORDERS_PLAN) && (
               <ConfirmAction
                 label="Planificar producción"
+                variant="primary"
                 title={`¿Planificar la orden ${data.code}?`}
                 message={
                   <>
-                    Se fijan la receta (versión {data.recipeVersion.versionNumber}), las cantidades
-                    y el costo esperado. Después sólo se cambian responsable, lote y notas.
+                    Se fijan la receta (versión {data.recipeVersion.versionNumber}), las cantidades,
+                    el costo esperado y el código de lote. Después sólo se cambian responsable, lote
+                    y notas.
                     {data.availability && !data.availability.sufficient && (
-                      <> Hoy falta materia prima: se puede planificar igual.</>
+                      <> Hoy falta materia prima: se puede planificar igual, pero no iniciar.</>
                     )}
                   </>
                 }
@@ -228,7 +270,7 @@ export function ProductionDetail({ id }: { id: string }) {
               />
             )}
             {data.status === "PLANNED" && can(P.PRODUCTION_ORDERS_START) && (
-              <StartButton order={data} onDone={replace} />
+              <StartButton order={data} blocker={blocker} onDone={replace} />
             )}
             {data.status === "DRAFT" && can(P.PRODUCTION_ORDERS_UPDATE) && (
               <Link className="button" href={`${PRODUCTION_BASE}/${id}/editar`}>
@@ -248,6 +290,11 @@ export function ProductionDetail({ id }: { id: string }) {
         }
       />
 
+      {blocker && can(P.PRODUCTION_ORDERS_START) && !blocking && (
+        <p className="alert alert--warn" role="status">
+          <strong>Todavía no se puede iniciar.</strong> {blocker}
+        </p>
+      )}
       {data.status === "CANCELLED" && (
         <p className="notice">
           Cancelada el {data.cancelledAt ? formatDateTime(data.cancelledAt, tz) : "—"}
@@ -256,10 +303,20 @@ export function ProductionDetail({ id }: { id: string }) {
         </p>
       )}
       {data.status === "COMPLETED" && (
-        <p className="notice">
+        <p className="alert alert--success" role="status">
           Producción completada: se descontaron las materias primas de {data.sourceWarehouse.name} y
           entraron {formatQuantity(data.actualOutputNormalized, unit)} de {data.product.name} en{" "}
-          {data.outputWarehouse.name}. Una producción completada no se modifica.
+          {data.outputWarehouse.name}
+          {data.productLot && <> en el lote {lotLink(data.productLot)}</>}. Una producción
+          completada no se modifica.
+          {data.sourceOrder && (
+            <>
+              {" "}
+              <Link href={`/pedidos/${data.sourceOrder.orderId}`}>
+                Volver al pedido {data.sourceOrder.orderCode}
+              </Link>
+            </>
+          )}
         </p>
       )}
       {open && blocking && (
@@ -280,103 +337,94 @@ export function ProductionDetail({ id }: { id: string }) {
       )}
 
       <section className="panel" aria-labelledby="summary-title">
-        <h2 id="summary-title">Resumen</h2>
-        <dl className="cost-summary">
-          <div>
-            <dt>Planificado</dt>
-            <dd>{formatQuantity(data.plannedOutputNormalized, unit)}</dd>
+        <h2 id="summary-title" className="sr-only">
+          Resumen
+        </h2>
+        <dl className="metrics">
+          <div className="metric">
+            <dt className="metric__label">Producto</dt>
+            <dd className="metric__value">
+              <Link href={`/stock/productos/${data.product.id}`}>{data.product.name}</Link>
+            </dd>
           </div>
-          <div>
-            <dt>Producido</dt>
-            <dd>
+          <div className="metric metric--emphasis">
+            <dt className="metric__label">
+              {data.status === "COMPLETED" ? "Producido" : "Cantidad planificada"}
+            </dt>
+            <dd className="metric__value">
               {data.status === "COMPLETED"
                 ? formatQuantity(data.actualOutputNormalized, unit)
-                : data.actualOutputNormalized
-                  ? `${formatQuantity(data.actualOutputNormalized, unit)} (cargado)`
-                  : "—"}
+                : formatQuantity(data.plannedOutputNormalized, unit)}
             </dd>
+            {data.status === "COMPLETED" ? (
+              <dd className="metric__note">
+                Planificado {formatQuantity(data.plannedOutputNormalized, unit)}
+                {data.output && ` · rendimiento ${formatPercent(data.output.yieldPerformance)}`}
+              </dd>
+            ) : data.actualOutputNormalized ? (
+              <dd className="metric__note">
+                Real cargado: {formatQuantity(data.actualOutputNormalized, unit)}
+              </dd>
+            ) : null}
           </div>
-          <div>
-            <dt>Rendimiento</dt>
-            <dd>
-              {data.output ? (
-                <>
-                  {formatPercent(data.output.yieldPerformance)}
-                  <span className="cost-summary__note">
-                    {" "}
-                    {formatQuantity(data.output.variance, unit)} contra el plan
-                  </span>
-                </>
+          <div className="metric">
+            <dt className="metric__label">Para cuándo</dt>
+            <dd className="metric__value">{formatDate(data.scheduledFor)}</dd>
+            {data.sourceOrder && (
+              <dd className="metric__note">
+                Entrega del pedido: {formatDateTime(data.sourceOrder.requestedAt, tz)}
+              </dd>
+            )}
+          </div>
+          <div className="metric">
+            <dt className="metric__label">Pedido</dt>
+            <dd className="metric__value">
+              {data.sourceOrder ? (
+                <Link href={`/pedidos/${data.sourceOrder.orderId}`} className="code">
+                  {data.sourceOrder.orderCode}
+                </Link>
               ) : (
-                "—"
+                <span className="muted">Para stock</span>
               )}
             </dd>
+            {data.sourceOrder && <dd className="metric__note">Creada para ese pedido</dd>}
+          </div>
+          <div className="metric">
+            <dt className="metric__label">{data.productLot ? "Lote producido" : "Lote"}</dt>
+            <dd className="metric__value">
+              {data.productLot ? (
+                <>
+                  {lotLink(data.productLot)}{" "}
+                  <ConservationBadge state={data.productLot.conservationState} />
+                </>
+              ) : data.batchCode ? (
+                <span className="code">{data.batchCode}</span>
+              ) : (
+                <span className="muted">
+                  {data.status === "DRAFT" ? "Se asigna al planificar" : "Sin lote"}
+                </span>
+              )}
+            </dd>
+            {!data.productLot && data.batchCode && open && (
+              <dd className="metric__note">El lote se crea al completar</dd>
+            )}
           </div>
         </dl>
-        <Details
-          items={[
-            [
-              "Producto",
-              <Link key="p" href={`/stock/productos/${data.product.id}`}>
-                {data.product.name}
-              </Link>,
-            ],
-            [
-              "Receta",
-              <Link key="r" href={`/recetas/${data.recipe.id}`}>
-                {data.recipe.name} · versión {data.recipeVersion.versionNumber}
-              </Link>,
-            ],
-            [
-              "Escala",
-              data.scaleFactor
-                ? `${formatFactor(data.scaleFactor)} sobre ${formatQuantity(data.recipeVersion.yieldQuantity, data.recipeVersion.yieldUnit.symbol)}${data.theoreticalWastePercentage && Number(data.theoreticalWastePercentage) > 0 ? ` · merma teórica ${formatPercent(data.theoreticalWastePercentage)}` : ""}`
-                : null,
-            ],
-            [
-              "Lote",
-              data.productLot ? (
-                <span key="lot">
-                  {can(P.PRODUCT_LOTS_READ) ? (
-                    <Link href={`${LOTS_BASE}/${data.productLot.id}`}>{data.productLot.code}</Link>
-                  ) : (
-                    data.productLot.code
-                  )}{" "}
-                  <ConservationBadge state={data.productLot.conservationState} />
-                </span>
-              ) : (
-                (data.batchCode ?? (data.status === "DRAFT" ? "Se asigna al planificar" : null))
-              ),
-            ],
-            ["Fecha programada", formatDate(data.scheduledFor)],
-            ["Depósito de materias primas", data.sourceWarehouse.name],
-            ["Depósito de producto terminado", data.outputWarehouse.name],
-            ...(data.sourceOrder
-              ? ([
-                  [
-                    "Pedido",
-                    <>
-                      Creada para{" "}
-                      <Link href={`/pedidos/${data.sourceOrder.orderId}`}>
-                        {data.sourceOrder.orderCode}
-                      </Link>{" "}
-                      · entrega {formatDateTime(data.sourceOrder.requestedAt, tz)}
-                    </>,
-                  ],
-                ] as [string, ReactNode][])
-              : []),
-            ["Responsable", data.responsible?.name ?? "Sin asignar"],
-            ["Creada", who(data.createdAt, data.createdBy, tz)],
-            ["Planificada", who(data.plannedAt, data.plannedBy, tz)],
-            ["Iniciada", who(data.startedAt, data.startedBy, tz)],
-            ["Completada", who(data.completedAt, data.completedBy, tz)],
-            ["Notas", data.notes],
-          ]}
-        />
       </section>
 
-      {(data.status === "DRAFT" || data.status === "PLANNED" || data.status === "CANCELLED") && (
-        <PlanPanel order={data} />
+      {data.status === "IN_PROGRESS" && (
+        <ActualsEditor
+          order={data}
+          onChange={replace}
+          onCompleted={(o) => {
+            replace(o);
+            flash(
+              o.productLot
+                ? `Producción ${o.code} completada: entró el lote ${o.productLot.code} con ${formatQuantity(o.actualOutputNormalized, o.saleUnit.symbol)}.`
+                : `Producción ${o.code} completada.`,
+            );
+          }}
+        />
       )}
       {(data.status === "DRAFT" || data.status === "PLANNED") && data.availability && (
         <section className="panel" aria-labelledby="availability-title">
@@ -389,8 +437,39 @@ export function ProductionDetail({ id }: { id: string }) {
           <AvailabilityTable availability={data.availability} />
         </section>
       )}
-      {data.status === "IN_PROGRESS" && <ActualsEditor order={data} onChange={replace} />}
+      {(data.status === "DRAFT" || data.status === "PLANNED" || data.status === "CANCELLED") && (
+        <PlanPanel order={data} />
+      )}
       {data.status === "COMPLETED" && <PlanVsActual order={data} />}
+
+      <section className="panel" aria-labelledby="order-data-title">
+        <h2 id="order-data-title">Datos de la orden</h2>
+        <Details
+          hideEmpty
+          items={[
+            [
+              "Receta",
+              <Link key="r" href={`/recetas/${data.recipe.id}`}>
+                {data.recipe.name} · versión {data.recipeVersion.versionNumber}
+              </Link>,
+            ],
+            [
+              "Escala",
+              data.scaleFactor
+                ? `${formatFactor(data.scaleFactor)} sobre ${formatQuantity(data.recipeVersion.yieldQuantity, data.recipeVersion.yieldUnit.symbol)}${waste}`
+                : null,
+            ],
+            ["Depósito de materias primas", data.sourceWarehouse.name],
+            ["Depósito de producto terminado", data.outputWarehouse.name],
+            ["Responsable", data.responsible?.name ?? "Sin asignar"],
+            ["Creada", who(data.createdAt, data.createdBy, tz)],
+            ["Planificada", who(data.plannedAt, data.plannedBy, tz)],
+            ["Iniciada", who(data.startedAt, data.startedBy, tz)],
+            ["Completada", who(data.completedAt, data.completedBy, tz)],
+            ["Notas", data.notes],
+          ]}
+        />
+      </section>
 
       <ProductionCosts order={data} />
       {data.status === "COMPLETED" && <OrderMovements orderId={id} />}
@@ -401,36 +480,27 @@ export function ProductionDetail({ id }: { id: string }) {
 
 function StartButton({
   order,
+  blocker,
   onDone,
 }: {
   order: ProductionOrderDto;
+  blocker: string | null;
   onDone: (o: ProductionOrderDto) => void;
 }) {
-  const short = order.availability ? !order.availability.sufficient : false;
-  if (short || order.issues.length > 0) {
-    return (
-      <button
-        type="button"
-        className="button button--primary"
-        disabled
-        title={
-          short
-            ? "Falta materia prima: registrá la compra o un ajuste y volvé a verificar."
-            : "Resolvé los avisos de la orden."
-        }
-      >
-        Iniciar producción
-      </button>
-    );
-  }
   return (
     <ConfirmAction
       label="Iniciar producción"
+      variant="primary"
+      disabled={blocker !== null}
+      disabledReason={blocker ?? undefined}
       title={`¿Iniciar la orden ${order.code}?`}
       message={
         <>
-          Queda en curso para cargar lo que realmente se usó y lo que salió. El stock no cambia
-          hasta completarla.
+          {formatQuantity(order.plannedOutputNormalized, order.saleUnit.symbol)} de{" "}
+          {order.product.name}
+          {order.sourceOrder ? ` para el pedido ${order.sourceOrder.orderCode}` : ""}. Queda en
+          curso para cargar lo que realmente se usó y lo que salió. El stock no cambia hasta
+          completarla.
         </>
       }
       confirmLabel="Iniciar producción"
@@ -457,7 +527,7 @@ function CancelProduction({
     <ConfirmAction
       label="Cancelar orden"
       title={`¿Cancelar la orden ${order.code}?`}
-      message="No se mueve stock. La orden queda cancelada y no se puede reabrir."
+      message={`No se mueve stock. La orden ${order.code} queda cancelada y no se puede reabrir${order.sourceOrder ? `; deja de cubrir el pedido ${order.sourceOrder.orderCode}` : ""}.`}
       confirmLabel="Cancelar orden"
       danger
       onConfirm={async () => {
@@ -491,13 +561,13 @@ function PlanPanel({ order }: { order: ProductionOrderDto }) {
   return (
     <section className="panel" aria-labelledby="plan-title">
       <h2 id="plan-title">Materias primas del plan</h2>
-      {order.materialsArePreview && (
-        <p className="muted small">
-          Cálculo con la receta y los costos de hoy. Se fija al planificar.
-        </p>
-      )}
+      <p className="muted small">
+        {order.materialsArePreview
+          ? "Cálculo con la receta y los costos de hoy. Se fija al planificar."
+          : `Lo que la receta pide para ${formatQuantity(order.plannedOutputNormalized, order.saleUnit.symbol)}. Se descuenta de ${order.sourceWarehouse.name} recién al completar.`}
+      </p>
       {order.materials.length === 0 ? (
-        <p className="muted">Sin ingredientes.</p>
+        <p className="muted">La receta no tiene ingredientes.</p>
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -505,7 +575,7 @@ function PlanPanel({ order }: { order: ProductionOrderDto }) {
               <tr>
                 <th scope="col">Materia prima</th>
                 <th scope="col" className="num">
-                  Cantidad
+                  Requerido
                 </th>
                 {showCosts && (
                   <>
@@ -569,9 +639,11 @@ function entryOf(line: ProductionMaterialLineDto): Entry {
 function ActualsEditor({
   order,
   onChange,
+  onCompleted,
 }: {
   order: ProductionOrderDto;
   onChange: (o: ProductionOrderDto) => void;
+  onCompleted: (o: ProductionOrderDto) => void;
 }) {
   const can = useCan();
   const units = useUnits();
@@ -646,7 +718,7 @@ function ActualsEditor({
           else if (path.startsWith("actualOutput")) mapped.output = text;
         }
         setErrors(mapped);
-        setMessage({ kind: "error", text: err.message });
+        setMessage({ kind: "error", text: describeError(err) });
       } else {
         setMessage({ kind: "error", text: "No se pudo guardar." });
       }
@@ -659,11 +731,12 @@ function ActualsEditor({
   const c = order.costs?.currency ?? "ARS";
   const unit = order.saleUnit.symbol;
   return (
-    <section className="panel" aria-labelledby="actuals-title">
+    <section className="panel" id="actuals" aria-labelledby="actuals-title">
       <h2 id="actuals-title">Consumo y salida reales</h2>
       <p className="muted small">
-        Cargá lo que realmente se usó de cada materia prima (arranca con lo planificado) y cuánto
-        salió. Podés guardar el avance y completar después.
+        Cargá lo que realmente se usó de cada materia prima (arranca con lo requerido por la receta)
+        y cuánto salió. Podés guardar el avance y completar después: el stock se mueve recién al
+        confirmar.
       </p>
       <div className="table-wrap">
         <table className="table ingredients-editor production-actuals">
@@ -671,10 +744,10 @@ function ActualsEditor({
             <tr>
               <th scope="col">Materia prima</th>
               <th scope="col" className="num">
-                Planificado
+                Requerido
               </th>
               <th scope="col" className="col-qty">
-                Real
+                Consumido
               </th>
               <th scope="col" className="col-unit">
                 Unidad
@@ -717,6 +790,7 @@ function ActualsEditor({
                       value={entry.quantity}
                       disabled={!editable}
                       aria-invalid={errors[m.id!] ? true : undefined}
+                      aria-describedby={errors[m.id!] ? `actual-${m.id}-error` : undefined}
                       onChange={(e) =>
                         setEntries((prev) => ({
                           ...prev,
@@ -724,7 +798,11 @@ function ActualsEditor({
                         }))
                       }
                     />
-                    {errors[m.id!] && <span className="form__error">{errors[m.id!]}</span>}
+                    {errors[m.id!] && (
+                      <span className="form__error" id={`actual-${m.id}-error`}>
+                        {errors[m.id!]}
+                      </span>
+                    )}
                   </td>
                   <td className="col-unit">
                     <select
@@ -777,7 +855,7 @@ function ActualsEditor({
           </tbody>
         </table>
       </div>
-      <p className="muted small">La diferencia se actualiza al guardar.</p>
+      <p className="muted small">La diferencia se recalcula al guardar el avance.</p>
 
       {can(P.PRODUCTION_ORDERS_ADD_EXTRA_MATERIAL) && (
         <ExtraMaterialForm order={order} units={units} onDone={onChange} />
@@ -796,6 +874,7 @@ function ActualsEditor({
               disabled={!editable}
               placeholder={`Planificado: ${formatQuantity(order.plannedOutputNormalized, unit)}`}
               aria-invalid={errors.output ? true : undefined}
+              aria-describedby={errors.output ? "actual-output-error" : "actual-output-hint"}
               onChange={(e) => setOutput((o) => ({ ...o, quantity: e.target.value }))}
             />
             <select
@@ -812,9 +891,13 @@ function ActualsEditor({
               {!units && <option value={output.unitId}>{unit}</option>}
             </select>
           </div>
-          {errors.output && <span className="form__error">{errors.output}</span>}
+          {errors.output && (
+            <span className="form__error" id="actual-output-error">
+              {errors.output}
+            </span>
+          )}
         </div>
-        <p className="muted small">
+        <p className="muted small" id="actual-output-hint">
           Entra a {order.outputWarehouse.name} al completar. Si sale menos que lo planificado, la
           diferencia queda como rendimiento: no se registra merma aparte.
         </p>
@@ -859,7 +942,7 @@ function ActualsEditor({
           onClose={() => setReview(null)}
           onCompleted={(o) => {
             setReview(null);
-            onChange(o);
+            onCompleted(o);
             window.scrollTo({ top: 0 });
           }}
         />
@@ -877,29 +960,23 @@ function RemoveExtra({
   line: ProductionMaterialLineDto;
   onDone: (o: ProductionOrderDto) => void;
 }) {
-  const [pending, setPending] = useState(false);
   return (
-    <button
-      type="button"
-      className="button button--small"
-      disabled={pending}
-      aria-label={`Quitar consumo extra de ${line.rawMaterial.name}`}
-      onClick={async () => {
-        setPending(true);
-        try {
-          onDone(
-            await apiFetch<ProductionOrderDto>(
-              `/api/production-orders/${order.id}/extra-materials/${line.id}`,
-              { method: "DELETE" },
-            ),
-          );
-        } finally {
-          setPending(false);
-        }
+    <ConfirmAction
+      label="Quitar"
+      small
+      danger
+      title={`¿Quitar el consumo extra de ${line.rawMaterial.name}?`}
+      message={`Se borra la línea${line.notes ? ` («${line.notes}»)` : ""} de esta orden. No mueve stock: el consumo se descuenta recién al completar.`}
+      confirmLabel="Quitar consumo extra"
+      onConfirm={async () => {
+        onDone(
+          await apiFetch<ProductionOrderDto>(
+            `/api/production-orders/${order.id}/extra-materials/${line.id}`,
+            { method: "DELETE" },
+          ),
+        );
       }}
-    >
-      Quitar
-    </button>
+    />
   );
 }
 
@@ -918,12 +995,27 @@ function ExtraMaterialForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!open || materials) return;
+    let cancelled = false;
     fetchOptions<RawMaterialDto>("/api/raw-materials")
-      .then(setMaterials)
-      .catch(() => setMaterials([]));
-  }, [open, materials]);
+      .then((items) => {
+        if (!cancelled) setMaterials(items);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled)
+          setLoadError(
+            err instanceof ApiError
+              ? describeError(err)
+              : "No se pudieron cargar las materias primas.",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, materials, attempt]);
   const material = materials?.find((m) => m.id === form.rawMaterialId) ?? null;
   const options = material && units ? compatibleUnits(units, material.baseUnit.id) : [];
   const unitId = form.unitId || material?.baseUnit.id || "";
@@ -964,8 +1056,8 @@ function ExtraMaterialForm({
     } catch (err) {
       if (err instanceof ApiError) {
         setErrors(err.fieldErrors);
-        setError(err.message);
-      } else setError("No se pudo agregar.");
+        setError(describeError(err));
+      } else setError("No se pudo agregar el consumo extra.");
     } finally {
       setPending(false);
     }
@@ -974,22 +1066,48 @@ function ExtraMaterialForm({
   return (
     <fieldset className="extra-form">
       <legend className="sr-only">Agregar consumo extra</legend>
+      <p className="form__hint form__field--full">
+        Para algo que se usó y no estaba en la receta. Todos los campos son obligatorios.
+      </p>
+      {loadError && (
+        <p className="alert alert--warn form__field--full" role="alert">
+          {loadError}{" "}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setLoadError(null);
+              setAttempt((a) => a + 1);
+            }}
+          >
+            Reintentar
+          </button>
+        </p>
+      )}
       <div className="form__field">
         <label htmlFor="extra-material">Materia prima</label>
         <select
           id="extra-material"
           value={form.rawMaterialId}
+          aria-required
           aria-invalid={errors.rawMaterialId ? true : undefined}
+          aria-describedby={errors.rawMaterialId ? "extra-material-error" : undefined}
           onChange={(e) => setForm({ ...form, rawMaterialId: e.target.value, unitId: "" })}
         >
-          <option value="">{materials ? "Elegí una materia prima" : "Cargando…"}</option>
+          <option value="">
+            {materials ? "Elegí una materia prima" : loadError ? "Sin datos" : "Cargando…"}
+          </option>
           {(materials ?? []).map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
             </option>
           ))}
         </select>
-        {errors.rawMaterialId && <span className="form__error">{errors.rawMaterialId}</span>}
+        {errors.rawMaterialId && (
+          <span className="form__error" id="extra-material-error">
+            {errors.rawMaterialId}
+          </span>
+        )}
       </div>
       <div className="form__field">
         <label htmlFor="extra-quantity">Cantidad</label>
@@ -998,10 +1116,16 @@ function ExtraMaterialForm({
           inputMode="decimal"
           autoComplete="off"
           value={form.quantity}
+          aria-required
           aria-invalid={errors.quantity ? true : undefined}
+          aria-describedby={errors.quantity ? "extra-quantity-error" : undefined}
           onChange={(e) => setForm({ ...form, quantity: e.target.value })}
         />
-        {errors.quantity && <span className="form__error">{errors.quantity}</span>}
+        {errors.quantity && (
+          <span className="form__error" id="extra-quantity-error">
+            {errors.quantity}
+          </span>
+        )}
       </div>
       <div className="form__field">
         <label htmlFor="extra-unit">Unidad</label>
@@ -1009,6 +1133,8 @@ function ExtraMaterialForm({
           id="extra-unit"
           value={unitId}
           disabled={!material}
+          aria-invalid={errors.unitId ? true : undefined}
+          aria-describedby={errors.unitId ? "extra-unit-error" : undefined}
           onChange={(e) => setForm({ ...form, unitId: e.target.value })}
         >
           {options.length === 0 && <option value="">—</option>}
@@ -1018,6 +1144,11 @@ function ExtraMaterialForm({
             </option>
           ))}
         </select>
+        {errors.unitId && (
+          <span className="form__error" id="extra-unit-error">
+            {errors.unitId}
+          </span>
+        )}
       </div>
       <div className="form__field form__field--full">
         <label htmlFor="extra-notes">Motivo</label>
@@ -1026,10 +1157,16 @@ function ExtraMaterialForm({
           value={form.notes}
           maxLength={500}
           placeholder="Ej.: engrase de bandejas"
+          aria-required
           aria-invalid={errors.notes ? true : undefined}
+          aria-describedby={errors.notes ? "extra-notes-error" : undefined}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
         />
-        {errors.notes && <span className="form__error">{errors.notes}</span>}
+        {errors.notes && (
+          <span className="form__error" id="extra-notes-error">
+            {errors.notes}
+          </span>
+        )}
       </div>
       <div className="actions extra-form__actions">
         <button
@@ -1073,6 +1210,7 @@ function ReviewDialog({
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
   const unit = order.saleUnit.symbol;
+  const tz = useCurrentUser().company.timezone;
   const short = order.availability ? !order.availability.sufficient : false;
   const estimated = order.costs?.estimated ?? null;
   const can = useCan();
@@ -1102,7 +1240,7 @@ function ReviewDialog({
         const details = err.details as { message?: string }[];
         setError(
           <>
-            {err.message}
+            {describeError(err)}
             <ul>
               {details.map((d, i) => (
                 <li key={i}>{d.message}</li>
@@ -1111,7 +1249,9 @@ function ReviewDialog({
           </>,
         );
       } else {
-        setError(err instanceof ApiError ? err.message : "No se pudo completar la producción.");
+        setError(
+          err instanceof ApiError ? describeError(err) : "No se pudo completar la producción.",
+        );
       }
     } finally {
       setPending(false);
@@ -1126,6 +1266,27 @@ function ReviewDialog({
       onClose={onClose}
     >
       <h2 id="review-title">Revisar antes de completar la orden {order.code}</h2>
+      <p className="muted">
+        {order.product.name}
+        {order.batchCode && (
+          <>
+            {" "}
+            · entra como lote <span className="code">{order.batchCode}</span>
+          </>
+        )}
+        {order.sourceOrder && (
+          <>
+            {" "}
+            · para el pedido <span className="code">
+              {order.sourceOrder.orderCode}
+            </span> (entrega {formatDateTime(order.sourceOrder.requestedAt, tz)})
+          </>
+        )}
+      </p>
+      <p className="small muted">
+        Lo cargado en consumo y salida ya quedó guardado. Si volvés sin confirmar, la orden sigue en
+        curso con esos datos.
+      </p>
       <dl className="cost-summary">
         <div>
           <dt>Planificado</dt>
@@ -1150,10 +1311,10 @@ function ReviewDialog({
             <tr>
               <th scope="col">Materia prima</th>
               <th scope="col" className="num">
-                Planificado
+                Requerido
               </th>
               <th scope="col" className="num">
-                Real
+                Consumido
               </th>
               <th scope="col" className="num">
                 Diferencia
@@ -1220,15 +1381,13 @@ function ReviewDialog({
           {error}
         </div>
       )}
+      {short && (
+        <p className="form__error" id="review-blocked">
+          No se puede confirmar: falta materia prima para el consumo cargado (ver la tabla de
+          arriba). Volvé, corregí el consumo o registrá el stock que falta.
+        </p>
+      )}
       <div className="form__footer">
-        <button
-          type="button"
-          className="button button--primary"
-          onClick={confirm}
-          disabled={pending || short}
-        >
-          {pending ? "Procesando…" : "Confirmar producción"}
-        </button>
         <button
           type="button"
           className="button"
@@ -1236,6 +1395,16 @@ function ReviewDialog({
           disabled={pending}
         >
           Volver
+        </button>
+        <button
+          type="button"
+          className="button button--primary"
+          onClick={confirm}
+          disabled={pending || short}
+          aria-describedby={short ? "review-blocked" : undefined}
+          aria-busy={pending || undefined}
+        >
+          {pending ? "Procesando…" : "Confirmar producción"}
         </button>
       </div>
     </dialog>
@@ -1256,10 +1425,10 @@ function PlanVsActual({ order }: { order: ProductionOrderDto }) {
             <tr>
               <th scope="col">Materia prima</th>
               <th scope="col" className="num">
-                Planificado
+                Requerido
               </th>
               <th scope="col" className="num">
-                Real
+                Consumido
               </th>
               <th scope="col" className="num">
                 Diferencia
@@ -1332,7 +1501,7 @@ function PlanVsActual({ order }: { order: ProductionOrderDto }) {
 function OrderMovements({ orderId }: { orderId: string }) {
   const user = useCurrentUser();
   const can = useCan();
-  const { data, error } = useResource<StockMovementDto[]>(
+  const { data, error, reload } = useResource<StockMovementDto[]>(
     `/api/production-orders/${orderId}/movements`,
   );
   const columns = movementColumns(
@@ -1345,7 +1514,12 @@ function OrderMovements({ orderId }: { orderId: string }) {
     <section className="panel" aria-labelledby="movements-title">
       <h2 id="movements-title">Movimientos de stock</h2>
       {error ? (
-        <p className="muted">{error.message}</p>
+        <div className="alert alert--warn" role="alert">
+          No se pudieron cargar los movimientos: {describeError(error)}{" "}
+          <button type="button" className="link-button" onClick={reload}>
+            Reintentar
+          </button>
+        </div>
       ) : !data ? (
         <Loading />
       ) : data.length === 0 ? (

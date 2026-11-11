@@ -114,32 +114,32 @@ rol recibe 403 exactamente en los endpoints cuyo permiso no tiene.
 | Inventario | `inventory.cost.read` | Ver costo promedio, valorización e historial de costos del inventario | ✅ | ✅ | ✅ | — | ✅ | — | — |
 | Presentaciones de compra | `presentations.read` | Ver presentaciones de compra de materias primas | ✅ | ✅ | ✅ | — | ✅ | — | ✅ |
 | Presentaciones de compra | `presentations.manage` | Crear, modificar y desactivar presentaciones de compra | ✅ | ✅ | — | — | ✅ | — | — |
-| production | `production_orders.read` | Ver órdenes de producción, consumos y disponibilidad | ✅ | ✅ | ✅ | — | — | ✅ | — |
-| production | `production_orders.create` | Crear órdenes de producción (borrador) | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production_orders.update` | Editar órdenes en borrador y registrar consumos y salida reales | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production_orders.plan` | Planificar una orden (fija receta, cantidades y costo esperado) | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production_orders.start` | Iniciar la producción (revalida el stock de materias primas) | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production_orders.complete` | Completar la producción (consume materias primas e ingresa producto terminado) | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production_orders.cancel` | Cancelar órdenes de producción no completadas | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production_orders.add_extra_material` | Agregar y quitar consumos extra durante la producción | ✅ | ✅ | — | — | — | ✅ | — |
-| production | `production.cost.read` | Ver costos esperados y reales de producción | ✅ | ✅ | ✅ | — | — | — | — |
-| product_lots | `product_lots.read` | Ver lotes de producto terminado, su trazabilidad y disponibilidad a una fecha | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
-| product_lots | `product_lots.transform` | Congelar y descongelar lotes (transformación de conservación) | ✅ | ✅ | — | — | — | ✅ | ✅ |
-| product_lots | `product_lots.waste` | Registrar mermas de producto terminado sobre un lote | ✅ | ✅ | — | — | — | — | ✅ |
-| product_lots | `product_lots.quality` | Bloquear y desbloquear lotes por calidad | ✅ | ✅ | — | — | — | — | ✅ |
-| product_conservation | `product_conservation.read` | Ver la conservación y vida útil configuradas de los productos | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
-| product_conservation | `product_conservation.manage` | Configurar conservación, vida útil y estado inicial de los productos | ✅ | ✅ | — | — | — | — | — |
+| Producción | `production_orders.read` | Ver órdenes de producción, consumos y disponibilidad | ✅ | ✅ | ✅ | — | — | ✅ | — |
+| Producción | `production_orders.create` | Crear órdenes de producción (borrador) | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production_orders.update` | Editar órdenes en borrador y registrar consumos y salida reales | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production_orders.plan` | Planificar una orden (fija receta, cantidades y costo esperado) | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production_orders.start` | Iniciar la producción (revalida el stock de materias primas) | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production_orders.complete` | Completar la producción (consume materias primas e ingresa producto terminado) | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production_orders.cancel` | Cancelar órdenes de producción no completadas | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production_orders.add_extra_material` | Agregar y quitar consumos extra durante la producción | ✅ | ✅ | — | — | — | ✅ | — |
+| Producción | `production.cost.read` | Ver costos esperados y reales de producción | ✅ | ✅ | ✅ | — | — | — | — |
+| Lotes | `product_lots.read` | Ver lotes de producto terminado, su trazabilidad y disponibilidad a una fecha | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
+| Lotes | `product_lots.transform` | Congelar y descongelar lotes (transformación de conservación) | ✅ | ✅ | — | — | — | ✅ | ✅ |
+| Lotes | `product_lots.waste` | Registrar mermas de producto terminado sobre un lote | ✅ | ✅ | — | — | — | — | ✅ |
+| Lotes | `product_lots.quality` | Bloquear y desbloquear lotes por calidad | ✅ | ✅ | — | — | — | — | ✅ |
+| Conservación de productos | `product_conservation.read` | Ver la conservación y vida útil configuradas de los productos | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
+| Conservación de productos | `product_conservation.manage` | Configurar conservación, vida útil y estado inicial de los productos | ✅ | ✅ | — | — | — | — | — |
 | Inventario | `inventory.expiry.read` | Ver productos terminados próximos a vencer | ✅ | ✅ | ✅ | — | — | ✅ | ✅ |
-| orders | `orders.read` | Ver pedidos de clientes, su cobertura, reservas y necesidades | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| orders | `orders.create` | Crear pedidos (borrador) | ✅ | ✅ | — | ✅ | — | — | — |
-| orders | `orders.update` | Editar borradores y datos no planificados de pedidos (contacto, notas) | ✅ | ✅ | — | ✅ | — | — | — |
-| orders | `orders.confirm` | Confirmar pedidos (reserva lotes y genera necesidades de producción) | ✅ | ✅ | — | ✅ | — | — | — |
-| orders | `orders.replan` | Modificar pedidos confirmados y recalcular su cobertura | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| orders | `orders.cancel` | Cancelar pedidos (libera sus reservas) | ✅ | ✅ | — | ✅ | — | — | — |
-| orders | `orders.prepare` | Pasar pedidos a preparación | ✅ | ✅ | — | — | — | ✅ | — |
-| orders | `orders.ready` | Marcar pedidos como listos (sólo con cobertura completa) | ✅ | ✅ | — | — | — | — | ✅ |
-| order_planning | `order_planning.read` | Ver necesidades: producción y materias primas de pedidos, pedidos en riesgo | ✅ | ✅ | ✅ | — | — | ✅ | — |
-| order_planning | `order_production.create` | Crear órdenes de producción desde la necesidad de un pedido | ✅ | ✅ | — | — | — | ✅ | — |
+| Pedidos | `orders.read` | Ver pedidos de clientes, su cobertura, reservas y necesidades | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| Pedidos | `orders.create` | Crear pedidos (borrador) | ✅ | ✅ | — | ✅ | — | — | — |
+| Pedidos | `orders.update` | Editar borradores y datos no planificados de pedidos (contacto, notas) | ✅ | ✅ | — | ✅ | — | — | — |
+| Pedidos | `orders.confirm` | Confirmar pedidos (reserva lotes y genera necesidades de producción) | ✅ | ✅ | — | ✅ | — | — | — |
+| Pedidos | `orders.replan` | Modificar pedidos confirmados y recalcular su cobertura | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Pedidos | `orders.cancel` | Cancelar pedidos (libera sus reservas) | ✅ | ✅ | — | ✅ | — | — | — |
+| Pedidos | `orders.prepare` | Pasar pedidos a preparación | ✅ | ✅ | — | — | — | ✅ | — |
+| Pedidos | `orders.ready` | Marcar pedidos como listos (sólo con cobertura completa) | ✅ | ✅ | — | — | — | — | ✅ |
+| Planificación de pedidos | `order_planning.read` | Ver necesidades: producción y materias primas de pedidos, pedidos en riesgo | ✅ | ✅ | ✅ | — | — | ✅ | — |
+| Planificación de pedidos | `order_production.create` | Crear órdenes de producción desde la necesidad de un pedido | ✅ | ✅ | — | — | — | ✅ | — |
 | Ventas | `sales.read` | Ver ventas y entregas (precios sólo con price_lists.read) | ✅ | ✅ | ✅ | ✅ | — | — | ✅ |
 | Ventas | `sales.create` | Crear ventas (borrador) | ✅ | ✅ | ✅ | ✅ | — | — | — |
 | Ventas | `sales.update` | Editar y descartar borradores de venta | ✅ | ✅ | ✅ | ✅ | — | — | — |

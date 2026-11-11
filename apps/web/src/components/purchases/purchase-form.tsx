@@ -19,23 +19,29 @@ import {
   type SupplierDto,
   type UnitDto,
   type WarehouseDto,
+  instantToZonedLocal,
+  zonedLocalToInstant,
 } from "@bakery/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
-import { isDecimal, parseDecimal, toDecimal } from "@/lib/decimal-input";
-import {
-  formatDateTime,
-  formatDecimal,
-  formatMoney,
-  formatQuantity,
-  formatUnitCost,
-} from "@/lib/format";
-import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { ApiError, apiFetch, fetchOptions, listPath } from "@/lib/api-client";
+import { isDecimal, isPositive, parseDecimal, toDecimal } from "@/lib/decimal-input";
+import { describeError } from "@/lib/errors";
+import { formatDecimal, formatMoney, formatQuantity, formatUnitCost } from "@/lib/format";
+import { EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { WallClockInput, formatWallClock, isCompleteWallClock } from "../orders/order-shared";
 import { toCostingUnit } from "../recipes/cost-views";
+import { Combobox, type ComboOption } from "../ui/combobox";
+import { Icon } from "../ui/icons";
+import { LineField, LineList, LineRow } from "../ui/lines";
 import { useCan, useCurrentUser } from "../user-context";
-import { PURCHASES_BASE, commercialQuantity } from "./purchase-pages";
+import {
+  ORDER_FAILED_PARAM,
+  PURCHASES_BASE,
+  commercialQuantity,
+  supplierLabel,
+} from "./purchase-pages";
 
 /*
  * Alta y edición de una compra (borrador) y registro de una recepción. Los
@@ -75,11 +81,8 @@ const emptyLine = (rawMaterialId = ""): Line => ({
   discountAmount: "",
 });
 
-const today = () => {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-};
+/** Hoy en la zona horaria de la EMPRESA (no la del navegador): "AAAA-MM-DD". */
+const companyToday = (timeZone: string) => instantToZonedLocal(new Date(), timeZone).slice(0, 10);
 
 interface Catalog {
   suppliers: SupplierDto[];
@@ -141,13 +144,24 @@ function PurchaseFormInner({ id }: { id?: string }) {
   if (!catalog || (id && !existing)) return <Loading />;
   if (existing && existing.status !== "DRAFT") {
     return (
-      <section className="panel panel--empty">
-        <p className="upcoming">Esta compra ya no es un borrador</p>
-        <p className="muted">
-          Una compra pedida sólo admite cambios de notas, fecha esperada y documento.{" "}
-          <Link href={`${PURCHASES_BASE}/${existing.id}`}>Volver</Link>
-        </p>
-      </section>
+      <div className="page">
+        <PageHeader
+          breadcrumb={[
+            { href: PURCHASES_BASE, label: "Compras" },
+            { href: `${PURCHASES_BASE}/${existing.id}`, label: `Compra ${existing.number}` },
+          ]}
+          title={`Editar compra ${existing.number}`}
+        />
+        <EmptyState
+          title="Esta compra ya no es un borrador"
+          description="Una vez pedida al proveedor, sus líneas y precios ya no se editan."
+          action={
+            <Link className="button" href={`${PURCHASES_BASE}/${existing.id}`}>
+              Ver la compra
+            </Link>
+          }
+        />
+      </div>
     );
   }
   return <PurchaseEditor catalog={catalog} existing={existing ?? null} />;
@@ -183,7 +197,7 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
         }
       : {
           supplierId: params.get("supplierId") ?? "",
-          purchaseDate: today(),
+          purchaseDate: companyToday(user.company.timezone),
           expectedDate: "",
           supplierDocumentNumber: "",
           taxTotal: "",
@@ -297,12 +311,40 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
     isDecimal(form.taxTotal) ? toDecimal(form.taxTotal) : 0,
   );
 
+  /** Validación previa en el cliente: mensajes en palabras antes de llamar a la API. */
+  function validate(sent: Line[], order: boolean): Record<string, string> {
+    const errors: Record<string, string> = {};
+    if (!form.supplierId) errors.supplierId = "Elegí un proveedor.";
+    if (!form.purchaseDate) errors.purchaseDate = "Indicá la fecha de la compra.";
+    if (form.taxTotal.trim() !== "" && !isDecimal(form.taxTotal))
+      errors.taxTotal = "Escribí un importe válido (por ejemplo 1500,50).";
+    for (const l of sent) {
+      if (!l.rawMaterialId) errors[`line.${l.key}.rawMaterialId`] = "Elegí la materia prima.";
+      else if (!l.option) errors[`line.${l.key}.presentationId`] = "Elegí cómo se compra.";
+      if (!isPositive(l.quantity))
+        errors[`line.${l.key}.quantity`] = "Indicá una cantidad mayor a 0.";
+      if (!isDecimal(l.unitPrice)) errors[`line.${l.key}.unitPrice`] = "Indicá el precio unitario.";
+      if (l.discountAmount.trim() !== "" && !isDecimal(l.discountAmount))
+        errors[`line.${l.key}.discountAmount`] = "Escribí un descuento válido.";
+    }
+    if (order && sent.length === 0)
+      errors.lines = "Agregá al menos una materia prima antes de confirmar el pedido.";
+    return errors;
+  }
+
   async function save(order: boolean, event?: FormEvent) {
     event?.preventDefault();
-    setPending(true);
+    if (pending) return;
     setFieldErrors({});
     setFormError(null);
     const sent = lines.filter((l) => l.rawMaterialId || l.quantity || l.unitPrice);
+    const local = validate(sent, order);
+    if (Object.keys(local).length > 0) {
+      setFieldErrors(local);
+      setFormError(local.lines ?? "Revisá los datos marcados.");
+      return;
+    }
+    setPending(true);
     const body = {
       supplierId: form.supplierId,
       purchaseDate: form.purchaseDate,
@@ -319,13 +361,11 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
         discountAmount: l.discountAmount.trim() === "" ? null : toDecimal(l.discountAmount),
       })),
     };
+    let saved: PurchaseDto;
     try {
-      const saved = existing
+      saved = existing
         ? await apiFetch<PurchaseDto>(`/api/purchases/${existing.id}`, { method: "PATCH", body })
         : await apiFetch<PurchaseDto>("/api/purchases", { method: "POST", body });
-      if (order) await apiFetch(`/api/purchases/${saved.id}/order`, { method: "POST" });
-      router.push(`${PURCHASES_BASE}/${saved.id}`);
-      router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {
         const mapped: Record<string, string> = {};
@@ -336,32 +376,72 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
         }
         setFieldErrors(mapped);
         setFormError(
-          err.code === "PURCHASE_WITHOUT_LINES"
-            ? "Agregá al menos una materia prima antes de confirmar el pedido."
-            : Object.keys(mapped).length > 0
-              ? "Revisá los datos marcados."
-              : err.message,
+          Object.keys(mapped).length > 0 ? "Revisá los datos marcados." : describeError(err),
         );
       } else {
-        setFormError("No se pudo guardar la compra.");
+        setFormError("No se pudo guardar la compra. Revisá la conexión y reintentá.");
       }
       setPending(false);
+      return;
     }
+    if (order) {
+      try {
+        await apiFetch(`/api/purchases/${saved.id}/order`, { method: "POST" });
+      } catch (err) {
+        // La compra YA existe como borrador: no se vuelve a crear. Se abre el borrador con el
+        // error a la vista, y desde ahí se reintenta "Confirmar pedido".
+        const reason =
+          err instanceof ApiError
+            ? err.code === "PURCHASE_WITHOUT_LINES"
+              ? "no tiene materias primas"
+              : describeError(err)
+            : "no hubo conexión con el servidor";
+        router.push(listPath(`${PURCHASES_BASE}/${saved.id}`, { [ORDER_FAILED_PARAM]: reason }));
+        router.refresh();
+        return;
+      }
+    }
+    router.push(`${PURCHASES_BASE}/${saved.id}`);
+    router.refresh();
   }
 
-  const supplierOptions = catalog.suppliers.filter((s) => s.active || s.id === form.supplierId);
+  const supplierOptions = useMemo<ComboOption[]>(
+    () =>
+      catalog.suppliers
+        .filter((s) => s.active || s.id === form.supplierId)
+        .map((s) => ({
+          value: s.id,
+          label: supplierLabel(s),
+          detail: s.tradeName ? s.legalName : (s.taxId ?? undefined),
+          keywords: `${s.code} ${s.legalName} ${s.taxId ?? ""}`,
+        })),
+    [catalog.suppliers, form.supplierId],
+  );
+  const materialOptions = (current: string): ComboOption[] =>
+    catalog.materials
+      .filter((m) => m.active || m.id === current)
+      .map((m) => ({
+        value: m.id,
+        label: m.name,
+        detail: m.baseUnit.symbol,
+        keywords: `${m.code} ${m.category.name}`,
+      }));
   const err = (key: number, f: string) => fieldErrors[`line.${key}.${f}`];
+  const canOrder = can(P.PURCHASES_ORDER);
 
   return (
     <div className="page">
       <PageHeader
         breadcrumb={
           existing
-            ? { href: `${PURCHASES_BASE}/${existing.id}`, label: `Compra ${existing.number}` }
+            ? [
+                { href: PURCHASES_BASE, label: "Compras" },
+                { href: `${PURCHASES_BASE}/${existing.id}`, label: `Compra ${existing.number}` },
+              ]
             : { href: PURCHASES_BASE, label: "Compras" }
         }
         title={existing ? `Editar compra ${existing.number}` : "Nueva compra"}
-        subtitle="Se guarda como borrador. El stock cambia recién al confirmar una recepción."
+        subtitle="Pedido al proveedor. El stock y el costo cambian recién al confirmar una recepción."
       />
       <form className="form" onSubmit={(e) => save(false, e)} noValidate>
         {formError && (
@@ -374,44 +454,42 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
           <div className="form-grid">
             <div className="form__field">
               <label htmlFor="supplierId">
-                Proveedor{" "}
-                <span className="form__required" aria-hidden="true">
-                  *
-                </span>
+                Proveedor <Required />
               </label>
-              <select
+              <Combobox
                 id="supplierId"
+                options={supplierOptions}
                 value={form.supplierId}
-                aria-invalid={fieldErrors.supplierId ? true : undefined}
-                onChange={(e) => set("supplierId", e.target.value)}
-              >
-                <option value="">Elegí un proveedor</option>
-                {supplierOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.legalName}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => set("supplierId", v)}
+                placeholder="Buscar por nombre, código o CUIT"
+                emptyText="Ningún proveedor coincide"
+                required
+                invalid={Boolean(fieldErrors.supplierId)}
+                describedBy={fieldErrors.supplierId ? "supplierId-error" : undefined}
+              />
               {fieldErrors.supplierId && (
-                <span className="form__error">{fieldErrors.supplierId}</span>
+                <span id="supplierId-error" className="form__error">
+                  {fieldErrors.supplierId}
+                </span>
               )}
             </div>
             <div className="form__field">
               <label htmlFor="purchaseDate">
-                Fecha{" "}
-                <span className="form__required" aria-hidden="true">
-                  *
-                </span>
+                Fecha <Required />
               </label>
               <input
                 id="purchaseDate"
                 type="date"
                 value={form.purchaseDate}
+                aria-required="true"
                 aria-invalid={fieldErrors.purchaseDate ? true : undefined}
+                aria-describedby={fieldErrors.purchaseDate ? "purchaseDate-error" : undefined}
                 onChange={(e) => set("purchaseDate", e.target.value)}
               />
               {fieldErrors.purchaseDate && (
-                <span className="form__error">{fieldErrors.purchaseDate}</span>
+                <span id="purchaseDate-error" className="form__error">
+                  {fieldErrors.purchaseDate}
+                </span>
               )}
             </div>
             <div className="form__field">
@@ -420,8 +498,12 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
                 id="expectedDate"
                 type="date"
                 value={form.expectedDate}
+                aria-describedby="expectedDate-hint"
                 onChange={(e) => set("expectedDate", e.target.value)}
               />
+              <span id="expectedDate-hint" className="form__hint">
+                Opcional. Ayuda al depósito a saber qué llega y cuándo.
+              </span>
             </div>
             <div className="form__field">
               <label htmlFor="supplierDocumentNumber">Documento del proveedor</label>
@@ -438,171 +520,152 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
 
         <section className="panel" aria-labelledby="purchase-lines">
           <h2 id="purchase-lines">2. Materias primas</h2>
-          <div className="table-wrap">
-            <table className="table ingredients-editor purchase-editor">
-              <thead>
-                <tr>
-                  <th scope="col" className="col-material">
-                    Materia prima
-                  </th>
-                  <th scope="col" className="col-presentation">
-                    Presentación
-                  </th>
-                  <th scope="col" className="col-qty">
-                    Cantidad
-                  </th>
-                  <th scope="col" className="col-price">
-                    Precio unitario
-                  </th>
-                  <th scope="col" className="col-price">
-                    Descuento
-                  </th>
-                  <th scope="col" className="num">
-                    Neto
-                  </th>
-                  <th scope="col">
-                    <span className="sr-only">Quitar</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line, index) => {
-                  const material = materialById.get(line.rawMaterialId);
-                  const c = computed[index];
-                  const n = index + 1;
-                  return (
-                    <tr key={line.key}>
-                      <td className="col-material">
-                        <select
-                          aria-label={`Materia prima ${n}`}
-                          value={line.rawMaterialId}
-                          aria-invalid={err(line.key, "rawMaterialId") ? true : undefined}
-                          onChange={(e) =>
-                            setLine(line.key, { rawMaterialId: e.target.value, option: "" })
-                          }
-                        >
-                          <option value="">Elegí…</option>
-                          {catalog.materials
-                            .filter((m) => m.active || m.id === line.rawMaterialId)
-                            .map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                        </select>
-                        {err(line.key, "rawMaterialId") && (
-                          <span className="form__error">{err(line.key, "rawMaterialId")}</span>
-                        )}
+          {catalog.materials.length === 0 ? (
+            <EmptyState
+              compact
+              title="No hay materias primas activas para comprar"
+              description="Se dan de alta en Materias primas."
+            />
+          ) : (
+            <LineList
+              label="Materias primas de la compra"
+              head={[
+                "Materia prima y presentación",
+                "Cantidad",
+                "Precio unitario",
+                "Descuento $",
+                "Importe neto",
+              ]}
+              variant="full"
+            >
+              {lines.map((line, index) => {
+                const material = materialById.get(line.rawMaterialId);
+                const c = computed[index];
+                const n = index + 1;
+                const presentationError =
+                  err(line.key, "presentationId") ?? err(line.key, "purchaseUnitId");
+                const lineError =
+                  err(line.key, "rawMaterialId") ??
+                  presentationError ??
+                  err(line.key, "quantity") ??
+                  err(line.key, "unitPrice") ??
+                  err(line.key, "discountAmount");
+                return (
+                  <LineRow
+                    key={line.key}
+                    testId={`purchase-line-${n}`}
+                    removeLabel={`Quitar línea ${n}`}
+                    canRemove={lines.length > 1}
+                    onRemove={() =>
+                      setForm((f) => ({ ...f, lines: f.lines.filter((l) => l.key !== line.key) }))
+                    }
+                    meta={
+                      <>
                         {c?.baseQty && c.unitCost && (
-                          <span className="cost-source">
+                          <span>
                             Equivale a {formatQuantity(c.baseQty.toString(), c.baseSymbol!)} ·{" "}
                             {formatUnitCost(toFixedString(c.unitCost, 6), currency, c.baseSymbol!)}
                           </span>
                         )}
-                      </td>
-                      <td className="col-presentation">
-                        <select
-                          aria-label={`Presentación ${n}`}
-                          value={line.option}
-                          disabled={!material}
-                          aria-invalid={
-                            err(line.key, "presentationId") || err(line.key, "purchaseUnitId")
-                              ? true
-                              : undefined
-                          }
-                          onChange={(e) => setLine(line.key, { option: e.target.value })}
-                        >
-                          <option value="">—</option>
-                          {optionsFor(material).map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {(err(line.key, "presentationId") || err(line.key, "purchaseUnitId")) && (
-                          <span className="form__error">
-                            {err(line.key, "presentationId") ?? err(line.key, "purchaseUnitId")}
+                        {lineError && (
+                          <span className="form__error" role="alert">
+                            {lineError}
                           </span>
                         )}
-                      </td>
-                      <td className="col-qty">
+                      </>
+                    }
+                  >
+                    <LineField label="Materia prima" htmlFor={`purchase-material-${n}`} product>
+                      <Combobox
+                        id={`purchase-material-${n}`}
+                        ariaLabel={`Materia prima ${n}`}
+                        options={materialOptions(line.rawMaterialId)}
+                        value={line.rawMaterialId}
+                        placeholder="Buscar materia prima por nombre o código"
+                        emptyText="Ninguna materia prima coincide"
+                        invalid={Boolean(err(line.key, "rawMaterialId"))}
+                        onChange={(v) => setLine(line.key, { rawMaterialId: v, option: "" })}
+                      />
+                      <select
+                        aria-label={`Presentación ${n}`}
+                        value={line.option}
+                        disabled={!material}
+                        aria-invalid={presentationError ? true : undefined}
+                        onChange={(e) => setLine(line.key, { option: e.target.value })}
+                      >
+                        <option value="">
+                          {material ? "Elegí cómo se compra" : "Primero elegí la materia prima"}
+                        </option>
+                        {optionsFor(material).map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </LineField>
+                    <LineField label="Cantidad" htmlFor={`purchase-qty-${n}`}>
+                      <div className="input-group">
                         <input
+                          id={`purchase-qty-${n}`}
+                          className="control"
                           aria-label={`Cantidad ${n}`}
                           inputMode="decimal"
                           autoComplete="off"
+                          placeholder="0"
                           value={line.quantity}
                           aria-invalid={err(line.key, "quantity") ? true : undefined}
                           onChange={(e) => setLine(line.key, { quantity: e.target.value })}
                         />
-                        {err(line.key, "quantity") && (
-                          <span className="form__error">{err(line.key, "quantity")}</span>
-                        )}
-                      </td>
-                      <td className="col-price">
-                        <input
-                          aria-label={`Precio unitario ${n}`}
-                          inputMode="decimal"
-                          autoComplete="off"
-                          placeholder={c?.commercial ? `por ${c.commercial}` : undefined}
-                          value={line.unitPrice}
-                          aria-invalid={err(line.key, "unitPrice") ? true : undefined}
-                          onChange={(e) => setLine(line.key, { unitPrice: e.target.value })}
-                        />
-                        {err(line.key, "unitPrice") && (
-                          <span className="form__error">{err(line.key, "unitPrice")}</span>
-                        )}
-                      </td>
-                      <td className="col-price">
-                        <input
-                          aria-label={`Descuento ${n}`}
-                          inputMode="decimal"
-                          autoComplete="off"
-                          placeholder="0"
-                          value={line.discountAmount}
-                          aria-invalid={err(line.key, "discountAmount") ? true : undefined}
-                          onChange={(e) => setLine(line.key, { discountAmount: e.target.value })}
-                        />
-                        {err(line.key, "discountAmount") && (
-                          <span className="form__error">{err(line.key, "discountAmount")}</span>
-                        )}
-                      </td>
-                      <td className="num">
+                        {c?.commercial && <span className="muted">{c.commercial}</span>}
+                      </div>
+                    </LineField>
+                    <LineField label="Precio unitario" htmlFor={`purchase-price-${n}`}>
+                      <input
+                        id={`purchase-price-${n}`}
+                        className="control"
+                        aria-label={`Precio unitario ${n}`}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder={c?.commercial ? `$ por ${c.commercial}` : "$"}
+                        value={line.unitPrice}
+                        aria-invalid={err(line.key, "unitPrice") ? true : undefined}
+                        onChange={(e) => setLine(line.key, { unitPrice: e.target.value })}
+                      />
+                    </LineField>
+                    <LineField label="Descuento $" htmlFor={`purchase-discount-${n}`}>
+                      <input
+                        id={`purchase-discount-${n}`}
+                        className="control"
+                        aria-label={`Descuento ${n}`}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="0"
+                        value={line.discountAmount}
+                        aria-invalid={err(line.key, "discountAmount") ? true : undefined}
+                        onChange={(e) => setLine(line.key, { discountAmount: e.target.value })}
+                      />
+                    </LineField>
+                    <LineField label="Importe neto" amount>
+                      <span>
                         {c?.amounts ? formatMoney(c.amounts.net.toString(), currency) : "—"}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="button button--small"
-                          aria-label={`Quitar línea ${n}`}
-                          onClick={() =>
-                            setForm((f) => ({
-                              ...f,
-                              lines:
-                                f.lines.length > 1
-                                  ? f.lines.filter((l) => l.key !== line.key)
-                                  : [emptyLine()],
-                            }))
-                          }
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="form__footer">
+                      </span>
+                    </LineField>
+                  </LineRow>
+                );
+              })}
+            </LineList>
+          )}
+          <div className="lines__footer">
             <button
               type="button"
-              className="button"
+              className="button button--small"
               onClick={() => setForm((f) => ({ ...f, lines: [...f.lines, emptyLine()] }))}
             >
+              <Icon name="plus" size="sm" />
               Agregar materia prima
             </button>
             {can(P.PRESENTATIONS_MANAGE) && (
-              <span className="form__hint">
+              <span className="muted small">
                 ¿Falta una presentación (bolsa, paquete, bidón)? Se crea desde la ficha de la
                 materia prima.
               </span>
@@ -612,7 +675,27 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
 
         <section className="panel" aria-labelledby="purchase-totals" aria-live="polite">
           <h2 id="purchase-totals">3. Totales</h2>
-          <div className="form-grid">
+          <dl className="cost-summary">
+            <div className="metric">
+              <dt>Subtotal</dt>
+              <dd className="metric__value">{formatMoney(totals.subtotal.toString(), currency)}</dd>
+            </div>
+            <div className="metric">
+              <dt>Descuentos</dt>
+              <dd className="metric__value">
+                {formatMoney(totals.discountTotal.toString(), currency)}
+              </dd>
+            </div>
+            <div className="metric">
+              <dt>Impuestos</dt>
+              <dd className="metric__value">{formatMoney(totals.taxTotal.toString(), currency)}</dd>
+            </div>
+            <div className="metric metric--emphasis">
+              <dt>Total</dt>
+              <dd className="metric__value">{formatMoney(totals.total.toString(), currency)}</dd>
+            </div>
+          </dl>
+          <div className="form-grid" style={{ marginTop: "1rem" }}>
             <div className="form__field">
               <label htmlFor="taxTotal">Impuestos (informativos)</label>
               <input
@@ -622,32 +705,15 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
                 placeholder="0"
                 value={form.taxTotal}
                 aria-invalid={fieldErrors.taxTotal ? true : undefined}
+                aria-describedby="taxTotal-hint"
                 onChange={(e) => set("taxTotal", e.target.value)}
               />
-              <span className="form__hint">
+              <span id="taxTotal-hint" className="form__hint">
                 Suman al total a pagar, no al costo del inventario.
               </span>
               {fieldErrors.taxTotal && <span className="form__error">{fieldErrors.taxTotal}</span>}
             </div>
           </div>
-          <dl className="cost-summary">
-            <div>
-              <dt>Subtotal</dt>
-              <dd>{formatMoney(totals.subtotal.toString(), currency)}</dd>
-            </div>
-            <div>
-              <dt>Descuentos</dt>
-              <dd>{formatMoney(totals.discountTotal.toString(), currency)}</dd>
-            </div>
-            <div>
-              <dt>Impuestos</dt>
-              <dd>{formatMoney(totals.taxTotal.toString(), currency)}</dd>
-            </div>
-            <div>
-              <dt>Total</dt>
-              <dd>{formatMoney(totals.total.toString(), currency)}</dd>
-            </div>
-          </dl>
           <div className="form__field form__field--full" style={{ marginTop: "1rem" }}>
             <label htmlFor="notes">Observaciones</label>
             <textarea
@@ -657,29 +723,48 @@ function PurchaseEditor({ catalog, existing }: { catalog: Catalog; existing: Pur
             />
           </div>
           <div className="form__footer">
-            <button type="submit" className="button" disabled={pending}>
-              {pending ? "Guardando…" : "Guardar borrador"}
-            </button>
-            {can(P.PURCHASES_ORDER) && (
-              <button
-                type="button"
-                className="button button--primary"
-                disabled={pending}
-                onClick={() => save(true)}
-              >
-                Guardar y confirmar pedido
-              </button>
-            )}
             <Link
-              className="button"
+              className="button button--tertiary"
               href={existing ? `${PURCHASES_BASE}/${existing.id}` : PURCHASES_BASE}
             >
               Cancelar
             </Link>
+            <button
+              type="submit"
+              className={`button ${canOrder ? "" : "button--primary"}`}
+              disabled={pending}
+            >
+              {pending ? "Guardando…" : "Guardar borrador"}
+            </button>
+            {canOrder && (
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={pending}
+                aria-busy={pending || undefined}
+                onClick={() => save(true)}
+              >
+                {pending ? "Guardando…" : "Guardar y confirmar pedido"}
+              </button>
+            )}
           </div>
+          {canOrder && (
+            <p className="muted small">
+              “Guardar y confirmar pedido” deja la compra pedida al proveedor: las líneas y los
+              precios ya no se editan. El borrador se puede seguir editando.
+            </p>
+          )}
         </section>
       </form>
     </div>
+  );
+}
+
+function Required() {
+  return (
+    <span className="form__required" aria-hidden="true">
+      *
+    </span>
   );
 }
 
@@ -695,21 +780,21 @@ interface ReceiptLineForm {
   quantity: string;
 }
 
-const localNow = () => {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 16);
-};
+/** Hora de pared actual de la EMPRESA ("AAAA-MM-DDTHH:mm"). */
+const companyNow = (timeZone: string) => instantToZonedLocal(new Date(), timeZone);
 
 export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
   const router = useRouter();
   const user = useCurrentUser();
+  const can = useCan();
+  const tz = user.company.timezone;
+  const showCosts = can(P.INVENTORY_COST_READ);
   const { data: purchase, error } = useResource<PurchaseDto>(`/api/purchases/${purchaseId}`);
   const { data: warehousePage } = useResource<Page<WarehouseDto>>(
     "/api/warehouses?pageSize=100&status=active",
   );
   const [chosenWarehouseId, setWarehouseId] = useState("");
-  const [receivedAt, setReceivedAt] = useState(localNow);
+  const [receivedAt, setReceivedAt] = useState(() => companyNow(tz));
   const [documentNumber, setDocumentNumber] = useState("");
   const [notes, setNotes] = useState("");
   /** Cantidades escritas por línea de compra; sin escribir, se propone lo pendiente. */
@@ -729,13 +814,28 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
   const currency = purchase.currency;
   if (purchase.status !== "ORDERED" && purchase.status !== "PARTIALLY_RECEIVED") {
     return (
-      <section className="panel panel--empty">
-        <p className="upcoming">Esta compra no admite recepciones</p>
-        <p className="muted">
-          Sólo se recibe una compra pedida o recibida en parte.{" "}
-          <Link href={`${PURCHASES_BASE}/${purchaseId}`}>Volver</Link>
-        </p>
-      </section>
+      <div className="page">
+        <PageHeader
+          breadcrumb={[
+            { href: PURCHASES_BASE, label: "Compras" },
+            { href: `${PURCHASES_BASE}/${purchaseId}`, label: `Compra ${purchase.number}` },
+          ]}
+          title="Registrar recepción"
+        />
+        <EmptyState
+          title="Esta compra no admite recepciones"
+          description={
+            purchase.status === "DRAFT"
+              ? "Primero hay que confirmar el pedido."
+              : "Sólo se recibe una compra pedida o recibida en parte."
+          }
+          action={
+            <Link className="button" href={`${PURCHASES_BASE}/${purchaseId}`}>
+              Ver la compra
+            </Link>
+          }
+        />
+      </div>
     );
   }
 
@@ -750,7 +850,13 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
   });
   const receiving = rows.filter((r) => r.qty && r.qty.gt(0));
   const totalValue = receiving.reduce((s, r) => s.plus(r.value ?? 0), new D(0));
-  const invalid = rows.some((r) => !r.valid || r.exceeds) || receiving.length === 0;
+  const dateComplete = isCompleteWallClock(receivedAt);
+  const dateInFuture = dateComplete && receivedAt > companyNow(tz);
+  const invalid =
+    rows.some((r) => !r.valid || r.exceeds) ||
+    receiving.length === 0 ||
+    !dateComplete ||
+    dateInFuture;
   const warehouse = warehousePage.items.find((w) => w.id === warehouseId);
 
   async function confirm() {
@@ -763,7 +869,8 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
         method: "POST",
         body: {
           warehouseId,
-          receivedAt: receivedAt ? new Date(receivedAt).toISOString() : null,
+          // Hora de pared de la empresa → instante ISO (mismo formato de payload que antes).
+          receivedAt: dateComplete ? zonedLocalToInstant(receivedAt, tz).toISOString() : null,
           documentNumber: documentNumber || null,
           notes: notes || null,
           lines: rows.map((r) => ({
@@ -788,11 +895,11 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
           err.code === "RECEIPT_EXCEEDS_PENDING"
             ? "Alguna cantidad supera lo pendiente (puede que otra recepción se haya confirmado recién). Revisá y volvé a intentar."
             : Object.keys(err.fieldErrors).length > 0
-              ? Object.values(err.fieldErrors).join(". ")
-              : err.message,
+              ? "Revisá los datos marcados."
+              : describeError(err),
         );
       } else {
-        setFormError("No se pudo registrar la recepción.");
+        setFormError("No se pudo registrar la recepción. Revisá la conexión y reintentá.");
       }
       setStep("edit");
       setPending(false);
@@ -802,7 +909,10 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
   return (
     <div className="page">
       <PageHeader
-        breadcrumb={{ href: `${PURCHASES_BASE}/${purchaseId}`, label: `Compra ${purchase.number}` }}
+        breadcrumb={[
+          { href: PURCHASES_BASE, label: "Compras" },
+          { href: `${PURCHASES_BASE}/${purchaseId}`, label: `Compra ${purchase.number}` },
+        ]}
         title="Registrar recepción"
         subtitle={`${purchase.supplier.name} · indicá lo que llegó; puede ser una parte del pedido.`}
       />
@@ -824,13 +934,11 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
             <div className="form-grid">
               <div className="form__field">
                 <label htmlFor="warehouseId">
-                  Depósito{" "}
-                  <span className="form__required" aria-hidden="true">
-                    *
-                  </span>
+                  Depósito <Required />
                 </label>
                 <select
                   id="warehouseId"
+                  aria-required="true"
                   value={warehouseId}
                   aria-invalid={fieldErrors.warehouseId ? true : undefined}
                   onChange={(e) => setWarehouseId(e.target.value)}
@@ -841,21 +949,38 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
                     </option>
                   ))}
                 </select>
+                {warehousePage.items.length > 1 && !chosenWarehouseId && (
+                  <span className="form__hint">
+                    Se propone el primer depósito: cambialo si la mercadería entra en otro.
+                  </span>
+                )}
                 {fieldErrors.warehouseId && (
                   <span className="form__error">{fieldErrors.warehouseId}</span>
                 )}
               </div>
               <div className="form__field">
-                <label htmlFor="receivedAt">Fecha y hora de recepción</label>
-                <input
+                <label htmlFor="receivedAt">
+                  Fecha y hora de recepción <Required />
+                </label>
+                <WallClockInput
                   id="receivedAt"
-                  type="datetime-local"
                   value={receivedAt}
-                  max={localNow()}
-                  onChange={(e) => setReceivedAt(e.target.value)}
+                  timeZone={tz}
+                  onChange={setReceivedAt}
+                  invalid={dateInFuture || !dateComplete || Boolean(fieldErrors.receivedAt)}
+                  describedBy={
+                    dateInFuture || !dateComplete || fieldErrors.receivedAt
+                      ? "receivedAt-error"
+                      : undefined
+                  }
                 />
-                {fieldErrors.receivedAt && (
-                  <span className="form__error">{fieldErrors.receivedAt}</span>
+                {(dateInFuture || !dateComplete || fieldErrors.receivedAt) && (
+                  <span id="receivedAt-error" className="form__error">
+                    {fieldErrors.receivedAt ??
+                      (dateInFuture
+                        ? "La recepción no puede ser posterior a ahora."
+                        : "Completá la fecha y la hora.")}
+                  </span>
                 )}
               </div>
               <div className="form__field">
@@ -880,7 +1005,7 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
                     <th scope="col" className="num">
                       Pedido
                     </th>
-                    <th scope="col" className="num hide-sm">
+                    <th scope="col" className="num hide-md">
                       Recibido antes
                     </th>
                     <th scope="col" className="num">
@@ -903,25 +1028,39 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
                             : ""}
                         </span>
                       </td>
-                      <td className="num">{formatDecimal(r.line.orderedQuantity, 0, 4)}</td>
-                      <td className="num hide-sm">
-                        {formatDecimal(r.line.receivedQuantity, 0, 4)}
+                      <td className="num">
+                        {formatQuantity(r.line.orderedQuantity, r.line.purchaseUnit.symbol)}
                       </td>
-                      <td className="num">{formatDecimal(r.line.pendingQuantity, 0, 4)}</td>
+                      <td className="num hide-md">
+                        {formatQuantity(r.line.receivedQuantity, r.line.purchaseUnit.symbol)}
+                      </td>
+                      <td className="num">
+                        {formatQuantity(r.line.pendingQuantity, r.line.purchaseUnit.symbol)}
+                      </td>
                       <td className="col-qty">
-                        <input
-                          aria-label={`Recibido ahora ${r.line.rawMaterial.name}`}
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={r.input.quantity}
-                          disabled={Number(r.line.pendingQuantity) === 0}
-                          aria-invalid={!r.valid || r.exceeds ? true : undefined}
-                          onChange={(e) =>
-                            setTyped((prev) => ({ ...prev, [r.line.id]: e.target.value }))
-                          }
-                        />
-                        {!r.valid && <span className="form__error">Cantidad inválida</span>}
-                        {r.exceeds && <span className="form__error">Supera lo pendiente</span>}
+                        <div className="input-group">
+                          <input
+                            aria-label={`Recibido ahora ${r.line.rawMaterial.name}`}
+                            inputMode="decimal"
+                            autoComplete="off"
+                            value={r.input.quantity}
+                            disabled={Number(r.line.pendingQuantity) === 0}
+                            aria-invalid={!r.valid || r.exceeds ? true : undefined}
+                            onChange={(e) =>
+                              setTyped((prev) => ({ ...prev, [r.line.id]: e.target.value }))
+                            }
+                          />
+                          <span className="muted">{r.line.purchaseUnit.symbol}</span>
+                        </div>
+                        {!r.valid && (
+                          <span className="form__error">Escribí una cantidad (0 si no llegó).</span>
+                        )}
+                        {r.exceeds && (
+                          <span className="form__error">
+                            Supera lo pendiente (
+                            {formatQuantity(r.line.pendingQuantity, r.line.purchaseUnit.symbol)}).
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -944,7 +1083,7 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
               >
                 Revisar recepción
               </button>
-              <Link className="button" href={`${PURCHASES_BASE}/${purchaseId}`}>
+              <Link className="button button--tertiary" href={`${PURCHASES_BASE}/${purchaseId}`}>
                 Cancelar
               </Link>
               {receiving.length === 0 && (
@@ -959,8 +1098,9 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
         <section className="panel" aria-labelledby="receipt-review" aria-live="polite">
           <h2 id="receipt-review">Resumen antes de confirmar</h2>
           <p className="muted">
-            Ingresa al depósito <strong>{warehouse?.name}</strong>. Al confirmar, el stock y el
-            costo promedio se actualizan y la recepción ya no se puede modificar.
+            Ingresa al depósito <strong>{warehouse?.name}</strong>. Al confirmar, el stock
+            {showCosts ? " y el costo promedio se actualizan" : " se actualiza"} y la recepción ya
+            no se puede modificar.
           </p>
           <div className="receipt-summary">
             {receiving.map((r) => (
@@ -977,27 +1117,36 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
                       {formatQuantity(r.baseQty!.toString(), r.line.rawMaterial.baseUnit.symbol)}
                     </dd>
                   </div>
-                  <div>
-                    <dt>Costo neto</dt>
-                    <dd>{formatMoney(r.value!.toString(), currency)}</dd>
-                  </div>
-                  <div>
-                    <dt>Costo de adquisición</dt>
-                    <dd>
-                      {formatUnitCost(
-                        r.line.acquisitionUnitCost,
-                        currency,
-                        r.line.rawMaterial.baseUnit.symbol,
-                      )}
-                    </dd>
-                  </div>
+                  {showCosts && (
+                    <>
+                      <div>
+                        <dt>Costo neto</dt>
+                        <dd>{formatMoney(r.value!.toString(), currency)}</dd>
+                      </div>
+                      <div>
+                        <dt>Costo de adquisición</dt>
+                        <dd>
+                          {formatUnitCost(
+                            r.line.acquisitionUnitCost,
+                            currency,
+                            r.line.rawMaterial.baseUnit.symbol,
+                          )}
+                        </dd>
+                      </div>
+                    </>
+                  )}
                 </dl>
               </article>
             ))}
           </div>
-          <p>
-            Valor que ingresa al inventario:{" "}
-            <strong>{formatMoney(totalValue.toString(), currency)}</strong>
+          {showCosts && (
+            <p>
+              Valor que ingresa al inventario:{" "}
+              <strong>{formatMoney(totalValue.toString(), currency)}</strong>
+            </p>
+          )}
+          <p className="muted small">
+            Recepción del {formatWallClock(receivedAt)} (hora de la empresa).
           </p>
           <div className="form__footer">
             <button
@@ -1017,12 +1166,6 @@ export function ReceiptForm({ purchaseId }: { purchaseId: string }) {
               Volver a editar
             </button>
           </div>
-          {receivedAt && (
-            <p className="muted small">
-              Recepción del{" "}
-              {formatDateTime(new Date(receivedAt).toISOString(), user.company.timezone)}
-            </p>
-          )}
         </section>
       )}
     </div>

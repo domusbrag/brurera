@@ -1,17 +1,20 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { findNavItem } from "@/lib/navigation";
+import { findUpcomingSection } from "@/lib/navigation";
 
 type Params = Promise<{ section: string }>;
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
-  const item = findNavItem((await params).section);
+  const item = findUpcomingSection((await params).section);
   return { title: item?.label ?? "No encontrado" };
 }
 
-/** Módulos del menú que todavía no están implementados. Sin funcionalidad simulada. */
+/**
+ * Módulos del roadmap que todavía no existen. No están en el menú; un enlace
+ * directo explica que llegan más adelante, sin funcionalidad simulada.
+ */
 export default async function UpcomingSectionPage({ params }: { params: Params }) {
-  const item = findNavItem((await params).section);
+  const item = findUpcomingSection((await params).section);
   if (!item) notFound();
 
   return (
@@ -21,7 +24,7 @@ export default async function UpcomingSectionPage({ params }: { params: Params }
       </header>
       <section className="panel panel--empty">
         <p className="upcoming">Disponible en próxima etapa</p>
-        <p className="muted">Este módulo se implementa en la Fase {item.phase} del roadmap.</p>
+        <p className="muted">Este módulo todavía no está habilitado.</p>
       </section>
     </div>
   );

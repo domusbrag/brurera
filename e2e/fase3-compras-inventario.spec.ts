@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openSection, selectByText, summaryValue } from "./support";
 
 /*
  * Fase 3: compras + inventario contra la aplicación construida y la base de
@@ -8,27 +9,6 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-/** Elige en un select la opción cuyo texto contiene `text`. */
-async function selectByText(select: Locator, text: string) {
-  await expect(select.locator("option", { hasText: text }).first()).toBeAttached();
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
-
-/** Valor (dd) de un rótulo (dt) de un resumen (dl.cost-summary) dentro de `scope`. */
-function summaryValue(scope: Locator, label: string | RegExp): Locator {
-  return scope
-    .locator("dl.cost-summary > div")
-    .filter({ has: scope.page().locator("dt", { hasText: label }) })
-    .locator("dd");
-}
 
 function section(page: Page, heading: string | RegExp): Locator {
   return page.locator("section", { has: page.getByRole("heading", { name: heading }) });
@@ -84,7 +64,7 @@ async function createRawMaterial(
 }
 
 async function openStock(page: Page, material: string) {
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await expect(page.getByRole("heading", { level: 1, name: "Stock" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(material);
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(material);
@@ -323,7 +303,7 @@ test("Fase 3: stock mínimo (bajo mínimo → OK al recibir una compra)", async 
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Bajo mínimo");
   await expect(summaryValue(section(page, "Existencias"), "Faltante")).toHaveText("10 kg");
 
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await page.getByRole("link", { name: "Bajo mínimo", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Stock bajo mínimo" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(azucar);
@@ -350,7 +330,7 @@ test("Fase 3: stock mínimo (bajo mínimo → OK al recibir una compra)", async 
   await openStock(page, azucar);
   await expect(summaryValue(section(page, "Existencias"), "Stock total")).toHaveText("80 kg");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("OK");
-  await openSection(page, "Stock");
+  await openSection(page, "Stock de materias primas");
   await page.getByRole("link", { name: "Bajo mínimo", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Stock bajo mínimo" })).toBeVisible();
   await page.getByRole("searchbox", { name: "Buscar" }).fill(azucar);

@@ -10,8 +10,9 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, apiFetch, fetchOptions } from "@/lib/api-client";
 import { isPositive, toDecimal } from "@/lib/decimal-input";
+import { describeError } from "@/lib/errors";
 import { formatDecimal } from "@/lib/format";
-import { ConfirmAction, Loading, StatusBadge, useResource } from "../masters/ui";
+import { ConfirmAction, ErrorState, Loading, StatusBadge, useResource } from "../masters/ui";
 import { toCostingUnit } from "../recipes/cost-views";
 import { useCan } from "../user-context";
 
@@ -62,7 +63,7 @@ export function PresentationsPanel({
         />
       )}
       {error ? (
-        <p className="muted">{error.message}</p>
+        <ErrorState error={error} onRetry={reload} />
       ) : !data ? (
         <Loading />
       ) : data.length === 0 ? (
@@ -224,7 +225,7 @@ function PresentationForm({
     } catch (err) {
       if (err instanceof ApiError) {
         setErrors(err.fieldErrors);
-        setFormError(Object.keys(err.fieldErrors).length > 0 ? null : err.message);
+        setFormError(Object.keys(err.fieldErrors).length > 0 ? null : describeError(err));
       } else setFormError("No se pudo crear la presentación.");
       setPending(false);
     }

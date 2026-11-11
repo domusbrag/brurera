@@ -9,6 +9,7 @@ import {
   type OrderRiskDto,
   type Page,
   type ProductionNeedDto,
+  type RequirementStatusDto,
 } from "@bakery/shared";
 import { D } from "@bakery/domain";
 import Link from "next/link";
@@ -16,7 +17,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
 import { listPath } from "@/lib/api-client";
 import { formatDateTime, formatQuantity } from "@/lib/format";
-import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import type { Tone } from "@/lib/status";
+import { EmptyState, ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
+import { StatusBadge } from "../ui/status";
 import { useCan, useCurrentUser } from "../user-context";
 import {
   CoverageBadge,
@@ -26,16 +29,18 @@ import {
   WallClockInput,
   formatWallClock,
   isCompleteWallClock,
+  wallClockIn,
 } from "./order-shared";
 
 /*
- * Planificación → Necesidades (Fase 5A): qué hay que producir y qué materia
- * prima hace falta para los pedidos confirmados, con horizonte de fecha
- * (hora de pared de la empresa). Todo es lectura: nada reserva ni mueve stock.
+ * Planificación → Necesidades: qué falta producir y qué materia prima hace
+ * falta para los pedidos confirmados, con horizonte de fecha (hora de pared de
+ * la empresa; atajos Hoy / Mañana / 7 días). Todo es lectura: nada reserva ni
+ * mueve stock. La acción de cada fila es crear la orden de producción.
  */
 
 const TABS = [
-  { href: NEEDS_BASE, label: "Producción" },
+  { href: NEEDS_BASE, label: "Falta producir" },
   { href: `${NEEDS_BASE}/materias-primas`, label: "Materias primas" },
   { href: `${NEEDS_BASE}/en-riesgo`, label: "Pedidos en riesgo" },
 ];
@@ -76,12 +81,19 @@ function PlanningShellInner({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
   const isMaterials = pathname === `${NEEDS_BASE}/materias-primas`;
+  const endOfDay = (days: number) => `${wallClockIn(tz, days).slice(0, 10)}T23:59`;
+  const quick = [
+    { label: "Hoy", value: endOfDay(0) },
+    { label: "Hasta mañana", value: endOfDay(1) },
+    { label: "Próximos 7 días", value: endOfDay(7) },
+    { label: "Sin límite", value: "" },
+  ];
   const query = params.toString();
   return (
     <div className="page">
       <PageHeader
         title="Necesidades"
-        subtitle="Lo que piden los pedidos confirmados y todavía no está cubierto con stock reservado."
+        subtitle="Lo que piden los pedidos confirmados y no está cubierto con el stock reservado: qué falta producir, qué materia prima hace falta y qué pedidos están en riesgo."
       />
       <nav className="tabs" aria-label="Necesidades">
         {TABS.map((t) => (
@@ -95,8 +107,24 @@ function PlanningShellInner({
           </Link>
         ))}
       </nav>
-      <section className="panel">
+      <section className="panel" aria-label="Horizonte">
         <div className="filters">
+          <div className="actions" role="group" aria-label="Atajos de fecha de entrega">
+            {quick.map((q) => (
+              <button
+                key={q.label}
+                type="button"
+                className={`button button--small ${until === q.value ? "button--primary" : "button--tertiary"}`}
+                aria-pressed={until === q.value}
+                onClick={() => {
+                  setDraft(q.value);
+                  set({ hasta: q.value || null });
+                }}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
           <label className="filters__date" htmlFor="horizon">
             <span>Entregas hasta</span>
           </label>
@@ -104,23 +132,11 @@ function PlanningShellInner({
           <button
             type="button"
             className="button button--small"
-            disabled={draft !== "" && !isCompleteWallClock(draft)}
+            disabled={draft === until || (draft !== "" && !isCompleteWallClock(draft))}
             onClick={() => set({ hasta: draft || null })}
           >
-            Aplicar horizonte
+            Aplicar
           </button>
-          {until && (
-            <button
-              type="button"
-              className="button button--small"
-              onClick={() => {
-                setDraft("");
-                set({ hasta: null });
-              }}
-            >
-              Sin horizonte
-            </button>
-          )}
           {isMaterials && (
             <label className="inline-check">
               <input
@@ -128,13 +144,13 @@ function PlanningShellInner({
                 checked={shortageOnly}
                 onChange={(e) => set({ faltantes: e.target.checked ? "1" : null })}
               />{" "}
-              Sólo con faltante
+              Sólo lo que falta comprar
             </label>
           )}
         </div>
-        <p className="muted small">
+        <p className="muted small" role="status">
           {until
-            ? `Pedidos con entrega hasta el ${formatWallClock(until)}.`
+            ? `Pedidos confirmados con entrega hasta el ${formatWallClock(until)}.`
             : "Todos los pedidos confirmados, sin límite de fecha."}
         </p>
         {children(until || undefined, isMaterials && shortageOnly ? { shortageOnly: "true" } : {})}
@@ -150,12 +166,36 @@ function usePage<T>(endpoint: string, until: string | undefined, extra: Record<s
 function More({ page }: { page: Page<unknown> }) {
   return page.total > page.items.length ? (
     <p className="muted small">
-      Se muestran {page.items.length} de {page.total}. Acotá el horizonte para ver el resto.
+      Se muestran {page.items.length} de {page.total}. Acotá la fecha de entrega para ver el resto.
     </p>
   ) : null;
 }
 
-/* ---------- Producción ---------- */
+/** Mientras llega el resultado de otro horizonte, la tabla anterior se marca como desactualizada. */
+function Stale({ stale, children }: { stale: boolean; children: ReactNode }) {
+  return (
+    <div aria-busy={stale || undefined} style={stale ? { opacity: 0.55 } : undefined}>
+      {stale && (
+        <p className="muted small" role="status">
+          Actualizando…
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+const horizonText = (until: string | undefined) =>
+  until ? ` con entrega hasta el ${formatWallClock(until)}` : "";
+
+const REQUIREMENT_TONE: Record<RequirementStatusDto, Tone> = {
+  OPEN: "warning",
+  PRODUCTION_CREATED: "info",
+  SATISFIED: "success",
+  CANCELLED: "neutral",
+};
+
+/* ---------- Falta producir ---------- */
 
 export function ProductionNeeds() {
   return <PlanningShell>{(until) => <ProductionNeedsTable until={until} />}</PlanningShell>;
@@ -164,23 +204,39 @@ export function ProductionNeeds() {
 function ProductionNeedsTable({ until }: { until: string | undefined }) {
   const can = useCan();
   const tz = useCurrentUser().company.timezone;
-  const { data, error } = usePage<ProductionNeedDto>("/api/planning/production-needs", until, {});
+  const { data, error, stale } = usePage<ProductionNeedDto>(
+    "/api/planning/production-needs",
+    until,
+    {},
+  );
   const canCreate = can(P.ORDER_PRODUCTION_CREATE) && can(P.PRODUCTION_ORDERS_CREATE);
+  const canSeeProduction = can(P.PRODUCTION_ORDERS_READ);
+  const canSeeRecipes = can(P.RECIPES_READ);
   if (error) return <ErrorState error={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <Loading label="Calculando qué falta producir…" />;
   if (data.items.length === 0)
-    return <p className="muted">No hay nada para producir: los pedidos están cubiertos.</p>;
+    return (
+      <Stale stale={stale}>
+        <EmptyState
+          compact
+          title="No falta producir nada"
+          description={`Los pedidos confirmados${horizonText(until)} están cubiertos con stock reservado.`}
+        />
+      </Stale>
+    );
   return (
-    <>
+    <Stale stale={stale}>
       <div className="table-wrap">
         <table className="table" aria-label="Producción necesaria">
           <thead>
             <tr>
               <th scope="col">Producto</th>
               <th scope="col" className="num">
-                A producir
+                Falta producir
               </th>
-              <th scope="col">Primera entrega</th>
+              <th scope="col" className="hide-md">
+                Primera entrega
+              </th>
               <th scope="col">Pedidos</th>
             </tr>
           </thead>
@@ -199,21 +255,44 @@ function ProductionNeedsTable({ until }: { until: string | undefined }) {
                 <td className="num">
                   <strong>{formatQuantity(n.quantity, n.unit.symbol)}</strong>
                 </td>
-                <td>{formatDateTime(n.earliestRequestedAt, tz)}</td>
+                <td className="hide-md">{formatDateTime(n.earliestRequestedAt, tz)}</td>
                 <td>
                   <ul className="plain-list">
                     {n.orders.map((o) => (
                       <li key={o.requirementId}>
-                        <Link href={`${ORDERS_BASE}/${o.orderId}`}>{o.orderCode}</Link>:{" "}
-                        {formatQuantity(o.quantity, n.unit.symbol)} ·{" "}
-                        {o.problem
-                          ? REQUIREMENT_PROBLEM_LABELS[o.problem]
-                          : REQUIREMENT_STATUS_LABELS[o.status]}
+                        <Link href={`${ORDERS_BASE}/${o.orderId}`} className="code">
+                          {o.orderCode}
+                        </Link>{" "}
+                        <span className="muted small">
+                          para el {formatDateTime(o.requestedAt, tz)} ·{" "}
+                        </span>
+                        {formatQuantity(o.quantity, n.unit.symbol)}{" "}
+                        {o.problem ? (
+                          <StatusBadge tone="danger">
+                            {REQUIREMENT_PROBLEM_LABELS[o.problem]}
+                          </StatusBadge>
+                        ) : (
+                          <StatusBadge tone={REQUIREMENT_TONE[o.status]}>
+                            {REQUIREMENT_STATUS_LABELS[o.status]}
+                          </StatusBadge>
+                        )}
                         {o.productionOrder && (
                           <>
                             {" "}
-                            <Link href={`/produccion/${o.productionOrder.id}`}>
-                              {o.productionOrder.code}
+                            {canSeeProduction ? (
+                              <Link href={`/produccion/${o.productionOrder.id}`}>
+                                {o.productionOrder.code}
+                              </Link>
+                            ) : (
+                              <span className="code">{o.productionOrder.code}</span>
+                            )}
+                          </>
+                        )}
+                        {o.problem && canSeeRecipes && (
+                          <>
+                            {" "}
+                            <Link href="/recetas" className="small">
+                              Ver recetas
                             </Link>
                           </>
                         )}
@@ -239,10 +318,10 @@ function ProductionNeedsTable({ until }: { until: string | undefined }) {
       </div>
       <More page={data} />
       <p className="muted small">
-        Cada pedido genera su propia orden de producción; todavía no se consolidan varios pedidos en
-        una sola orden.
+        Cada pedido genera su propia orden de producción; todavía no se juntan varios pedidos en una
+        sola orden.
       </p>
-    </>
+    </Stale>
   );
 }
 
@@ -263,39 +342,49 @@ function MaterialNeedsTable({
   until: string | undefined;
   extra: Record<string, string>;
 }) {
-  const { data, error } = usePage<MaterialDemandDto>("/api/planning/material-demand", until, extra);
+  const { data, error, stale } = usePage<MaterialDemandDto>(
+    "/api/planning/material-demand",
+    until,
+    extra,
+  );
   if (error) return <ErrorState error={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <Loading label="Calculando la materia prima…" />;
   if (data.items.length === 0)
     return (
-      <p className="muted">
-        {extra.shortageOnly
-          ? "No falta materia prima para los pedidos."
-          : "Los pedidos no necesitan materia prima: no hay nada para producir."}
-      </p>
+      <Stale stale={stale}>
+        <EmptyState
+          compact
+          title={
+            extra.shortageOnly ? "No falta comprar materia prima" : "No hace falta materia prima"
+          }
+          description={
+            extra.shortageOnly
+              ? `El stock alcanza para los pedidos confirmados${horizonText(until)}.`
+              : `No hay nada para producir en los pedidos confirmados${horizonText(until)}.`
+          }
+        />
+      </Stale>
     );
   return (
-    <>
+    <Stale stale={stale}>
       <div className="table-wrap">
         <table className="table" aria-label="Materia prima necesaria">
           <thead>
             <tr>
               <th scope="col">Materia prima</th>
-              <th scope="col" className="num">
+              <th scope="col" className="num hide-md">
                 Stock actual
               </th>
               <th scope="col" className="num">
-                Necesidad comprometida
+                Comprometido por pedidos
               </th>
-              <th scope="col" className="num hide-sm">
-                Queda
+              <th scope="col" className="num hide-md">
+                Disponible después
               </th>
               <th scope="col" className="num">
                 Falta comprar
               </th>
-              <th scope="col" className="hide-md">
-                Proveedor sugerido
-              </th>
+              <th scope="col">Proveedor sugerido</th>
               <th scope="col" className="hide-md">
                 Pedidos
               </th>
@@ -307,13 +396,19 @@ function MaterialNeedsTable({
               return (
                 <tr key={m.rawMaterial.id}>
                   <td>{m.rawMaterial.name}</td>
-                  <td className="num">{formatQuantity(m.currentStock, u)}</td>
+                  <td className="num hide-md">{formatQuantity(m.currentStock, u)}</td>
                   <td className="num">{formatQuantity(m.openOrderDemand, u)}</td>
-                  <td className="num hide-sm">{formatQuantity(m.availableAfterDemand, u)}</td>
+                  <td className="num hide-md">{formatQuantity(m.availableAfterDemand, u)}</td>
                   <td className={`num ${gt0(m.shortage) ? "text-negative" : ""}`}>
-                    {gt0(m.shortage) ? <strong>{formatQuantity(m.shortage, u)}</strong> : "—"}
+                    {gt0(m.shortage) ? (
+                      <strong>{formatQuantity(m.shortage, u)}</strong>
+                    ) : (
+                      <span className="muted">No falta</span>
+                    )}
                   </td>
-                  <td className="hide-md">{m.preferredSupplier?.name ?? "—"}</td>
+                  <td>
+                    {m.preferredSupplier?.name ?? <span className="muted">Sin proveedor</span>}
+                  </td>
                   <td className="hide-md">
                     {m.orders.map((o, i) => (
                       <span key={o.orderId}>
@@ -330,9 +425,10 @@ function MaterialNeedsTable({
       </div>
       <More page={data} />
       <p className="muted small">
-        Proyección: la materia prima no se reserva. El stock es el total de la empresa.
+        Proyección: la materia prima no se reserva. El stock es el total de la empresa (todos los
+        depósitos).
       </p>
-    </>
+    </Stale>
   );
 }
 
@@ -343,24 +439,32 @@ export function OrdersAtRisk() {
 }
 
 function OrdersAtRiskTable({ until }: { until: string | undefined }) {
-  const { data, error } = usePage<OrderRiskDto>("/api/planning/orders-at-risk", until, {});
+  const { data, error, stale } = usePage<OrderRiskDto>("/api/planning/orders-at-risk", until, {});
   if (error) return <ErrorState error={error} />;
-  if (!data) return <Loading />;
+  if (!data) return <Loading label="Buscando pedidos en riesgo…" />;
   if (data.items.length === 0)
-    return <p className="muted">Ningún pedido en riesgo: todos están cubiertos.</p>;
+    return (
+      <Stale stale={stale}>
+        <EmptyState
+          compact
+          title="Ningún pedido en riesgo"
+          description={`Los pedidos confirmados${horizonText(until)} están cubiertos.`}
+        />
+      </Stale>
+    );
   return (
-    <>
+    <Stale stale={stale}>
       <div className="table-wrap">
         <table className="table" aria-label="Pedidos en riesgo">
           <thead>
             <tr>
               <th scope="col">Pedido</th>
-              <th scope="col">Entrega</th>
-              <th scope="col" className="hide-sm">
+              <th scope="col">Para cuándo</th>
+              <th scope="col" className="hide-md">
                 Cliente
               </th>
-              <th scope="col">Cobertura</th>
-              <th scope="col">Problemas</th>
+              <th scope="col">Estado</th>
+              <th scope="col">Qué pasa</th>
             </tr>
           </thead>
           <tbody>
@@ -369,18 +473,20 @@ function OrdersAtRiskTable({ until }: { until: string | undefined }) {
                 <td>
                   <Link href={`${ORDERS_BASE}/${r.order.id}`} className="code">
                     {r.order.code}
-                  </Link>{" "}
-                  <OrderStatusBadge status={r.order.status} />
+                  </Link>
                   {r.order.priority !== "NORMAL" && (
-                    <span className="badge badge--warn">
+                    <>
                       {" "}
-                      {ORDER_PRIORITY_LABELS[r.order.priority]}
-                    </span>
+                      <StatusBadge tone={r.order.priority === "URGENT" ? "danger" : "warning"}>
+                        Prioridad {ORDER_PRIORITY_LABELS[r.order.priority].toLowerCase()}
+                      </StatusBadge>
+                    </>
                   )}
                 </td>
                 <td>{formatWallClock(r.order.requestedAtLocal)}</td>
-                <td className="hide-sm">{r.customer}</td>
+                <td className="hide-md">{r.customer}</td>
                 <td>
+                  <OrderStatusBadge status={r.order.status} />{" "}
                   <CoverageBadge coverage={r.order.coverageStatus} />
                 </td>
                 <td>
@@ -396,6 +502,6 @@ function OrdersAtRiskTable({ until }: { until: string | undefined }) {
         </table>
       </div>
       <More page={data} />
-    </>
+    </Stale>
   );
 }

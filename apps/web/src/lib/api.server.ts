@@ -34,16 +34,3 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const body = await apiGet<{ user: CurrentUser }>("/api/auth/me");
   return body?.user ?? null;
 }
-
-export interface AuditLogItem {
-  id: number;
-  action: string;
-  entityType: string;
-  actor: { id: string; displayName: string } | null;
-  createdAt: string;
-}
-
-export async function getRecentAudit(limit: number): Promise<AuditLogItem[]> {
-  const body = await apiGet<{ items: AuditLogItem[] }>(`/api/audit-logs?page=1&pageSize=${limit}`);
-  return body?.items ?? [];
-}

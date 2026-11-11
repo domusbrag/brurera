@@ -1,4 +1,5 @@
 import type { ApiErrorBody, Page } from "@bakery/shared";
+import { localizeNumbers } from "./errors";
 
 /** Error de la API con su código estable y el detalle por campo (si lo hay). */
 export class ApiError extends Error {
@@ -61,7 +62,9 @@ export async function apiFetch<T>(
     const message =
       body?.error.code === "VALIDATION_ERROR"
         ? "Revisá los datos marcados."
-        : (GENERIC_MESSAGES[res.status] ?? body?.error.message ?? "Ocurrió un error inesperado.");
+        : (GENERIC_MESSAGES[res.status] ??
+          (body?.error.message ? localizeNumbers(body.error.message) : null) ??
+          "Ocurrió un error inesperado.");
     throw new ApiError(
       res.status,
       body?.error.code ?? "HTTP_ERROR",
@@ -86,11 +89,19 @@ export function listPath(
   return qs ? `${endpoint}?${qs}` : endpoint;
 }
 
-/** Trae hasta 100 registros activos para usar como opciones de un selector. */
+/**
+ * Opciones para un selector: todos los registros activos, de a páginas de 100
+ * (antes se cortaba en 100 sin aviso). Tope de seguridad: 2.000 registros.
+ */
 export async function fetchOptions<T>(
   endpoint: string,
   extra: Record<string, string> = {},
 ): Promise<T[]> {
-  const page = await apiFetch<Page<T>>(listPath(endpoint, { pageSize: 100, ...extra }));
-  return page.items;
+  const items: T[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const result = await apiFetch<Page<T>>(listPath(endpoint, { pageSize: 100, ...extra, page }));
+    items.push(...result.items);
+    if (items.length >= result.total || result.items.length === 0) break;
+  }
+  return items;
 }

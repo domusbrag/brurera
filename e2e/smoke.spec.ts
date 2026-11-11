@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openSection } from "./support";
 
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
@@ -47,9 +48,7 @@ test("admin ingresa, ve el shell, navega y sale", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "Ingreso al sistema" }).first()).toBeVisible();
 
   // En tablet el menú lateral se abre con el botón del header.
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("link", { name: "Ventas" }).click();
+  await openSection(page, "Ventas");
   await expect(page).toHaveURL(/\/ventas$/);
   await expect(page.getByRole("heading", { level: 1, name: "Ventas" })).toBeVisible();
 

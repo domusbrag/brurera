@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openSection, selectByText } from "./support";
 
 /*
  * Fase 2: recetas, versiones y costo teórico (flujo principal de 23 pasos y
@@ -8,18 +9,6 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@panificadora.local";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
-
-async function openSection(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
-}
-
-/** Elige en un select la opción cuyo texto contiene `text`. */
-async function selectByText(select: Locator, text: string) {
-  const value = await select.locator("option", { hasText: text }).first().getAttribute("value");
-  await select.selectOption(value ?? "");
-}
 
 /** Valor (dd) de un rótulo (dt) del resumen de costos dentro de `scope`. */
 function costValue(scope: Locator, label: string | RegExp): Locator {

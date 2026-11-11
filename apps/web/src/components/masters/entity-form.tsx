@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { ApiError } from "@/lib/api-client";
+import { describeError } from "@/lib/errors";
 
 export type FieldKind =
   | "text"
@@ -29,6 +30,8 @@ export interface FieldDef {
   full?: boolean;
   disabled?: boolean;
   autoComplete?: string;
+  /** Título de grupo que se muestra antes de este campo (p. ej. "Contacto"). */
+  section?: string;
 }
 
 export type FormValues = Record<string, string | boolean>;
@@ -69,20 +72,33 @@ export function EntityForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const set = (name: string, value: string | boolean) =>
     setValues((v) => ({ ...v, [name]: value }));
+
+  // Con errores, el foco va al primer campo marcado (o al resumen si no hay ninguno).
+  const focusFirstError = (errors: Record<string, string>) => {
+    requestAnimationFrame(() => {
+      const first = fields.find((f) => errors[f.name]);
+      const target = first
+        ? formRef.current?.querySelector<HTMLElement>(`#field-${first.name}`)
+        : formRef.current?.querySelector<HTMLElement>(".alert");
+      target?.focus();
+    });
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const missing = Object.fromEntries(
       fields
         .filter((f) => f.required && f.kind !== "checkbox" && !String(values[f.name] ?? "").trim())
-        .map((f) => [f.name, "Obligatorio"]),
+        .map((f) => [f.name, "Completá este campo."]),
     );
     if (Object.keys(missing).length > 0) {
       setFieldErrors(missing);
-      setError("Completá los campos obligatorios.");
+      setError("Completá los campos obligatorios (marcados con *).");
+      focusFirstError(missing);
       return;
     }
     setPending(true);
@@ -93,35 +109,48 @@ export function EntityForm({
     } catch (err) {
       if (err instanceof ApiError) {
         setFieldErrors(err.fieldErrors);
-        setError(err.message);
+        setError(describeError(err));
+        focusFirstError(err.fieldErrors);
       } else {
-        setError("No se pudo guardar.");
+        setError("No se pudo guardar. Reintentá en unos segundos.");
       }
       setPending(false);
     }
   }
 
   return (
-    <form className="panel" onSubmit={submit} noValidate>
+    <form ref={formRef} className="panel" onSubmit={submit} noValidate>
       {intro}
       {error && (
-        <p className="alert" role="alert">
+        <p className="alert" role="alert" tabIndex={-1}>
           {error}
+        </p>
+      )}
+      {fields.some((f) => f.required) && (
+        <p className="form__hint">
+          Los campos con <span className="form__required">*</span> son obligatorios.
         </p>
       )}
       <div className="form-grid">
         {fields.map((f) => (
-          <Field
-            key={f.name}
-            def={f}
-            value={values[f.name] ?? ""}
-            error={fieldErrors[f.name]}
-            onChange={(v) => set(f.name, v)}
-          />
+          <Fragment key={f.name}>
+            {f.section && <h2 className="section-title form__field--full">{f.section}</h2>}
+            <Field
+              def={f}
+              value={values[f.name] ?? ""}
+              error={fieldErrors[f.name]}
+              onChange={(v) => set(f.name, v)}
+            />
+          </Fragment>
         ))}
       </div>
       <div className="form__footer">
-        <button type="submit" className="button button--primary" disabled={pending}>
+        <button
+          type="submit"
+          className="button button--primary"
+          disabled={pending}
+          aria-busy={pending || undefined}
+        >
           {pending ? "Guardando…" : submitLabel}
         </button>
         <Link className="button" href={cancelHref}>
@@ -145,13 +174,22 @@ function Field({
 }) {
   const id = `field-${def.name}`;
   const kind = def.kind ?? "text";
+  const describedBy =
+    [def.hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") ||
+    undefined;
   const common = {
     id,
     name: def.name,
     "aria-invalid": error ? true : undefined,
-    "aria-describedby": error ? `${id}-error` : undefined,
+    "aria-required": def.required && kind !== "checkbox" ? true : undefined,
+    "aria-describedby": describedBy,
     disabled: def.disabled,
   } as const;
+  const hint = def.hint && (
+    <span className="form__hint" id={`${id}-hint`}>
+      {def.hint}
+    </span>
+  );
 
   if (kind === "checkbox") {
     return (
@@ -165,7 +203,12 @@ function Field({
           />
           <span>{def.label}</span>
         </label>
-        {def.hint && <span className="form__hint">{def.hint}</span>}
+        {hint}
+        {error && (
+          <span className="form__error" id={`${id}-error`}>
+            {error}
+          </span>
+        )}
       </div>
     );
   }
@@ -229,7 +272,7 @@ function Field({
         )}
       </label>
       {control}
-      {def.hint && <span className="form__hint">{def.hint}</span>}
+      {hint}
       {error && (
         <span className="form__error" id={`${id}-error`}>
           {error}

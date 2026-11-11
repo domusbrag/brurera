@@ -13,10 +13,13 @@ import {
   type SaleStatusDto,
 } from "@bakery/shared";
 import { D } from "@bakery/domain";
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { isPositive, toDecimal } from "@/lib/decimal-input";
+import { describeError, localizeNumbers } from "@/lib/errors";
 import { formatMoney, formatPercent } from "@/lib/format";
+import { PAYMENT_STATUS_TONE, SALE_STATUS_TONE } from "@/lib/status";
+import { StatusBadge } from "../ui/status";
 
 /*
  * Piezas comunes de ventas, cobros y cuenta corriente (Fase 5B).
@@ -26,27 +29,15 @@ export const SALES_BASE = "/ventas";
 export const PRICE_LISTS_BASE = "/listas-de-precios";
 export const RECEIVABLES_BASE = "/cuentas-a-cobrar";
 
-const SALE_STATUS_CLASS: Record<SaleStatusDto, string> = {
-  DRAFT: "badge--draft",
-  POSTED: "",
-  CANCELLED: "badge--off",
-};
-
 export function SaleStatusBadge({ status }: { status: SaleStatusDto }) {
-  return <span className={`badge ${SALE_STATUS_CLASS[status]}`}>{SALE_STATUS_LABELS[status]}</span>;
+  return <StatusBadge tone={SALE_STATUS_TONE[status]}>{SALE_STATUS_LABELS[status]}</StatusBadge>;
 }
-
-const PAYMENT_STATUS_CLASS: Record<SalePaymentStatusDto, string> = {
-  UNPAID: "badge--warn",
-  PARTIALLY_PAID: "badge--info",
-  PAID: "",
-};
 
 export function PaymentStatusBadge({ status }: { status: SalePaymentStatusDto }) {
   return (
-    <span className={`badge ${PAYMENT_STATUS_CLASS[status]}`}>
+    <StatusBadge tone={PAYMENT_STATUS_TONE[status]}>
       {SALE_PAYMENT_STATUS_LABELS[status]}
-    </span>
+    </StatusBadge>
   );
 }
 
@@ -94,6 +85,9 @@ export function PaymentDialog({
   max,
   maxMessage,
   defaultAmount,
+  currentBalance,
+  primary,
+  small,
   onDone,
 }: {
   label: string;
@@ -105,6 +99,11 @@ export function PaymentDialog({
   max?: string;
   maxMessage?: string;
   defaultAmount?: string;
+  /** Saldo actual del cliente (positivo = debe): muestra cómo queda después del cobro. */
+  currentBalance?: string;
+  /** Es el paso principal de la pantalla (p. ej. cobrar una venta pendiente). */
+  primary?: boolean;
+  small?: boolean;
   onDone: (result: PaymentResultDto) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -117,7 +116,12 @@ export function PaymentDialog({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const tooMuch = max !== undefined && isPositive(amount) && new D(toDecimal(amount)).gt(max);
-  const id = label.replace(/\W+/g, "-").toLowerCase();
+  const id = useId();
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const remaining =
+    max !== undefined && isPositive(amount) && !tooMuch
+      ? new D(max).minus(toDecimal(amount)).toFixed(2)
+      : null;
 
   async function submit() {
     setError(null);
@@ -147,7 +151,7 @@ export function PaymentDialog({
       onDone(result);
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(describeError(err));
         setFieldErrors(err.fieldErrors);
       } else setError("No se pudo registrar el cobro.");
     } finally {
@@ -159,16 +163,26 @@ export function PaymentDialog({
     <>
       <button
         type="button"
-        className="button"
+        ref={openerRef}
+        className={`button ${primary ? "button--primary" : ""} ${small ? "button--small" : ""}`}
         onClick={() => {
+          // Cada apertura empieza limpia, con el monto sugerido.
           setError(null);
-          if (defaultAmount && !amount) setAmount(defaultAmount);
+          setFieldErrors({});
+          setAmount(defaultAmount ?? "");
+          setReference("");
+          setNotes("");
           dialogRef.current?.showModal();
         }}
       >
         {label}
       </button>
-      <dialog ref={dialogRef} className="dialog" aria-labelledby={`${id}-title`}>
+      <dialog
+        ref={dialogRef}
+        className="dialog"
+        aria-labelledby={`${id}-title`}
+        onClose={() => openerRef.current?.focus()}
+      >
         <h2 id={`${id}-title`}>{title}</h2>
         {description && <div className="muted">{description}</div>}
         <div className="form-grid">
@@ -183,14 +197,36 @@ export function PaymentDialog({
               onChange={(e) => setAmount(e.target.value)}
             />
             {max !== undefined && (
-              <span className="form__hint">Pendiente: {formatMoney(max, currency)}</span>
+              <span className="form__hint" id={`${id}-hint`}>
+                Pendiente: {formatMoney(max, currency)}
+                {remaining !== null && <> · queda {formatMoney(remaining, currency)} después</>}
+              </span>
             )}
             {tooMuch && (
               <span className="form__error" role="alert">
                 {maxMessage ?? `Supera el pendiente de ${formatMoney(max, currency)}.`}
               </span>
             )}
-            {fieldErrors.amount && <span className="form__error">{fieldErrors.amount}</span>}
+            {max === undefined && currentBalance !== undefined && (
+              <span className="form__hint" data-testid="balance-after">
+                {(() => {
+                  const after = isPositive(amount)
+                    ? new D(currentBalance).minus(toDecimal(amount))
+                    : new D(currentBalance);
+                  const label = isPositive(amount) ? "Después del cobro" : "Saldo actual";
+                  if (after.gt(0))
+                    return `${label}: debe ${formatMoney(after.toFixed(2), currency)}`;
+                  if (after.lt(0))
+                    return `${label}: ${formatMoney(after.abs().toFixed(2), currency)} de crédito a favor`;
+                  return `${label}: sin saldo`;
+                })()}
+              </span>
+            )}
+            {fieldErrors.amount && (
+              <span className="form__error" role="alert">
+                {fieldErrors.amount}
+              </span>
+            )}
           </div>
           <div className="form__field">
             <label htmlFor={`${id}-method`}>Medio de pago</label>
@@ -234,19 +270,20 @@ export function PaymentDialog({
         <div className="form__footer">
           <button
             type="button"
-            className="button button--primary"
-            onClick={submit}
-            disabled={pending || tooMuch}
-          >
-            {pending ? "Registrando…" : "Registrar cobro"}
-          </button>
-          <button
-            type="button"
             className="button"
             onClick={() => dialogRef.current?.close()}
             disabled={pending}
           >
-            Cancelar
+            Volver
+          </button>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={submit}
+            disabled={pending || tooMuch}
+            aria-busy={pending || undefined}
+          >
+            {pending ? "Registrando…" : "Registrar cobro"}
           </button>
         </div>
       </dialog>
@@ -261,7 +298,7 @@ export function Warnings({ warnings }: { warnings: string[] }) {
     <div className="alert alert--warn" role="status" data-testid="operation-warnings">
       <ul className="plain-list">
         {warnings.map((w) => (
-          <li key={w}>{w}</li>
+          <li key={w}>{localizeNumbers(w)}</li>
         ))}
       </ul>
     </div>

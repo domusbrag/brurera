@@ -24,11 +24,13 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ApiError, apiFetch, listPath } from "@/lib/api-client";
 import { isPositive, parseDecimal, toDecimal } from "@/lib/decimal-input";
-import { formatDateTime, formatMoney, formatQuantity, formatReferenceCost } from "@/lib/format";
+import { formatDateTime, formatMoney, formatQuantity, formatUnitCost } from "@/lib/format";
 import { MasterList } from "../masters/master-list";
 import {
   ConfirmAction,
+  CopyableCode,
   Details,
+  EmptyState,
   ErrorState,
   Loading,
   PageHeader,
@@ -82,20 +84,24 @@ export function StateBreakdown({
 /** Acciones posibles hoy sobre un lote, según sus reglas y los permisos. */
 function LotActions({ lot }: { lot: ProductLotDto }) {
   const can = useCan();
-  const actions: [string, string][] = [];
+  const actions: [string, string, boolean][] = [];
   if (can(P.PRODUCT_LOTS_TRANSFORM)) {
-    if (lot.transformTargets.includes("FROZEN")) actions.push(["Congelar", "congelar"]);
-    if (lot.transformTargets.includes("THAWED")) actions.push(["Descongelar", "descongelar"]);
+    if (lot.transformTargets.includes("FROZEN")) actions.push(["Congelar", "congelar", false]);
+    if (lot.transformTargets.includes("THAWED"))
+      actions.push(["Descongelar", "descongelar", false]);
   }
-  if (can(P.PRODUCT_LOTS_WASTE) && lot.status !== "DEPLETED") actions.push(["Merma", "merma"]);
-  if (actions.length === 0) return <>—</>;
+  // La merma saca stock: se distingue como acción destructiva.
+  if (can(P.PRODUCT_LOTS_WASTE) && lot.status !== "DEPLETED")
+    actions.push(["Merma", "merma", true]);
+  if (actions.length === 0) return <span className="muted">Sin acciones</span>;
   return (
     <span className="row-actions">
-      {actions.map(([label, path]) => (
+      {actions.map(([label, path, danger]) => (
         <Link
           key={path}
           href={`${LOTS_BASE}/${lot.id}/${path}`}
           aria-label={`${label} ${lot.code}`}
+          className={danger ? "link-button link-button--danger" : undefined}
         >
           {label}
         </Link>
@@ -136,11 +142,15 @@ export function ProductLotsPanel({ productId, unit }: { productId: string; unit:
       </div>
       <p className="muted small">Ordenados por vencimiento: primero el que hay que usar antes.</p>
       {error ? (
-        <p className="muted">{error.message}</p>
+        <ErrorState error={error} />
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
-        <p className="muted">Sin lotes con stock.</p>
+        <EmptyState
+          compact
+          title={scope === "all" ? "Este producto todavía no tiene lotes." : "Sin lotes con stock."}
+          description="Los lotes nacen al completar una orden de producción."
+        />
       ) : (
         <>
           <div className="table-wrap">
@@ -152,7 +162,7 @@ export function ProductLotsPanel({ productId, unit }: { productId: string; unit:
                   <th scope="col" className="num">
                     Cantidad
                   </th>
-                  <th scope="col">Utilizable hasta</th>
+                  <th scope="col">Vence</th>
                   <th scope="col">Estado</th>
                   <th scope="col" className="hide-md">
                     Producción
@@ -160,7 +170,7 @@ export function ProductLotsPanel({ productId, unit }: { productId: string; unit:
                   <th scope="col" className="hide-md">
                     Producido
                   </th>
-                  <th scope="col" className="hide-sm">
+                  <th scope="col" className="hide-md">
                     Depósito
                   </th>
                   <th scope="col">Acciones</th>
@@ -170,7 +180,9 @@ export function ProductLotsPanel({ productId, unit }: { productId: string; unit:
                 {data.items.map((l) => (
                   <tr key={l.id}>
                     <td>
-                      <Link href={`${LOTS_BASE}/${l.id}`}>{l.code}</Link>
+                      <Link href={`${LOTS_BASE}/${l.id}`} className="code">
+                        {l.code}
+                      </Link>
                       {l.parentLot && <span className="cost-source">de {l.parentLot.code}</span>}
                     </td>
                     <td>
@@ -196,7 +208,7 @@ export function ProductLotsPanel({ productId, unit }: { productId: string; unit:
                       )}
                     </td>
                     <td className="hide-md">{formatDateTime(l.producedAt, tz)}</td>
-                    <td className="hide-sm">{l.warehouse.name}</td>
+                    <td className="hide-md">{l.warehouse.name}</td>
                     <td>
                       <LotActions lot={l} />
                     </td>
@@ -255,8 +267,10 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
           </select>
         </div>
       </div>
-      {error ? (
-        <p className="muted">{error.message}</p>
+      {!valid ? (
+        <p className="form__error">Completá la fecha y la hora.</p>
+      ) : error ? (
+        <ErrorState error={error} />
       ) : !data ? (
         valid ? (
           <Loading />
@@ -314,7 +328,7 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
                     <th scope="col" className="num">
                       Cantidad
                     </th>
-                    <th scope="col" className="num hide-sm">
+                    <th scope="col" className="num">
                       Comprometido
                     </th>
                     <th scope="col">Ese día</th>
@@ -325,15 +339,17 @@ export function AvailabilityAtDate({ productId, unit }: { productId: string; uni
                     .sort((a, b) => a.fefoRank - b.fefoRank)
                     .map((l) => (
                       <tr key={l.id}>
-                        <td>{l.eligible ? l.fefoRank : "—"}</td>
+                        <td>
+                          {l.eligible ? l.fefoRank : <span className="muted">No se usa</span>}
+                        </td>
                         <td>
                           <Link href={`${LOTS_BASE}/${l.id}`}>{l.code}</Link>
                         </td>
-                        <td>{CONSERVATION_STATE_LABELS[l.conservationState]}</td>
-                        <td className="num">{formatQuantity(l.quantity, unit)}</td>
-                        <td className="num hide-sm">
-                          {new D(l.committed).isZero() ? "—" : formatQuantity(l.committed, unit)}
+                        <td>
+                          <ConservationBadge state={l.conservationState} />
                         </td>
+                        <td className="num">{formatQuantity(l.quantity, unit)}</td>
+                        <td className="num">{formatQuantity(l.committed, unit)}</td>
                         <td>
                           {l.eligible ? (
                             "Utilizable"
@@ -414,13 +430,22 @@ export function LotDetail({ id }: { id: string }) {
   const freeze = data.transformOptions.find((o) => o.targetState === "FROZEN");
   const thaw = data.transformOptions.find((o) => o.targetState === "THAWED");
   const columns = movementColumns(tz, currency, data.canSeeCosts, false);
+  const committed = new D(data.commitment.committedQuantity);
   return (
     <div className="page">
       <PageHeader
-        breadcrumb={{ href: `${PRODUCT_STOCK_BASE}/${data.product.id}`, label: data.product.name }}
+        breadcrumb={[
+          { href: PRODUCT_STOCK_BASE, label: "Stock de productos terminados" },
+          { href: `${PRODUCT_STOCK_BASE}/${data.product.id}`, label: data.product.name },
+        ]}
         title={
           <>
-            Lote {data.code} <ConservationBadge state={data.conservationState} />{" "}
+            Lote <CopyableCode code={data.code} />
+          </>
+        }
+        status={
+          <>
+            <ConservationBadge state={data.conservationState} />{" "}
             <LotStatusBadge status={data.status} />
           </>
         }
@@ -442,7 +467,10 @@ export function LotDetail({ id }: { id: string }) {
               </Link>
             )}
             {can(P.PRODUCT_LOTS_WASTE) && data.status !== "DEPLETED" && (
-              <Link className="button" href={`${LOTS_BASE}/${id}/merma`}>
+              <Link
+                className={`button ${data.status === "EXPIRED" ? "button--danger-solid" : "button--danger"}`}
+                href={`${LOTS_BASE}/${id}/merma`}
+              >
                 Registrar merma
               </Link>
             )}
@@ -453,24 +481,33 @@ export function LotDetail({ id }: { id: string }) {
                   label="Bloquear"
                   title={`Bloquear el lote ${data.code}`}
                   message={
-                    new D(data.commitment.committedQuantity).gt(0)
+                    committed.gt(0)
                       ? `Un lote bloqueado no se cuenta como disponible ni se puede congelar o descongelar. Sí admite merma. Tiene ${formatQuantity(data.commitment.committedQuantity, unit)} reservados: esas reservas se invalidan y los pedidos quedan para recalcular cobertura.`
                       : "Un lote bloqueado no se cuenta como disponible ni se puede congelar o descongelar. Sí admite merma."
                   }
                   confirmLabel="Bloquear lote"
                   danger
+                  validate={() => (reason.trim() === "" ? "Indicá el motivo del bloqueo." : null)}
                   onConfirm={async () => {
                     await apiFetch(`/api/product-lots/${id}/block`, {
                       method: "POST",
-                      body: { reason },
+                      body: { reason: reason.trim() },
                     });
                     reload();
                   }}
                 >
-                  <div className="form__field">
-                    <label htmlFor="block-reason">Motivo</label>
+                  <div className="form__field" style={{ marginTop: "0.8rem" }}>
+                    <label htmlFor="block-reason">
+                      Motivo{" "}
+                      <span className="form__required" aria-hidden="true">
+                        *
+                      </span>
+                    </label>
                     <input
                       id="block-reason"
+                      autoComplete="off"
+                      aria-required="true"
+                      placeholder="Por ejemplo: control de calidad, contaminación, envase dañado"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                     />
@@ -480,7 +517,7 @@ export function LotDetail({ id }: { id: string }) {
                 <ConfirmAction
                   label="Desbloquear"
                   title={`Desbloquear el lote ${data.code}`}
-                  message="El lote vuelve a contarse como disponible si no está vencido."
+                  message="El lote vuelve a contarse como disponible para vender y reservar, salvo que esté vencido."
                   confirmLabel="Desbloquear lote"
                   onConfirm={async () => {
                     await apiFetch(`/api/product-lots/${id}/unblock`, { method: "POST" });
@@ -500,60 +537,71 @@ export function LotDetail({ id }: { id: string }) {
       {data.status === "EXPIRED" && (
         <p className="alert" role="status">
           Este lote venció el {formatDateTime(data.usableUntil!, tz)}. No se cuenta como disponible
-          ni se puede transformar; podés registrarlo como merma.
+          ni se puede transformar; registralo como merma.
+        </p>
+      )}
+      {data.status === "NEAR_EXPIRY" && (
+        <p className="alert alert--warn" role="status">
+          Vence pronto ({formatRemaining(data.minutesRemaining)}): usalo primero
+          {freeze?.allowed ? " o congelalo" : ""}.
         </p>
       )}
 
       <section className="panel" aria-labelledby="lot-title">
         <h2 id="lot-title">Datos del lote</h2>
         <dl className="cost-summary">
-          <div>
+          <div className="metric">
             <dt>Cantidad actual</dt>
-            <dd>{formatQuantity(data.quantity, unit)}</dd>
+            <dd className="metric__value">{formatQuantity(data.quantity, unit)}</dd>
           </div>
-          <div>
+          <div className={`metric ${committed.gt(0) ? "metric--warning" : ""}`}>
             <dt>Comprometido con pedidos</dt>
-            <dd>{formatQuantity(data.commitment.committedQuantity, unit)}</dd>
-          </div>
-          <div>
-            <dt>Libre</dt>
-            <dd>
-              <strong>{formatQuantity(data.commitment.freeQuantity, unit)}</strong>
+            <dd className="metric__value">
+              {formatQuantity(data.commitment.committedQuantity, unit)}
             </dd>
           </div>
-          <div>
-            <dt>Cantidad inicial</dt>
-            <dd>{formatQuantity(data.initialQuantity, unit)}</dd>
+          <div className="metric metric--emphasis">
+            <dt>Libre</dt>
+            <dd className="metric__value">{formatQuantity(data.commitment.freeQuantity, unit)}</dd>
           </div>
-          <div>
+          <div
+            className={`metric ${data.status === "EXPIRED" ? "metric--danger" : data.status === "NEAR_EXPIRY" ? "metric--warning" : ""}`}
+          >
             <dt>Utilizable hasta</dt>
-            <dd>
+            <dd className="metric__value">
               {data.usableUntil ? formatDateTime(data.usableUntil, tz) : "Sin vencimiento"}
-              {data.status !== "DEPLETED" && (
-                <span className="cost-summary__note">
-                  {" "}
-                  · {formatRemaining(data.minutesRemaining)}
-                </span>
+              {data.status !== "DEPLETED" && data.usableUntil && (
+                <span className="cost-summary__note">{formatRemaining(data.minutesRemaining)}</span>
               )}
             </dd>
           </div>
+          <div className="metric">
+            <dt>Cantidad inicial</dt>
+            <dd className="metric__value">{formatQuantity(data.initialQuantity, unit)}</dd>
+          </div>
           {data.canSeeCosts && (
-            <div>
+            <div className="metric">
               <dt>Valor del lote</dt>
-              <dd>
+              <dd className="metric__value">
                 {formatMoney(data.value, currency)}
                 <span className="cost-summary__note">
-                  {" "}
-                  a {formatReferenceCost(data.unitMaterialCost, currency, unit)}
+                  a {formatUnitCost(data.unitMaterialCost, currency, unit)}
                 </span>
               </dd>
             </div>
           )}
         </dl>
         <Details
+          hideEmpty
           items={[
             [
-              "Producción",
+              "Producto",
+              <Link key="p" href={`${PRODUCT_STOCK_BASE}/${data.product.id}`}>
+                {data.product.name}
+              </Link>,
+            ],
+            [
+              "Orden de producción",
               can(P.PRODUCTION_ORDERS_READ) ? (
                 <Link href={`/produccion/${data.productionOrder.id}`}>
                   {data.productionOrder.code}
@@ -580,12 +628,13 @@ export function LotDetail({ id }: { id: string }) {
           ]}
         />
         {!operable && data.status !== "DEPLETED" && (freeze || thaw) && (
-          <p className="muted small">
+          <ul className="muted small">
             {[freeze, thaw]
               .filter((o) => o && !o.allowed && o.reason)
-              .map((o) => o!.reason)
-              .join(" ")}
-          </p>
+              .map((o) => (
+                <li key={o!.targetState}>{o!.reason}</li>
+              ))}
+          </ul>
         )}
         {data.conservationState === "THAWED" && (
           <p className="muted small">Un lote descongelado no puede volver a congelarse.</p>
@@ -634,30 +683,34 @@ export function LotDetail({ id }: { id: string }) {
 
       <section className="panel" aria-labelledby="lot-movements-title">
         <h2 id="lot-movements-title">Movimientos del lote</h2>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                {columns.map((c) => (
-                  <th key={c.header} scope="col" className={c.className}>
-                    {c.header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.movements.map((m) => (
-                <tr key={m.id}>
+        {data.movements.length === 0 ? (
+          <EmptyState compact title="Sin movimientos todavía." />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
                   {columns.map((c) => (
-                    <td key={c.header} className={c.className}>
-                      {c.cell(m)}
-                    </td>
+                    <th key={c.header} scope="col" className={c.className}>
+                      {c.header}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data.movements.map((m) => (
+                  <tr key={m.id}>
+                    {columns.map((c) => (
+                      <td key={c.header} className={c.className}>
+                        {c.cell(m)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {data.audit.length > 0 && (
@@ -667,7 +720,8 @@ export function LotDetail({ id }: { id: string }) {
             {data.audit.map((a) => (
               <li key={a.id}>
                 <strong>
-                  {AUDIT_ACTION_LABELS[a.action as keyof typeof AUDIT_ACTION_LABELS] ?? a.action}
+                  {AUDIT_ACTION_LABELS[a.action as keyof typeof AUDIT_ACTION_LABELS] ??
+                    "Cambio registrado"}
                 </strong>{" "}
                 <span className="muted">
                   {formatDateTime(a.createdAt, tz)}
@@ -774,7 +828,7 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
           ? err.code === "INSUFFICIENT_LOT_QUANTITY"
             ? "El lote ya no tiene esa cantidad (otra operación lo usó). Revisá el saldo."
             : (Object.values(err.fieldErrors)[0] ?? err.message)
-          : "No se pudo registrar la operación.",
+          : "No se pudo registrar la operación. Revisá la conexión y reintentá.",
       );
       setStep("edit");
       setPending(false);
@@ -789,7 +843,10 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
       </div>
       <div>
         <dt>{kind === "waste" ? "Merma" : copy.title}</dt>
-        <dd className="text-negative">{qty ? `−${formatQuantity(qty.toString(), unit)}` : "—"}</dd>
+        {/* Congelar o descongelar no es una pérdida: sólo la merma va en rojo. */}
+        <dd className={kind === "waste" ? "text-negative" : undefined}>
+          {qty ? `−${formatQuantity(qty.toString(), unit)}` : "—"}
+        </dd>
       </div>
       <div>
         <dt>Lote {lot.code} después</dt>
@@ -903,12 +960,24 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
                     Usar todo
                   </button>
                 </span>
+                {touchesReservations && (
+                  <span className="form__error" role="alert">
+                    Esta merma toca stock reservado: esas reservas se invalidan y los pedidos quedan
+                    para recalcular cobertura.
+                  </span>
+                )}
               </div>
               {kind === "waste" && (
                 <div className="form__field">
-                  <label htmlFor="reason">Motivo</label>
+                  <label htmlFor="reason">
+                    Motivo{" "}
+                    <span className="form__required" aria-hidden="true">
+                      *
+                    </span>
+                  </label>
                   <select
                     id="reason"
+                    aria-required="true"
                     value={reason}
                     onChange={(e) => setReason(e.target.value as ProductWasteReasonDto)}
                   >
@@ -939,9 +1008,18 @@ function LotOperationEditor({ lot, kind }: { lot: ProductLotDetailDto; kind: Lot
               <button type="submit" className="button button--primary" disabled={!ready}>
                 Revisar
               </button>
-              <Link className="button" href={lotHref}>
+              <Link className="button button--tertiary" href={lotHref}>
                 Cancelar
               </Link>
+              {!ready && !tooMuch && (
+                <span className="muted small">
+                  Para revisar falta:{" "}
+                  {[!qty && "una cantidad mayor a 0", kind === "waste" && !reason && "el motivo"]
+                    .filter(Boolean)
+                    .join(" y ")}
+                  .
+                </span>
+              )}
             </div>
           </section>
         </form>
@@ -1004,7 +1082,7 @@ export function ExpiringList() {
       endpoint="/api/inventory/expiring"
       basePath={LOTS_BASE}
       searchPlaceholder="Buscar producto o lote"
-      emptyText="No hay lotes vencidos ni próximos a vencer."
+      emptyText="No hay lotes vencidos ni próximos a vencer. Todo el stock está dentro de su vida útil."
       statusOptions={[
         { value: "all", label: "Vencidos y próximos" },
         { value: "near_expiry", label: "Sólo próximos a vencer" },
@@ -1036,12 +1114,15 @@ export function ExpiringList() {
       }
       columns={[
         {
+          header: "Producto",
+          cell: (l) => <Link href={`${PRODUCT_STOCK_BASE}/${l.product.id}`}>{l.product.name}</Link>,
+        },
+        {
           header: "Lote",
           cell: (l) => (
-            <>
-              <Link href={`${LOTS_BASE}/${l.id}`}>{l.code}</Link>
-              <span className="cost-source">{l.product.name}</span>
-            </>
+            <Link href={`${LOTS_BASE}/${l.id}`} className="code">
+              {l.code}
+            </Link>
           ),
         },
         {
@@ -1054,16 +1135,16 @@ export function ExpiringList() {
           className: "num",
         },
         {
-          header: "Utilizable hasta",
+          header: "Vence",
           cell: (l) => (
             <>
-              {l.usableUntil ? formatDateTime(l.usableUntil, tz) : "—"}
+              {l.usableUntil ? formatDateTime(l.usableUntil, tz) : "Sin vencimiento"}
               <span className="cost-source">{formatRemaining(l.minutesRemaining)}</span>
             </>
           ),
         },
         { header: "Estado", cell: (l) => <LotStatusBadge status={l.status} /> },
-        { header: "Depósito", cell: (l) => l.warehouse.name, className: "hide-sm" },
+        { header: "Depósito", cell: (l) => l.warehouse.name, className: "hide-md" },
         { header: "Acciones", cell: (l) => <LotActions lot={l} /> },
       ]}
     />

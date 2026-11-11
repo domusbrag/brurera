@@ -1,0 +1,20 @@
+[
+  ["inicio", "/"],
+  ["pedidos", "/pedidos"],
+  ["pedido", "/pedidos/5be28a6c-f358-4a01-b164-f546f8b2f328"],
+  ["pedido-nuevo", "/pedidos/nuevo"],
+  ["ventas", "/ventas"],
+  ["venta-nueva", "/ventas/nueva"],
+  ["venta", "/ventas/e97a4c66-61c6-4929-a6a6-b8d5144ddf33"],
+  ["produccion", "/produccion"],
+  ["orden", "/produccion/b17fd2aa-818d-4c34-b01a-aca3a6798f83"],
+  ["necesidades", "/necesidades"],
+  ["stock", "/stock"],
+  ["productos-terminados", "/stock/productos"],
+  ["stock-producto", "/stock/productos/e8c5f990-5c01-401f-a342-a2702dc5db8a"],
+  ["por-vencer", "/stock/productos/por-vencer"],
+  ["compras", "/compras"],
+  ["compra", "/compras/43cac07b-8882-4dff-93cf-251f1dc02181"],
+  ["cuentas", "/cuentas-a-cobrar"],
+  ["cuenta", "/cuentas-a-cobrar/e2e58e04-25e0-4b00-8e91-5e7e81be7198"]
+]

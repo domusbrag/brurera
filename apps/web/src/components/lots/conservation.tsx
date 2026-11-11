@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ApiError, apiFetch } from "@/lib/api-client";
+import { describeError } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { ErrorState, Loading, PageHeader, useResource } from "../masters/ui";
 import { useCan, useCurrentUser } from "../user-context";
@@ -41,7 +42,7 @@ export function ConservationSummary({ productId }: { productId: string }) {
         )}
       </div>
       {error ? (
-        <p className="muted">{error.message}</p>
+        <ErrorState error={error} />
       ) : !data ? (
         <Loading />
       ) : !data.configured ? (
@@ -184,7 +185,7 @@ function ConservationEditor({ profile }: { profile: ConservationProfileDto }) {
     } catch (err) {
       setFormError(
         err instanceof ApiError
-          ? (Object.values(err.fieldErrors)[0] ?? err.message)
+          ? (Object.values(err.fieldErrors)[0] ?? describeError(err))
           : "No se pudo guardar la conservación.",
       );
       setPending(false);
