@@ -326,7 +326,7 @@ test("Fase 5B: pedido con seña, entrega parcial, cobro, entrega final y cuenta 
   await onAccount.getByRole("button", { name: "Registrar cobro" }).click();
   await expect(page.getByTestId("account-balance")).toHaveText("Sin saldo");
   await section(page, "Cobros con crédito sin imputar")
-    .getByRole("button", { name: "Imputar" })
+    .getByRole("button", { name: "Imputar", exact: true })
     .click();
   await page.getByRole("dialog").getByRole("button", { name: "Imputar", exact: true }).click();
   await expect(page.getByText("Ventas pendientes de cobro")).toHaveCount(0);
