@@ -180,6 +180,103 @@ export const NAVIGATION: NavGroup[] = [
   },
 ];
 
+/** Atajo para crear algo: se ofrece en Inicio y en el buscador, según permisos. */
+export interface QuickAction {
+  href: string;
+  label: string;
+  hint: string;
+  icon: IconName;
+  /** Hacen falta todos. */
+  needs: PermissionCode[];
+}
+
+/** Accesos grandes de Inicio, en orden de uso diario. */
+export const QUICK_ACTIONS: QuickAction[] = [
+  {
+    href: "/ventas/nueva",
+    label: "Nueva venta",
+    hint: "Cobrar en el mostrador",
+    icon: "cash",
+    needs: [P.SALES_CREATE],
+  },
+  {
+    href: "/pedidos/nuevo",
+    label: "Nuevo pedido",
+    hint: "Anotar un encargo",
+    icon: "clipboard",
+    needs: [P.ORDERS_CREATE],
+  },
+  {
+    href: "/produccion/nueva",
+    label: "Nueva orden de producción",
+    hint: "Qué se hornea",
+    icon: "factory",
+    needs: [P.PRODUCTION_ORDERS_CREATE],
+  },
+  {
+    href: "/productos/nuevo",
+    label: "Nuevo producto",
+    hint: "Con receta y precio, de una",
+    icon: "package",
+    needs: [P.PRODUCTS_CREATE],
+  },
+  {
+    href: "/compras/nueva",
+    label: "Nueva compra",
+    hint: "Pedir a un proveedor",
+    icon: "truck",
+    needs: [P.PURCHASES_CREATE],
+  },
+  {
+    href: "/cuentas-a-cobrar",
+    label: "Registrar un cobro",
+    hint: "Cuentas corrientes",
+    icon: "wallet",
+    needs: [P.CUSTOMER_ACCOUNTS_READ, P.PAYMENTS_CREATE],
+  },
+];
+
+/** Altas menos frecuentes: no ocupan lugar en Inicio, pero el buscador las ofrece. */
+export const MORE_CREATE_ACTIONS: QuickAction[] = [
+  {
+    href: "/clientes/nuevo",
+    label: "Nuevo cliente",
+    hint: "Clientes",
+    icon: "users",
+    needs: [P.CUSTOMERS_CREATE],
+  },
+  {
+    href: "/materias-primas/nuevo",
+    label: "Nueva materia prima",
+    hint: "Materias primas",
+    icon: "wheat",
+    needs: [P.RAW_MATERIALS_CREATE],
+  },
+  {
+    href: "/recetas/nuevo",
+    label: "Nueva receta",
+    hint: "Recetas",
+    icon: "book",
+    needs: [P.RECIPES_CREATE],
+  },
+  {
+    href: "/proveedores/nuevo",
+    label: "Nuevo proveedor",
+    hint: "Proveedores",
+    icon: "building",
+    needs: [P.SUPPLIERS_CREATE],
+  },
+];
+
+/** Acciones disponibles para un usuario (hacen falta todos los permisos de cada una). */
+export function allowedActions(
+  actions: readonly QuickAction[],
+  permissions: readonly string[],
+): QuickAction[] {
+  const granted = new Set(permissions);
+  return actions.filter((a) => a.needs.every((p) => granted.has(p)));
+}
+
 /**
  * Módulos del roadmap todavía no implementados. No aparecen en el menú; su ruta
  * directa muestra "Disponible en próxima etapa".

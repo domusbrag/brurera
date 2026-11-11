@@ -209,3 +209,77 @@ test("UX: navegación por teclado y menú en tablet", async ({ page }, testInfo)
   await menuButton.click();
   await expect(nav.getByRole("link", { name: "Pedidos" })).toHaveAttribute("aria-current", "page");
 });
+
+test("UX: buscador global, menú plegable y filtros secundarios", async ({ page }, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page);
+  await login(page);
+
+  // Ctrl+K abre el buscador; encuentra pantallas sin tildes y Enter navega.
+  await page.keyboard.press("Control+k");
+  const search = page.getByRole("combobox", { name: "Buscar pantallas, acciones o registros" });
+  await expect(search).toBeFocused();
+  await search.fill("ordenes de produccion");
+  await expect(page.getByRole("option", { name: /Órdenes de producción/ })).toBeVisible();
+  await search.press("Enter");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Órdenes de producción" }),
+  ).toBeVisible();
+  await expect(search).toBeHidden();
+
+  // Busca registros en la API: el cliente de mostrador existe en toda empresa.
+  await page.getByRole("button", { name: "Buscar (Ctrl+K)" }).click();
+  await search.fill("Consumidor");
+  const option = page.getByRole("option", { name: /Consumidor Final.*Cliente/ });
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(page).toHaveURL(/\/clientes\/[0-9a-f-]{36}$/);
+
+  // «/» lo abre fuera de un campo; Escape lo cierra.
+  await page.locator("main").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("/");
+  await expect(search).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(search).toBeHidden();
+
+  // Listado con muchos filtros: los secundarios esperan detrás de «Más filtros».
+  await openSection(page, "Pedidos");
+  await expect(page.getByLabel("Prioridad", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "Más filtros" }).click();
+  await page.getByLabel("Prioridad", { exact: true }).selectOption({ index: 1 });
+  await expect(page).toHaveURL(/priority=/);
+  await page.reload();
+  // Con un filtro escondido aplicado, el panel vuelve abierto.
+  await expect(page.getByLabel("Prioridad", { exact: true })).toBeVisible();
+
+  // Menú: un grupo se pliega y se recuerda; el de la pantalla actual no se pliega.
+  const menuButton = page.getByRole("button", { name: "Abrir menú" });
+  if (testInfo.project.name === "tablet") await menuButton.click();
+  const nav = page.getByRole("navigation", { name: "Menú principal" });
+  await expect(nav.getByRole("button", { name: "Comercial" })).toBeDisabled();
+  await nav.getByRole("button", { name: "Compras" }).click();
+  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeHidden();
+  await page.reload();
+  if (testInfo.project.name === "tablet") await menuButton.click();
+  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeHidden();
+  await nav.getByRole("button", { name: "Compras" }).click();
+  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeVisible();
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("UX: barra inferior en el celular", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  const bar = page.getByRole("navigation", { name: "Accesos del celular" });
+  await expect(bar).toBeVisible();
+  await bar.getByRole("link", { name: "Pedidos" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Pedidos" })).toBeVisible();
+  await expect(bar.getByRole("link", { name: "Pedidos" })).toHaveAttribute("aria-current", "page");
+  await bar.getByRole("button", { name: "Menú" }).click();
+  await expect(page.getByRole("navigation", { name: "Menú principal" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await bar.getByRole("button", { name: "Buscar" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Buscar pantallas, acciones o registros" }),
+  ).toBeFocused();
+});

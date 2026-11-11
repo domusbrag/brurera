@@ -3,7 +3,7 @@
 import type { Page } from "@bakery/shared";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
 import { listPath } from "@/lib/api-client";
 import { formatDate } from "@/lib/format";
 import { Icon } from "../ui/icons";
@@ -48,6 +48,8 @@ export interface MasterListProps<T> {
 }
 
 const PAGE_SIZE = 25;
+/** Filtros que se ven sin abrir «Más filtros» (además de la búsqueda). */
+const MAX_VISIBLE_FILTERS = 2;
 
 /**
  * Listado estándar de un maestro: búsqueda (con demora), filtro de estado,
@@ -158,6 +160,73 @@ function MasterListInner<T extends { id: string }>({
     setParams(Object.fromEntries(activeChips.flatMap((c) => Object.entries(c.clear))));
   };
 
+  // Filtros: los dos primeros siempre a la vista; el resto, detrás de «Más filtros»
+  // (en Pedidos eran ocho controles en tres renglones antes de ver un solo resultado).
+  const controls: { key: string; active: boolean; node: ReactNode }[] = [];
+  if (!hideStatusFilter)
+    controls.push({
+      key: "estado",
+      active: status !== defaultStatus,
+      node: (
+        <select
+          key="estado"
+          aria-label="Estado"
+          value={status}
+          onChange={(e) => setParams({ estado: e.target.value })}
+        >
+          {statusChoices.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ),
+    });
+  for (const f of extraFilters)
+    controls.push({
+      key: f.name,
+      active: !!params.get(f.name),
+      node: (
+        <select
+          key={f.name}
+          aria-label={f.label}
+          value={params.get(f.name) ?? ""}
+          onChange={(e) => setParams({ [f.name]: e.target.value || null })}
+        >
+          <option value="">{f.allLabel ?? `${f.label}: todas`}</option>
+          {f.options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ),
+    });
+  for (const f of dateFilters)
+    controls.push({
+      key: f.name,
+      active: !!params.get(f.name),
+      node: (
+        <label key={f.name} className="filters__date">
+          <span>{f.label}</span>
+          <input
+            type="date"
+            value={params.get(f.name) ?? ""}
+            onChange={(e) => setParams({ [f.name]: e.target.value || null })}
+          />
+        </label>
+      ),
+    });
+  const collapseFrom =
+    controls.length > MAX_VISIBLE_FILTERS + 1 ? MAX_VISIBLE_FILTERS : controls.length;
+  const visibleControls = controls.slice(0, collapseFrom);
+  const hiddenControls = controls.slice(collapseFrom);
+  const hiddenActive = hiddenControls.filter((c) => c.active).length;
+  // Si se llega con un filtro escondido ya aplicado (enlace de Inicio, volver atrás), se muestra.
+  const [moreToggled, setShowMore] = useState<boolean | null>(null);
+  const showMore = moreToggled ?? hiddenActive > 0;
+  const moreId = useId();
+
   const createAction =
     canCreate && createLabel ? (
       <Link className="button button--primary" href={createHref ?? `${basePath}/nuevo`}>
@@ -188,44 +257,27 @@ function MasterListInner<T extends { id: string }>({
               }}
             />
           </div>
-          {!hideStatusFilter && (
-            <select
-              aria-label="Estado"
-              value={status}
-              onChange={(e) => setParams({ estado: e.target.value })}
+          {visibleControls.map((c) => c.node)}
+          {hiddenControls.length > 0 && (
+            <button
+              type="button"
+              className="button button--small button--tertiary filters__more"
+              aria-expanded={showMore}
+              aria-controls={moreId}
+              onClick={() => setShowMore(!showMore)}
             >
-              {statusChoices.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              <Icon name="chevron-down" size="sm" />
+              {showMore ? "Menos filtros" : "Más filtros"}
+              {!showMore && hiddenActive > 0 && (
+                <span className="filters__count">{hiddenActive}</span>
+              )}
+            </button>
           )}
-          {extraFilters.map((f) => (
-            <select
-              key={f.name}
-              aria-label={f.label}
-              value={params.get(f.name) ?? ""}
-              onChange={(e) => setParams({ [f.name]: e.target.value || null })}
-            >
-              <option value="">{f.allLabel ?? `${f.label}: todas`}</option>
-              {f.options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          ))}
-          {dateFilters.map((f) => (
-            <label key={f.name} className="filters__date">
-              <span>{f.label}</span>
-              <input
-                type="date"
-                value={params.get(f.name) ?? ""}
-                onChange={(e) => setParams({ [f.name]: e.target.value || null })}
-              />
-            </label>
-          ))}
+          {hiddenControls.length > 0 && (
+            <div id={moreId} className="filters__more-panel" hidden={!showMore}>
+              {hiddenControls.map((c) => c.node)}
+            </div>
+          )}
         </div>
         {activeChips.length > 0 && (
           <div className="filters__active" aria-label="Filtros aplicados">

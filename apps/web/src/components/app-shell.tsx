@@ -3,8 +3,9 @@
 import { PERMISSIONS as P, type CurrentUser } from "@bakery/shared";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { HOME_ITEM, activeNavHref, canOpenRoute, visibleNavigation } from "@/lib/navigation";
+import { CommandPalette, usePaletteShortcut } from "./ui/command-palette";
 import { FlashProvider } from "./ui/flash";
 import { Icon } from "./ui/icons";
 import { UserProvider } from "./user-context";
@@ -41,6 +42,33 @@ function ThemeToggle() {
   );
 }
 
+const COLLAPSED_KEY = "menu-grupos-plegados";
+
+/** Grupos del menú que la persona plegó (se recuerdan en este equipo). */
+function useCollapsedGroups() {
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as unknown;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (Array.isArray(saved)) setCollapsed(saved.filter((g) => typeof g === "string"));
+    } catch {
+      /* sin almacenamiento o dato roto: todo desplegado */
+    }
+  }, []);
+  const toggle = (group: string) =>
+    setCollapsed((prev) => {
+      const next = prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group];
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        /* vale sólo para esta pestaña */
+      }
+      return next;
+    });
+  return { collapsed, toggle };
+}
+
 /**
  * Cáscara de la aplicación: menú lateral estable en escritorio, panel
  * desplegable en tablet, barra superior con la empresa, accesos rápidos según
@@ -60,6 +88,13 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => {
+    setMenuOpenAt(null);
+    setPaletteOpen(true);
+  }, []);
+  usePaletteShortcut(openPalette);
+  const { collapsed, toggle: toggleGroup } = useCollapsedGroups();
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
   const setMenuOpen = (open: boolean) => {
@@ -99,6 +134,20 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
   const granted = new Set(user.permissions);
   const canSell = granted.has(P.SALES_CREATE);
   const canOrder = granted.has(P.ORDERS_CREATE);
+  const canSeeOrders = granted.has(P.ORDERS_READ);
+  const activeGroup = groups.find((g) => g.items.some((i) => i.href === active))?.label;
+
+  // El ítem actual siempre a la vista: con el menú largo, «Compras» quedaba debajo del borde.
+  // Se mueve sólo el scroll del menú (sin scrollIntoView), y sólo si el ítem está fuera de vista.
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    const link = sidebar?.querySelector<HTMLElement>(".nav__link--active");
+    if (!sidebar || !link) return;
+    const box = sidebar.getBoundingClientRect();
+    const item = link.getBoundingClientRect();
+    if (item.bottom > box.bottom) sidebar.scrollTop += item.bottom - box.bottom + 24;
+    else if (item.top < box.top) sidebar.scrollTop -= box.top - item.top + 24;
+  }, [active, collapsed]);
 
   const navLink = (href: string, label: string, icon: Parameters<typeof Icon>[0]["name"]) => (
     <Link
@@ -137,14 +186,31 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
         </div>
         <nav aria-label="Menú principal">
           {navLink(HOME_ITEM.href, HOME_ITEM.label, HOME_ITEM.icon)}
-          {groups.map((group) => (
-            <div className="nav__group" key={group.label}>
-              <div className="nav__group-label" aria-hidden="true">
-                {group.label}
+          {groups.map((group) => {
+            // El grupo de la pantalla actual no se puede plegar: siempre se ve dónde se está.
+            const isActiveGroup = group.label === activeGroup;
+            const expanded = isActiveGroup || !collapsed.includes(group.label);
+            const listId = `menu-${group.label.toLowerCase().replace(/\W+/g, "-")}`;
+            return (
+              <div className="nav__group" key={group.label}>
+                <button
+                  type="button"
+                  className="nav__group-toggle"
+                  aria-expanded={expanded}
+                  aria-controls={listId}
+                  disabled={isActiveGroup}
+                  title={isActiveGroup ? "Estás en esta sección" : undefined}
+                  onClick={() => toggleGroup(group.label)}
+                >
+                  <span>{group.label}</span>
+                  <Icon name="chevron-down" size="sm" />
+                </button>
+                <div id={listId} hidden={!expanded}>
+                  {group.items.map((item) => navLink(item.href, item.label, item.icon))}
+                </div>
               </div>
-              {group.items.map((item) => navLink(item.href, item.label, item.icon))}
-            </div>
-          ))}
+            );
+          })}
         </nav>
       </aside>
       <div className="shell__backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />
@@ -162,6 +228,17 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
             <Icon name="menu" />
           </button>
           <div className="topbar__company">{user.company.tradeName}</div>
+          <button
+            type="button"
+            className="topbar__search"
+            onClick={openPalette}
+            aria-keyshortcuts="Control+K"
+            aria-label="Buscar (Ctrl+K)"
+          >
+            <Icon name="search" size="sm" />
+            <span className="topbar__search-text">Buscar…</span>
+            <kbd className="topbar__search-kbd">Ctrl K</kbd>
+          </button>
           {(canSell || canOrder) && (
             <div className="topbar__quick" aria-label="Accesos rápidos" role="group">
               {canOrder && (
@@ -225,6 +302,49 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
           </UserProvider>
         </main>
       </div>
+
+      {/* Celular: lo de todos los días al alcance del pulgar. */}
+      <nav className="bottom-bar" aria-label="Accesos del celular">
+        <Link
+          href="/"
+          className="bottom-bar__item"
+          aria-current={active === "/" ? "page" : undefined}
+        >
+          <Icon name="home" />
+          <span>Inicio</span>
+        </Link>
+        {canSeeOrders && (
+          <Link
+            href="/pedidos"
+            className="bottom-bar__item"
+            aria-current={active === "/pedidos" ? "page" : undefined}
+          >
+            <Icon name="clipboard" />
+            <span>Pedidos</span>
+          </Link>
+        )}
+        {canSell && (
+          <Link href="/ventas/nueva" className="bottom-bar__item bottom-bar__item--primary">
+            <Icon name="cash" />
+            <span>Vender</span>
+          </Link>
+        )}
+        <button type="button" className="bottom-bar__item" onClick={openPalette}>
+          <Icon name="search" />
+          <span>Buscar</span>
+        </button>
+        <button
+          type="button"
+          className="bottom-bar__item"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          <Icon name="menu" />
+          <span>Menú</span>
+        </button>
+      </nav>
+
+      <CommandPalette user={user} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

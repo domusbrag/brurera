@@ -12,8 +12,9 @@ import {
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api-client";
+import { QUICK_ACTIONS } from "@/lib/navigation";
 import { formatDateTime } from "@/lib/format";
-import { Icon, type IconName } from "../ui/icons";
+import { Icon } from "../ui/icons";
 import { OrderStatusBadge, CoverageBadge, ORDERS_BASE } from "../orders/order-shared";
 import { ProductionStatusBadge } from "../production/production-shared";
 import { useCan, useCurrentUser } from "../user-context";
@@ -39,59 +40,6 @@ interface AttentionDef {
   /** Tono cuando hay algo (con 0 queda en "ok"). */
   tone: Exclude<Tone, "ok">;
 }
-
-interface QuickAction {
-  href: string;
-  label: string;
-  hint: string;
-  icon: IconName;
-  needs: string[];
-}
-
-const QUICK_ACTIONS: QuickAction[] = [
-  {
-    href: "/ventas/nueva",
-    label: "Nueva venta",
-    hint: "Cobrar en el mostrador",
-    icon: "cash",
-    needs: [P.SALES_CREATE],
-  },
-  {
-    href: `${ORDERS_BASE}/nuevo`,
-    label: "Nuevo pedido",
-    hint: "Anotar un encargo",
-    icon: "clipboard",
-    needs: [P.ORDERS_CREATE],
-  },
-  {
-    href: "/produccion/nueva",
-    label: "Nueva orden de producción",
-    hint: "Qué se hornea",
-    icon: "factory",
-    needs: [P.PRODUCTION_ORDERS_CREATE],
-  },
-  {
-    href: "/productos/nuevo",
-    label: "Nuevo producto",
-    hint: "Con receta y precio, de una",
-    icon: "package",
-    needs: [P.PRODUCTS_CREATE],
-  },
-  {
-    href: "/compras/nueva",
-    label: "Nueva compra",
-    hint: "Pedir a un proveedor",
-    icon: "truck",
-    needs: [P.PURCHASES_CREATE],
-  },
-  {
-    href: "/cuentas-a-cobrar",
-    label: "Registrar un cobro",
-    hint: "Cuentas corrientes",
-    icon: "wallet",
-    needs: [P.CUSTOMER_ACCOUNTS_READ, P.PAYMENTS_CREATE],
-  },
-];
 
 /** Saludo según la hora de la empresa. */
 function greeting(timeZone: string): string {
@@ -193,23 +141,28 @@ function companyToday(timeZone: string): string {
   return instantToZonedLocal(new Date(), timeZone).slice(0, 10);
 }
 
-function useTotal(endpoint: string | null) {
-  const [state, setState] = useState<{ total: number } | "error" | null>(null);
+type TotalState = { total: number } | "error" | null;
+
+/** Totales de todas las tarjetas de «Requiere atención», pedidos en paralelo. */
+function useTotals(defs: AttentionDef[]): Record<string, TotalState> {
+  const [state, setState] = useState<Record<string, TotalState>>({});
+  const key = defs.map((d) => d.endpoint).join("|");
   useEffect(() => {
-    if (!endpoint) return;
     let cancelled = false;
-    apiFetch<Page<unknown>>(endpoint)
-      .then((page) => !cancelled && setState({ total: page.total }))
-      .catch(() => !cancelled && setState("error"));
+    for (const def of defs) {
+      apiFetch<Page<unknown>>(def.endpoint)
+        .then((page) => !cancelled && setState((s) => ({ ...s, [def.key]: { total: page.total } })))
+        .catch(() => !cancelled && setState((s) => ({ ...s, [def.key]: "error" })));
+    }
     return () => {
       cancelled = true;
     };
-  }, [endpoint]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
   return state;
 }
 
-function AttentionCard({ def }: { def: AttentionDef }) {
-  const state = useTotal(def.endpoint);
+function AttentionCard({ def, state }: { def: AttentionDef; state: TotalState }) {
   if (state === null)
     return (
       <div className="attention__item" aria-busy="true">
@@ -238,6 +191,56 @@ function AttentionCard({ def }: { def: AttentionDef }) {
       <span className="attention__title">{def.title(state.total)}</span>
       <span className="attention__hint">{state.total > 0 ? def.hint : "Nada pendiente."}</span>
     </Link>
+  );
+}
+
+/**
+ * Lo pendiente va en tarjetas grandes; lo que está en cero se resume en una
+ * línea «Al día» (antes nueve tarjetas con «0 · Nada pendiente» tapaban lo urgente).
+ */
+function Attention({ defs }: { defs: AttentionDef[] }) {
+  const totals = useTotals(defs);
+  const state = (d: AttentionDef) => totals[d.key] ?? null;
+  const isClear = (d: AttentionDef) => {
+    const s = state(d);
+    return s !== null && s !== "error" && s.total === 0;
+  };
+  const pending = defs.filter((d) => !isClear(d));
+  const clear = defs.filter(isClear);
+  return (
+    <section aria-labelledby="attention-title">
+      <h2 id="attention-title" className="section-title">
+        Requiere atención
+      </h2>
+      {pending.length > 0 ? (
+        <div className="attention">
+          {pending.map((d) => (
+            <AttentionCard key={d.key} def={d} state={state(d)} />
+          ))}
+        </div>
+      ) : (
+        <p className="attention__all-clear">
+          <Icon name="check" size="sm" /> Todo al día: no hay nada pendiente.
+        </p>
+      )}
+      {clear.length > 0 && pending.length > 0 && (
+        <p className="attention__clear">
+          <span className="attention__clear-label">
+            <Icon name="check" size="sm" /> Al día:
+          </span>
+          {clear.map((d) => (
+            <Link
+              key={d.key}
+              href={d.href}
+              className="attention__clear-item"
+              data-testid={`attention-${d.key}`}
+            >
+              {d.title(0)}
+            </Link>
+          ))}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -510,18 +513,7 @@ export function Dashboard() {
         </nav>
       )}
 
-      {attention.length > 0 && (
-        <section aria-labelledby="attention-title">
-          <h2 id="attention-title" className="section-title">
-            Requiere atención
-          </h2>
-          <div className="attention">
-            {attention.map((d) => (
-              <AttentionCard key={d.key} def={d} />
-            ))}
-          </div>
-        </section>
-      )}
+      {attention.length > 0 && <Attention defs={attention} />}
 
       <div className="dash-grid">
         {can(P.ORDERS_READ) && <UpcomingOrders today={today} />}
