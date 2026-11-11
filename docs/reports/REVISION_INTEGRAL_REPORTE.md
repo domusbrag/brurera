@@ -68,15 +68,21 @@ Funcionalidad de fases futuras (se propone, no se construyó):
 
 ## Cómo probarlo en Windows
 
-Sin migraciones: alcanza con traer la rama, instalar y compilar.
+Sin migraciones: alcanza con traer la rama, instalar y compilar. Si la rama todavía no está en
+GitHub, se trae del paquete `revision-integral.bundle` (carpeta del proyecto
+`bakery-erp/revision-integral/`), copiado por ejemplo a `C:\Users\maxi\Desktop`:
 
 ```powershell
-git fetch origin
+cd C:\Users\maxi\Desktop\brurera\brurera
+git fetch C:\Users\maxi\Desktop\revision-integral.bundle revision-integral:revision-integral
+# (o, si ya está en GitHub: git fetch origin)
 git checkout revision-integral
 pnpm install
 pnpm build
 pnpm dev
 ```
+
+La rama incluye el sprint de UX (PR #9): mergearla a main lleva también ese trabajo.
 
 Recorrido sugerido: Stock → Bajo mínimo (ver "En camino" y "Armar compras"), crear una compra
 desde ahí, confirmarla y volver a Bajo mínimo; registrar una recepción; en Cuentas a cobrar ver el
