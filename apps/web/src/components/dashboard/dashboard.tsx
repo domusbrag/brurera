@@ -43,32 +43,63 @@ interface AttentionDef {
 interface QuickAction {
   href: string;
   label: string;
+  hint: string;
   icon: IconName;
   needs: string[];
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { href: "/ventas/nueva", label: "Nueva venta", icon: "cash", needs: [P.SALES_CREATE] },
+  {
+    href: "/ventas/nueva",
+    label: "Nueva venta",
+    hint: "Cobrar en el mostrador",
+    icon: "cash",
+    needs: [P.SALES_CREATE],
+  },
   {
     href: `${ORDERS_BASE}/nuevo`,
     label: "Nuevo pedido",
+    hint: "Anotar un encargo",
     icon: "clipboard",
     needs: [P.ORDERS_CREATE],
   },
   {
     href: "/produccion/nueva",
     label: "Nueva orden de producción",
+    hint: "Qué se hornea",
     icon: "factory",
     needs: [P.PRODUCTION_ORDERS_CREATE],
   },
-  { href: "/compras/nueva", label: "Nueva compra", icon: "truck", needs: [P.PURCHASES_CREATE] },
+  {
+    href: "/productos/nuevo",
+    label: "Nuevo producto",
+    hint: "Con receta y precio, de una",
+    icon: "package",
+    needs: [P.PRODUCTS_CREATE],
+  },
+  {
+    href: "/compras/nueva",
+    label: "Nueva compra",
+    hint: "Pedir a un proveedor",
+    icon: "truck",
+    needs: [P.PURCHASES_CREATE],
+  },
   {
     href: "/cuentas-a-cobrar",
     label: "Registrar un cobro",
+    hint: "Cuentas corrientes",
     icon: "wallet",
     needs: [P.CUSTOMER_ACCOUNTS_READ, P.PAYMENTS_CREATE],
   },
 ];
+
+/** Saludo según la hora de la empresa. */
+function greeting(timeZone: string): string {
+  const hour = Number(instantToZonedLocal(new Date(), timeZone).slice(11, 13));
+  if (hour >= 5 && hour < 13) return "Buen día";
+  if (hour >= 13 && hour < 20) return "Buenas tardes";
+  return "Buenas noches";
+}
 
 function attentionItems(today: string): AttentionDef[] {
   return [
@@ -442,17 +473,23 @@ export function Dashboard() {
   const attention = attentionItems(today).filter((d) => allowed(d.needs));
   const quick = QUICK_ACTIONS.filter((q) => allowed(q.needs));
   const firstName = user.displayName.split(" ")[0];
+  const [hello] = useState(() => greeting(tz));
 
   return (
     <div className="page dashboard">
-      <header className="page__header">
-        <div className="page__title">
-          <h1>Inicio</h1>
-          <p className="page__subtitle">
-            Hola, {firstName}. {formatLocalDateTime(`${today}T00:00`).slice(0, 10)} ·{" "}
-            {user.company.tradeName}
+      <header className="hero">
+        <div className="hero__text">
+          <h1 className="hero__eyebrow">Inicio</h1>
+          <p className="hero__title">
+            {hello}, {firstName}
+          </p>
+          <p className="hero__subtitle">
+            {formatLocalDateTime(`${today}T00:00`).slice(0, 10)} · {user.company.tradeName}
           </p>
         </div>
+        <span className="hero__art" aria-hidden="true">
+          <Icon name="wheat" />
+        </span>
       </header>
 
       {quick.length > 0 && (
@@ -461,10 +498,13 @@ export function Dashboard() {
             <Link
               key={q.href}
               href={q.href}
-              className={`button ${i === 0 ? "button--primary" : ""}`}
+              className={`quick-action ${i === 0 ? "quick-action--primary" : ""}`}
             >
-              <Icon name={q.icon} size="sm" />
-              {q.label}
+              <span className="quick-action__icon" aria-hidden="true">
+                <Icon name={q.icon} />
+              </span>
+              <span className="quick-action__label">{q.label}</span>
+              <span className="quick-action__hint">{q.hint}</span>
             </Link>
           ))}
         </nav>

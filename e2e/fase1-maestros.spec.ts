@@ -149,9 +149,8 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   // 12. Producto
   await openSection(page, "Productos");
   await page.getByRole("link", { name: "Nuevo producto" }).click();
-  await expect(
-    page.getByText("El costo no se carga a mano: se calcula desde la receta del producto."),
-  ).toBeVisible();
+  // Alta de corrido: el costo sale de la receta (paso 2), no se carga a mano.
+  await expect(page.getByRole("heading", { name: "¿Con qué se hace?" })).toBeVisible();
   await page.getByLabel("Nombre").fill(`Pan de campo ${run}`);
   await selectByText(page, "Categoría", `Panes ${run}`);
   await selectByText(page, "Unidad de venta", "Kilogramo");

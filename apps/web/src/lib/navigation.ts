@@ -74,6 +74,27 @@ export const NAVIGATION: NavGroup[] = [
       { href: "/ventas", label: "Ventas", icon: "cart", anyOf: [P.SALES_READ] },
       { href: "/clientes", label: "Clientes", icon: "users", anyOf: [P.CUSTOMERS_READ] },
       {
+        href: "/cuentas-a-cobrar",
+        label: "Cuentas a cobrar",
+        icon: "wallet",
+        anyOf: [P.CUSTOMER_ACCOUNTS_READ],
+      },
+    ],
+  },
+  {
+    // Todo lo que define un producto vendible, junto (rediseño 2026-11): qué es,
+    // con qué se hace y a cuánto se vende. El alta de corrido vive en Productos.
+    label: "Productos y recetas",
+    items: [
+      { href: "/productos", label: "Productos", icon: "package", anyOf: [P.PRODUCTS_READ] },
+      { href: "/recetas", label: "Recetas", icon: "book", anyOf: [P.RECIPES_READ] },
+      {
+        href: "/materias-primas",
+        label: "Materias primas",
+        icon: "wheat",
+        anyOf: [P.RAW_MATERIALS_READ],
+      },
+      {
         href: "/listas-de-precios",
         label: "Listas de precios",
         icon: "tag",
@@ -96,7 +117,6 @@ export const NAVIGATION: NavGroup[] = [
         icon: "factory",
         anyOf: [P.PRODUCTION_ORDERS_READ],
       },
-      { href: "/recetas", label: "Recetas", icon: "book", anyOf: [P.RECIPES_READ] },
     ],
   },
   {
@@ -133,29 +153,6 @@ export const NAVIGATION: NavGroup[] = [
     items: [
       { href: "/compras", label: "Compras", icon: "truck", anyOf: [P.PURCHASES_READ] },
       { href: "/proveedores", label: "Proveedores", icon: "building", anyOf: [P.SUPPLIERS_READ] },
-    ],
-  },
-  {
-    label: "Finanzas",
-    items: [
-      {
-        href: "/cuentas-a-cobrar",
-        label: "Cuentas a cobrar",
-        icon: "wallet",
-        anyOf: [P.CUSTOMER_ACCOUNTS_READ],
-      },
-    ],
-  },
-  {
-    label: "Catálogo",
-    items: [
-      { href: "/productos", label: "Productos", icon: "package", anyOf: [P.PRODUCTS_READ] },
-      {
-        href: "/materias-primas",
-        label: "Materias primas",
-        icon: "wheat",
-        anyOf: [P.RAW_MATERIALS_READ],
-      },
     ],
   },
   {

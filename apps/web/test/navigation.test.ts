@@ -58,21 +58,21 @@ describe("safeNextPath (prevención de open redirect)", () => {
 
 describe("menú por rol (sólo lo que cada persona puede usar)", () => {
   it("Ventas / mostrador: comercial y cobranza; sin producción, inventario, compras ni costos", () => {
-    expect(groupsFor("SALES")).toEqual(["Comercial", "Finanzas", "Catálogo"]);
+    expect(groupsFor("SALES")).toEqual(["Comercial", "Productos y recetas"]);
     expect(labelsFor("SALES")).toEqual([
       "Pedidos",
       "Ventas",
       "Clientes",
-      "Listas de precios",
       "Cuentas a cobrar",
       "Productos",
+      "Listas de precios",
     ]);
   });
 
   it("Producción: planificación, órdenes, recetas e inventario; sin finanzas ni precios", () => {
     const groups = groupsFor("PRODUCTION");
     expect(groups).toContain("Producción");
-    expect(groups).not.toContain("Finanzas");
+    expect(labelsFor("PRODUCTION")).not.toContain("Cuentas a cobrar");
     expect(groups).not.toContain("Organización");
     expect(labelsFor("PRODUCTION")).not.toContain("Listas de precios");
     expect(labelsFor("PRODUCTION")).toEqual(
@@ -91,7 +91,7 @@ describe("menú por rol (sólo lo que cada persona puede usar)", () => {
       ]),
     );
     expect(labels).not.toContain("Listas de precios");
-    expect(groupsFor("WAREHOUSE")).not.toContain("Finanzas");
+    expect(labelsFor("WAREHOUSE")).not.toContain("Cuentas a cobrar");
   });
 
   it("Compras: compras, proveedores y stock de materias primas", () => {
@@ -111,11 +111,10 @@ describe("menú por rol (sólo lo que cada persona puede usar)", () => {
   it("Dueño ve todos los grupos, en orden de frecuencia", () => {
     expect(groupsFor("OWNER")).toEqual([
       "Comercial",
+      "Productos y recetas",
       "Producción",
       "Inventario",
       "Compras",
-      "Finanzas",
-      "Catálogo",
       "Organización",
     ]);
   });

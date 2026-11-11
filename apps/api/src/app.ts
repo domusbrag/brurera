@@ -21,6 +21,7 @@ import { orderRoutes } from "./modules/orders/orders.routes.js";
 import { priceListRoutes } from "./modules/price-lists/price-lists.routes.js";
 import { presentationRoutes } from "./modules/presentations/presentations.routes.js";
 import { productRoutes } from "./modules/products/products.routes.js";
+import { productSetupRoutes } from "./modules/product-setup/product-setup.routes.js";
 import { productionRoutes } from "./modules/production/production.routes.js";
 import { purchaseRoutes } from "./modules/purchases/purchases.routes.js";
 import { paymentRoutes } from "./modules/payments/payments.routes.js";
@@ -119,6 +120,7 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
         categoryRoutes,
         rawMaterialRoutes,
         productRoutes,
+        productSetupRoutes,
         warehouseRoutes,
         recipeRoutes,
         presentationRoutes,

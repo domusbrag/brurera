@@ -9,6 +9,38 @@ import { FlashProvider } from "./ui/flash";
 import { Icon } from "./ui/icons";
 import { UserProvider } from "./user-context";
 
+type Theme = "dark" | "light";
+
+/** Tema del navegador: oscuro por defecto, claro a elección (se recuerda en este equipo). */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>("dark");
+  useEffect(() => {
+    // El script del layout ya aplicó el tema guardado antes de pintar; acá sólo se sincroniza el botón.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (document.documentElement.dataset.theme === "light") setTheme("light");
+  }, []);
+  const next: Theme = theme === "dark" ? "light" : "dark";
+  return (
+    <button
+      type="button"
+      className="icon-button theme-toggle"
+      aria-label={next === "light" ? "Usar tema claro" : "Usar tema oscuro"}
+      title={next === "light" ? "Tema claro" : "Tema oscuro"}
+      onClick={() => {
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem("tema", next);
+        } catch {
+          /* sin almacenamiento: vale sólo para esta pestaña */
+        }
+        setTheme(next);
+      }}
+    >
+      <Icon name={next === "light" ? "sun" : "moon"} />
+    </button>
+  );
+}
+
 /**
  * Cáscara de la aplicación: menú lateral estable en escritorio, panel
  * desplegable en tablet, barra superior con la empresa, accesos rápidos según
@@ -146,6 +178,7 @@ export function AppShell({ user, children }: { user: CurrentUser; children: Reac
               )}
             </div>
           )}
+          <ThemeToggle />
           <div className="topbar__user" data-testid="current-user">
             <div className="topbar__user-text">
               <div className="topbar__user-name">{user.displayName}</div>
