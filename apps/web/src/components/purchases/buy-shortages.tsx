@@ -52,15 +52,15 @@ export function BuyShortagesPanel({
   );
   return (
     <section className="panel" aria-labelledby="buy-shortages-title">
-      <h2 id="buy-shortages-title" className="section-title">
+      <h2 id="buy-shortages-title" className="section-title" style={{ marginTop: 0 }}>
         Armar compras
       </h2>
-      <p className="muted small">
+      <p className="muted small" style={{ marginTop: 0 }}>
         Un borrador por proveedor con lo que falta pedir (ya descontado lo que está en camino).
         Revisás cantidades y precios antes de guardarlo.
         {!complete && " Sólo incluye las materias primas de esta lista."}
       </p>
-      <div className="toolbar">
+      <div className="row-actions">
         {ordered.map(([supplierId, group]) => (
           <Link
             key={supplierId || "none"}

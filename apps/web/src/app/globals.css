@@ -1451,6 +1451,7 @@ a.code {
 .cost-summary .cost-summary__note,
 .metric__note {
   display: block;
+  margin: 0;
   font-size: var(--text-sm);
   font-weight: 400;
   color: var(--color-muted);

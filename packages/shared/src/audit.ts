@@ -64,7 +64,7 @@ export const AUDIT_ACTION_LABELS = {
 
   PURCHASE_CREATED: "Compra creada",
   PURCHASE_UPDATED: "Compra modificada",
-  PURCHASE_ORDERED: "Pedido confirmado",
+  PURCHASE_ORDERED: "Compra pedida al proveedor",
   PURCHASE_CANCELLED: "Compra cancelada",
   PURCHASE_RECEIPT_CREATED: "Recepción registrada (borrador)",
   PURCHASE_RECEIPT_UPDATED: "Recepción modificada",

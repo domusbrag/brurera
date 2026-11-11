@@ -364,13 +364,23 @@ interface AuditItem {
   id: number;
   action: string;
   actor: { displayName: string } | null;
+  metadata?: Record<string, unknown>;
   createdAt: string;
+}
+
+/** Código del registro afectado (VTA-0001, COM-0001…), si la auditoría lo guardó. */
+function auditReference(a: AuditItem): string | null {
+  const m = a.metadata ?? {};
+  for (const key of ["code", "number", "receipt"]) {
+    if (typeof m[key] === "string" && m[key]) return m[key] as string;
+  }
+  return null;
 }
 
 const ACTION_LABELS: Record<string, string> = AUDIT_ACTION_LABELS;
 
 function RecentActivity({ timeZone }: { timeZone: string }) {
-  const { items, failed } = useList<AuditItem>("/api/audit-logs?page=1&pageSize=8");
+  const { items, failed } = useList<AuditItem>("/api/audit-logs?page=1&pageSize=8&operational=1");
   return (
     <Panel
       id="activity-title"
@@ -406,7 +416,12 @@ function RecentActivity({ timeZone }: { timeZone: string }) {
               {items.map((a) => (
                 <tr key={a.id}>
                   <td>{formatDateTime(a.createdAt, timeZone)}</td>
-                  <td>{ACTION_LABELS[a.action] ?? "Otra operación"}</td>
+                  <td>
+                    {ACTION_LABELS[a.action] ?? "Otra operación"}
+                    {auditReference(a) && (
+                      <span className="muted small code"> {auditReference(a)}</span>
+                    )}
+                  </td>
                   <td>{a.actor?.displayName ?? "Sistema"}</td>
                 </tr>
               ))}
