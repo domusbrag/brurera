@@ -13,14 +13,17 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { QUICK_ACTIONS } from "@/lib/navigation";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatMoney } from "@/lib/format";
 import { Icon } from "../ui/icons";
 import { OrderStatusBadge, CoverageBadge, ORDERS_BASE } from "../orders/order-shared";
 import { ProductionStatusBadge } from "../production/production-shared";
 import { useCan, useCurrentUser } from "../user-context";
+import { companyToday, useDayTotals, useTodayOrders } from "../shell/day-panel";
 
 /*
- * Inicio operativo. Primero lo que requiere acción hoy (cada tarjeta es un
+ * Inicio operativo — «Resumen de jornada» (diseño La Espiga, Tailwind). Arriba
+ * el pulso del día en tres tarjetas; después lo que requiere acción, las
+ * próximas entregas y la producción. Primero lo que requiere acción hoy (cada tarjeta es un
  * conteo real con enlace al listado ya filtrado), después lo que viene y las
  * acciones rápidas. Todo depende de los permisos: nadie ve conteos ni accesos de
  * módulos que no puede usar, y una tarjeta que no carga no rompe la página.
@@ -136,11 +139,6 @@ function attentionItems(today: string): AttentionDef[] {
   ];
 }
 
-/** Fecha de hoy (AAAA-MM-DD) en la zona horaria de la empresa. */
-function companyToday(timeZone: string): string {
-  return instantToZonedLocal(new Date(), timeZone).slice(0, 10);
-}
-
 type TotalState = { total: number } | "error" | null;
 
 /** Totales de todas las tarjetas de «Requiere atención», pedidos en paralelo. */
@@ -162,41 +160,64 @@ function useTotals(defs: AttentionDef[]): Record<string, TotalState> {
   return state;
 }
 
+const FOCUS =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+const CARD = "rounded-2xl border border-line bg-surface";
+const SERIF_TITLE = "m-0 font-display text-lg font-semibold text-fg";
+
+const TONE_CARD: Record<Tone, string> = {
+  danger: "border-danger-line bg-danger-bg/60 hover:border-danger",
+  warning: "border-line hover:border-ember/60",
+  ok: "border-line hover:border-success-line",
+};
+const TONE_COUNT: Record<Tone, string> = {
+  danger: "text-danger",
+  warning: "text-warning",
+  ok: "text-success",
+};
+
 function AttentionCard({ def, state }: { def: AttentionDef; state: TotalState }) {
+  const box = `flex items-start gap-3.5 rounded-2xl border bg-surface p-4`;
   if (state === null)
     return (
-      <div className="attention__item" aria-busy="true">
-        <span className="attention__count skeleton__line" aria-hidden="true" />
-        <span className="attention__title muted">Cargando…</span>
+      <div className={`${box} border-line`} aria-busy="true">
+        <span className="h-8 w-8 animate-pulse rounded-lg bg-surface-hover" aria-hidden="true" />
+        <span className="text-sm text-muted">Cargando…</span>
       </div>
     );
   if (state === "error")
     return (
-      <div className="attention__item">
-        <span className="attention__count muted" aria-hidden="true">
+      <div className={`${box} border-line`}>
+        <span className="font-display text-3xl leading-none text-subtle" aria-hidden="true">
           –
         </span>
-        <span className="attention__title">No se pudo cargar</span>
-        <span className="attention__hint">{def.title(2)}</span>
+        <span className="text-sm">
+          <span className="block font-semibold">No se pudo cargar</span>
+          <span className="text-muted">{def.title(2)}</span>
+        </span>
       </div>
     );
   const tone: Tone = state.total > 0 ? def.tone : "ok";
   return (
     <Link
       href={def.href}
-      className={`attention__item attention__item--${tone}`}
+      className={`${box} ${TONE_CARD[tone]} transition-colors hover:no-underline ${FOCUS}`}
       data-testid={`attention-${def.key}`}
     >
-      <span className="attention__count">{state.total}</span>
-      <span className="attention__title">{def.title(state.total)}</span>
-      <span className="attention__hint">{state.total > 0 ? def.hint : "Nada pendiente."}</span>
+      <span className={`font-display text-3xl leading-none font-bold ${TONE_COUNT[tone]}`}>
+        {state.total}
+      </span>
+      <span className="min-w-0 text-sm">
+        <span className="block font-semibold text-fg">{def.title(state.total)}</span>
+        <span className="text-muted">{state.total > 0 ? def.hint : "Nada pendiente."}</span>
+      </span>
     </Link>
   );
 }
 
 /**
- * Lo pendiente va en tarjetas grandes; lo que está en cero se resume en una
- * línea «Al día» (antes nueve tarjetas con «0 · Nada pendiente» tapaban lo urgente).
+ * Lo pendiente va en tarjetas; lo que está en cero se resume en una línea
+ * «Al día» (nueve tarjetas con «0 · Nada pendiente» tapaban lo urgente).
  */
 function Attention({ defs }: { defs: AttentionDef[] }) {
   const totals = useTotals(defs);
@@ -208,31 +229,31 @@ function Attention({ defs }: { defs: AttentionDef[] }) {
   const pending = defs.filter((d) => !isClear(d));
   const clear = defs.filter(isClear);
   return (
-    <section aria-labelledby="attention-title">
-      <h2 id="attention-title" className="section-title">
+    <section aria-labelledby="attention-title" className="space-y-3">
+      <h2 id="attention-title" className={SERIF_TITLE}>
         Requiere atención
       </h2>
       {pending.length > 0 ? (
-        <div className="attention">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {pending.map((d) => (
             <AttentionCard key={d.key} def={d} state={state(d)} />
           ))}
         </div>
       ) : (
-        <p className="attention__all-clear">
+        <p className={`${CARD} m-0 flex items-center gap-2 p-4 text-sm text-success`}>
           <Icon name="check" size="sm" /> Todo al día: no hay nada pendiente.
         </p>
       )}
       {clear.length > 0 && pending.length > 0 && (
-        <p className="attention__clear">
-          <span className="attention__clear-label">
+        <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span className="flex items-center gap-1 font-semibold text-success">
             <Icon name="check" size="sm" /> Al día:
           </span>
           {clear.map((d) => (
             <Link
               key={d.key}
               href={d.href}
-              className="attention__clear-item"
+              className="text-muted hover:text-fg"
               data-testid={`attention-${d.key}`}
             >
               {d.title(0)}
@@ -256,13 +277,23 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="panel" aria-labelledby={id}>
-      <div className="panel__header">
-        <h2 id={id}>{title}</h2>
+    <section className={`${CARD} min-w-0 p-5 sm:p-6`} aria-labelledby={id}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 id={id} className={SERIF_TITLE}>
+          {title}
+        </h2>
         {action}
       </div>
       {children}
     </section>
+  );
+}
+
+function PanelLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} className={`text-xs text-muted hover:text-fg ${FOCUS}`}>
+      {children} →
+    </Link>
   );
 }
 
@@ -283,10 +314,144 @@ function useList<T>(endpoint: string | null) {
 }
 
 function ListState({ failed, empty }: { failed: boolean; empty: string }) {
-  return <p className="muted">{failed ? "No se pudo cargar." : empty}</p>;
+  return (
+    <p className="m-0 py-6 text-center text-sm text-muted">
+      {failed ? "No se pudo cargar." : empty}
+    </p>
+  );
 }
 
-/** Próximas entregas: los pedidos activos desde hoy, en orden de entrega. */
+function Skeleton() {
+  return (
+    <div className="space-y-3" aria-hidden="true">
+      <span className="block h-10 animate-pulse rounded-lg bg-surface-hover" />
+      <span className="block h-10 animate-pulse rounded-lg bg-surface-hover" />
+    </div>
+  );
+}
+
+/* ---------- Pulso del día ---------- */
+
+function PulseCard({
+  href,
+  label,
+  value,
+  foot,
+  gold,
+  testId,
+}: {
+  href: string;
+  label: string;
+  value: ReactNode;
+  foot: ReactNode;
+  gold?: boolean;
+  testId: string;
+}) {
+  return (
+    <Link
+      href={href}
+      data-testid={testId}
+      className={`${CARD} block p-5 transition-colors hover:border-ember/60 hover:no-underline ${FOCUS}`}
+    >
+      <span className="text-xs text-muted">{label}</span>
+      <span
+        className={`mt-2 block font-display text-3xl font-bold ${gold ? "text-accent" : "text-fg"}`}
+      >
+        {value}
+      </span>
+      <span className="mt-2 flex items-center gap-1 text-xs text-primary">{foot}</span>
+    </Link>
+  );
+}
+
+function Pulse({ today }: { today: string }) {
+  const user = useCurrentUser();
+  const can = useCan();
+  const orders = useTodayOrders(can(P.ORDERS_READ), today, null);
+  const [productionTotal, setProductionTotal] = useState<number | null>(null);
+  useEffect(() => {
+    if (!can(P.PRODUCTION_ORDERS_READ)) return;
+    let cancelled = false;
+    apiFetch<Page<unknown>>("/api/production-orders?status=open&pageSize=1")
+      .then((p) => !cancelled && setProductionTotal(p.total))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const totals = useDayTotals(can(P.SALES_READ), can(P.SALES_MARGIN_READ), today, null);
+  const o = orders?.status === "ok" ? orders.data : null;
+  const t = totals?.status === "ok" ? totals.data : null;
+  const cards: ReactNode[] = [];
+  if (orders)
+    cards.push(
+      <PulseCard
+        key="orders"
+        testId="pulse-orders"
+        href={`${ORDERS_BASE}?from=${today}&to=${today}`}
+        label="Pedidos activos para hoy"
+        value={
+          o
+            ? `${o.toPrepare + o.inPreparation + o.ready} ${o.toPrepare + o.inPreparation + o.ready === 1 ? "pedido" : "pedidos"}`
+            : "…"
+        }
+        foot={
+          <span className="text-muted">
+            {o ? `${o.inPreparation} en preparación · ${o.ready} listos` : "Cargando"}
+          </span>
+        }
+      />,
+    );
+  if (can(P.PRODUCTION_ORDERS_READ))
+    cards.push(
+      <PulseCard
+        key="production"
+        testId="pulse-production"
+        href="/produccion?estado=open"
+        label="Producción sin completar"
+        value={
+          productionTotal === null
+            ? "…"
+            : `${productionTotal} ${productionTotal === 1 ? "orden" : "órdenes"}`
+        }
+        foot={
+          <>
+            Ir a producción <span aria-hidden="true">→</span>
+          </>
+        }
+      />,
+    );
+  if (totals && !(t && t.sold === null))
+    cards.push(
+      <PulseCard
+        key="sales"
+        testId="pulse-sales"
+        href={`/ventas?from=${today}&to=${today}`}
+        label={t?.margin !== null && t ? "Margen sobre materiales hoy" : "Vendido hoy"}
+        gold
+        value={t ? formatMoney(t.margin ?? t.sold, user.company.currencyCode) : "…"}
+        foot={
+          <span className="text-success">
+            {t
+              ? t.margin !== null
+                ? `Sobre ${formatMoney(t.sold, user.company.currencyCode)} vendidos`
+                : `${t.count} ${t.count === 1 ? "venta" : "ventas"}`
+              : "Cargando"}
+          </span>
+        }
+      />,
+    );
+  if (cards.length === 0) return null;
+  return (
+    <div className="grid gap-4 md:grid-cols-3" aria-label="Pulso del día" role="group">
+      {cards}
+    </div>
+  );
+}
+
+/* ---------- Próximas entregas ---------- */
+
 function UpcomingOrders({ today }: { today: string }) {
   const { items, failed } = useList<OrderListItemDto>(
     `/api/orders?status=active&from=${today}&pageSize=6`,
@@ -295,58 +460,57 @@ function UpcomingOrders({ today }: { today: string }) {
     <Panel
       id="dash-orders"
       title="Próximas entregas"
-      action={
-        <Link className="link-button" href={`${ORDERS_BASE}?upcoming=true`}>
-          Ver pedidos
-        </Link>
-      }
+      action={<PanelLink href={`${ORDERS_BASE}?upcoming=true`}>Ver pedidos</PanelLink>}
     >
       {!items ? (
         failed ? (
           <ListState failed empty="" />
         ) : (
-          <div className="skeleton" aria-hidden="true">
-            <span className="skeleton__line" />
-            <span className="skeleton__line" />
-          </div>
+          <Skeleton />
         )
       ) : items.length === 0 ? (
         <ListState failed={false} empty="No hay pedidos activos desde hoy." />
       ) : (
-        <div className="table-wrap">
-          <table className="table table--compact" aria-label="Próximas entregas">
-            <thead>
-              <tr>
-                <th scope="col">Pedido</th>
-                <th scope="col">Para</th>
-                <th scope="col">Cliente</th>
-                <th scope="col">Cobertura</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...items]
-                .sort((a, b) => a.requestedAtLocal.localeCompare(b.requestedAtLocal))
-                .map((o) => (
-                  <tr key={o.id}>
-                    <td>
-                      <Link href={`${ORDERS_BASE}/${o.id}`} className="code">
-                        {o.code}
-                      </Link>
-                    </td>
-                    <td>{formatLocalDateTime(o.requestedAtLocal)}</td>
-                    <td>{o.customer.name}</td>
-                    <td>
-                      {o.coverageStatus ? (
-                        <CoverageBadge coverage={o.coverageStatus} />
-                      ) : (
-                        <OrderStatusBadge status={o.status} />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="m-0 list-none divide-y divide-line p-0" aria-label="Próximas entregas">
+          {[...items]
+            .sort((a, b) => a.requestedAtLocal.localeCompare(b.requestedAtLocal))
+            .map((o) => (
+              <li
+                key={o.id}
+                className="flex flex-col justify-between gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                    <span className="text-sm font-semibold text-fg">{o.customer.name}</span>
+                    <span className="text-xs font-medium text-primary">
+                      • {formatLocalDateTime(o.requestedAtLocal)}
+                    </span>
+                  </div>
+                  <p className="m-0 mt-1 truncate text-xs text-muted">
+                    <Link href={`${ORDERS_BASE}/${o.id}`} className="code">
+                      {o.code}
+                    </Link>
+                    {o.products.length > 0 &&
+                      ` — ${o.products.map((p) => `${p.quantity} ${p.unit} ${p.name}`).join(" · ")}`}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3 self-end sm:self-center">
+                  {o.coverageStatus ? (
+                    <CoverageBadge coverage={o.coverageStatus} />
+                  ) : (
+                    <OrderStatusBadge status={o.status} />
+                  )}
+                  <Link
+                    href={`${ORDERS_BASE}/${o.id}`}
+                    className={`rounded-lg border border-line bg-surface-sunken px-3 py-1.5 text-xs font-medium text-fg transition-colors hover:border-ember hover:no-underline ${FOCUS}`}
+                    aria-label={`Abrir el pedido ${o.code}`}
+                  >
+                    Abrir →
+                  </Link>
+                </div>
+              </li>
+            ))}
+        </ul>
       )}
     </Panel>
   );
@@ -361,31 +525,30 @@ function OpenProduction() {
     <Panel
       id="dash-production"
       title="Producción pendiente"
-      action={
-        <Link className="link-button" href="/produccion?estado=open">
-          Ver órdenes
-        </Link>
-      }
+      action={<PanelLink href="/produccion?estado=open">Ver órdenes</PanelLink>}
     >
       {!items ? (
         failed ? (
           <ListState failed empty="" />
         ) : (
-          <div className="skeleton" aria-hidden="true">
-            <span className="skeleton__line" />
-            <span className="skeleton__line" />
-          </div>
+          <Skeleton />
         )
       ) : items.length === 0 ? (
         <ListState failed={false} empty="No hay órdenes planificadas ni en curso." />
       ) : (
-        <ul className="plain-list">
+        <ul className="m-0 list-none divide-y divide-line p-0">
           {items.map((o) => (
-            <li key={o.id}>
-              <Link href={`/produccion/${o.id}`} className="code">
-                {o.code}
-              </Link>{" "}
-              {o.product.name} <ProductionStatusBadge status={o.status} />
+            <li
+              key={o.id}
+              className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+            >
+              <span className="min-w-0 text-sm">
+                <Link href={`/produccion/${o.id}`} className="code">
+                  {o.code}
+                </Link>{" "}
+                <span className="text-fg">{o.product.name}</span>
+              </span>
+              <ProductionStatusBadge status={o.status} />
             </li>
           ))}
         </ul>
@@ -419,49 +582,38 @@ function RecentActivity({ timeZone }: { timeZone: string }) {
     <Panel
       id="activity-title"
       title="Actividad reciente"
-      action={
-        <Link className="link-button" href="/auditoria">
-          Ver auditoría
-        </Link>
-      }
+      action={<PanelLink href="/auditoria">Ver auditoría</PanelLink>}
     >
       {!items ? (
         failed ? (
           <ListState failed empty="" />
         ) : (
-          <div className="skeleton" aria-hidden="true">
-            <span className="skeleton__line" />
-            <span className="skeleton__line" />
-          </div>
+          <Skeleton />
         )
       ) : items.length === 0 ? (
         <ListState failed={false} empty="Sin actividad registrada." />
       ) : (
-        <div className="table-wrap">
-          <table className="table table--compact" aria-label="Actividad reciente">
-            <thead>
-              <tr>
-                <th scope="col">Fecha</th>
-                <th scope="col">Acción</th>
-                <th scope="col">Usuario</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((a) => (
-                <tr key={a.id}>
-                  <td>{formatDateTime(a.createdAt, timeZone)}</td>
-                  <td>
-                    {ACTION_LABELS[a.action] ?? "Otra operación"}
-                    {auditReference(a) && (
-                      <span className="muted small code"> {auditReference(a)}</span>
-                    )}
-                  </td>
-                  <td>{a.actor?.displayName ?? "Sistema"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="m-0 list-none divide-y divide-line p-0" aria-label="Actividad reciente">
+          {items.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+            >
+              <div className="min-w-0">
+                <p className="m-0 text-sm font-medium text-fg">
+                  {ACTION_LABELS[a.action] ?? "Otra operación"}
+                  {auditReference(a) && (
+                    <span className="code ml-1.5 text-xs text-muted">{auditReference(a)}</span>
+                  )}
+                </p>
+                <p className="m-0 text-xs text-subtle">{a.actor?.displayName ?? "Sistema"}</p>
+              </div>
+              <span className="shrink-0 text-xs text-muted">
+                {formatDateTime(a.createdAt, timeZone)}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </Panel>
   );
@@ -479,35 +631,40 @@ export function Dashboard() {
   const [hello] = useState(() => greeting(tz));
 
   return (
-    <div className="page dashboard">
-      <header className="hero">
-        <div className="hero__text">
-          <h1 className="hero__eyebrow">Inicio</h1>
-          <p className="hero__title">
+    <div className="animate-fade-up space-y-7">
+      <header className="flex flex-col justify-between gap-4 border-b border-line pb-4 sm:flex-row sm:items-end">
+        <div>
+          <h1 className="m-0 text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+            Inicio
+          </h1>
+          <p className="m-0 mt-1 font-display text-2xl font-semibold text-fg sm:text-3xl">
             {hello}, {firstName}
           </p>
-          <p className="hero__subtitle">
-            {formatLocalDateTime(`${today}T00:00`).slice(0, 10)} · {user.company.tradeName}
+          <p className="m-0 mt-1 text-sm text-muted">
+            Resumen de la jornada · {formatLocalDateTime(`${today}T00:00`).slice(0, 10)}
           </p>
         </div>
-        <span className="hero__art" aria-hidden="true">
-          <Icon name="wheat" />
-        </span>
       </header>
 
+      <Pulse today={today} />
+
       {quick.length > 0 && (
-        <nav className="quick-actions" aria-label="Acciones rápidas">
+        <nav className="flex flex-wrap gap-2" aria-label="Acciones rápidas">
           {quick.map((q, i) => (
             <Link
               key={q.href}
               href={q.href}
-              className={`quick-action ${i === 0 ? "quick-action--primary" : ""}`}
+              title={q.hint}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors hover:no-underline ${FOCUS} ${
+                i === 0
+                  ? "border-transparent bg-ember text-kraft-ink shadow-md hover:bg-ember-text"
+                  : "border-line bg-surface text-fg hover:border-ember/60"
+              }`}
             >
-              <span className="quick-action__icon" aria-hidden="true">
-                <Icon name={q.icon} />
+              <span className={i === 0 ? "" : "text-primary"}>
+                <Icon name={q.icon} size="sm" />
               </span>
-              <span className="quick-action__label">{q.label}</span>
-              <span className="quick-action__hint">{q.hint}</span>
+              {q.label}
             </Link>
           ))}
         </nav>
@@ -515,16 +672,18 @@ export function Dashboard() {
 
       {attention.length > 0 && <Attention defs={attention} />}
 
-      <div className="dash-grid">
-        {can(P.ORDERS_READ) && <UpcomingOrders today={today} />}
-        {can(P.PRODUCTION_ORDERS_READ) && <OpenProduction />}
-      </div>
+      {(can(P.ORDERS_READ) || can(P.PRODUCTION_ORDERS_READ)) && (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          {can(P.ORDERS_READ) && <UpcomingOrders today={today} />}
+          {can(P.PRODUCTION_ORDERS_READ) && <OpenProduction />}
+        </div>
+      )}
 
       {can(P.AUDIT_READ) && <RecentActivity timeZone={tz} />}
 
       {attention.length === 0 && quick.length === 0 && !can(P.AUDIT_READ) && (
-        <section className="panel">
-          <p className="muted">
+        <section className={`${CARD} p-6`}>
+          <p className="m-0 text-muted">
             Tu usuario todavía no tiene módulos asignados. Pedile a un administrador que te asigne
             un rol.
           </p>

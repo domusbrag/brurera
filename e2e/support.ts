@@ -4,14 +4,32 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * Ayudas compartidas por las suites E2E.
  */
 
-/** Abre una sección desde el menú principal (en tablet, primero abre el cajón). */
+/**
+ * Abre una sección desde el menú principal: en escritorio, desde la pestaña de
+ * su área; en tablet, desde el cajón.
+ */
 export async function openSection(page: Page, name: string) {
   const menuButton = page.getByRole("button", { name: "Abrir menú" });
   if (await menuButton.isVisible()) await menuButton.click();
-  await page
-    .getByRole("navigation", { name: "Menú principal" })
-    .getByRole("link", { name, exact: true })
-    .click();
+  const nav = page.getByRole("navigation", { name: "Menú principal" });
+  await expect(nav.getByRole("link", { name: "Inicio", exact: true })).toBeVisible();
+  const link = nav.getByRole("link", { name, exact: true, includeHidden: true });
+  if (!(await link.isVisible())) {
+    // Escritorio: la pantalla está dentro de la lista de su pestaña.
+    const id = await link.locator("xpath=..").getAttribute("id");
+    await nav.locator(`[aria-controls="${id}"]`).click();
+  }
+  await link.click();
+}
+
+/** Textos de todos los enlaces del menú principal (incluye los de pestañas cerradas). */
+export async function menuLabels(page: Page): Promise<string[]> {
+  const menuButton = page.getByRole("button", { name: "Abrir menú" });
+  if (await menuButton.isVisible()) await menuButton.click();
+  const nav = page.getByRole("navigation", { name: "Menú principal" });
+  await expect(nav.getByRole("link", { name: "Inicio", exact: true })).toBeVisible();
+  const labels = await nav.getByRole("link", { includeHidden: true }).allTextContents();
+  return labels.map((l) => l.trim());
 }
 
 /**
