@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { openSection } from "./support";
+import { menuLabels, openSection } from "./support";
 
 /*
  * Sprint UX: navegación por rol, acción primaria, estados vacíos útiles,
@@ -60,14 +60,6 @@ async function userWithRole(page: Page, roleCode: string, run: string): Promise<
   return email;
 }
 
-async function menuLabels(page: Page): Promise<string[]> {
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  const nav = page.getByRole("navigation", { name: "Menú principal" });
-  await expect(nav.getByRole("link", { name: "Inicio", exact: true })).toBeVisible();
-  return nav.getByRole("link").allInnerTexts();
-}
-
 async function logout(page: Page) {
   const menuButton = page.getByRole("button", { name: "Cerrar menú" });
   if (await menuButton.isVisible()) await menuButton.click();
@@ -86,7 +78,7 @@ test("UX: cada rol ve sólo lo que puede usar", async ({ page }, testInfo) => {
 
   // Ventas / mostrador: comercial y cobranza; sin stock, producción, compras ni configuración.
   await login(page, salesEmail, PASSWORD);
-  const sales = (await menuLabels(page)).map((l) => l.trim());
+  const sales = await menuLabels(page);
   expect(sales).toEqual([
     "Inicio",
     "Pedidos",
@@ -112,7 +104,7 @@ test("UX: cada rol ve sólo lo que puede usar", async ({ page }, testInfo) => {
 
   // Depósito: inventario y lotes; sin listas de precios ni finanzas.
   await login(page, warehouseEmail, PASSWORD);
-  const warehouse = (await menuLabels(page)).map((l) => l.trim());
+  const warehouse = await menuLabels(page);
   expect(warehouse).toEqual(
     expect.arrayContaining([
       "Stock de materias primas",
@@ -210,7 +202,7 @@ test("UX: navegación por teclado y menú en tablet", async ({ page }, testInfo)
   await expect(nav.getByRole("link", { name: "Pedidos" })).toHaveAttribute("aria-current", "page");
 });
 
-test("UX: buscador global, menú plegable y filtros secundarios", async ({ page }, testInfo) => {
+test("UX: buscador global, pestañas por área y filtros secundarios", async ({ page }, testInfo) => {
   const consoleErrors = trackConsoleErrors(page);
   await login(page);
 
@@ -251,18 +243,32 @@ test("UX: buscador global, menú plegable y filtros secundarios", async ({ page 
   // Con un filtro escondido aplicado, el panel vuelve abierto.
   await expect(page.getByLabel("Prioridad", { exact: true })).toBeVisible();
 
-  // Menú: un grupo se pliega y se recuerda; el de la pantalla actual no se pliega.
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (testInfo.project.name === "tablet") await menuButton.click();
+  // Menú: en escritorio, cada área es una pestaña que despliega sus pantallas; el
+  // área actual queda marcada y sus pantallas se ofrecen como píldoras.
   const nav = page.getByRole("navigation", { name: "Menú principal" });
-  await expect(nav.getByRole("button", { name: "Comercial" })).toBeDisabled();
-  await nav.getByRole("button", { name: "Compras" }).click();
-  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeHidden();
-  await page.reload();
-  if (testInfo.project.name === "tablet") await menuButton.click();
-  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeHidden();
-  await nav.getByRole("button", { name: "Compras" }).click();
-  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeVisible();
+  if (testInfo.project.name === "tablet") {
+    await page.getByRole("button", { name: "Abrir menú" }).click();
+    await nav.getByRole("link", { name: "Proveedores", exact: true }).click();
+  } else {
+    const tab = nav.getByRole("button", { name: "Compras" });
+    await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeHidden();
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-expanded", "true");
+    // Escape cierra la lista y devuelve el foco a la pestaña.
+    await page.keyboard.press("Escape");
+    await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toBeHidden();
+    await expect(tab).toBeFocused();
+    await tab.click();
+    await nav.getByRole("link", { name: "Proveedores", exact: true }).click();
+  }
+  await expect(page.getByRole("heading", { level: 1, name: "Proveedores" })).toBeVisible();
+  const pills = page.getByRole("navigation", { name: "Pantallas de esta área" });
+  await expect(pills.getByRole("link", { name: "Proveedores" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await pills.getByRole("link", { name: "Compras", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Compras" })).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
 });

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openSection, selectByText as pick } from "./support";
+import { menuLabels, openSection, selectByText as pick } from "./support";
 
 /*
  * Flujo completo de Fase 1 (19 pasos) contra la aplicación construida y la base
@@ -210,12 +210,12 @@ test("Fase 1: alta y gestión de maestros de punta a punta", async ({ page }, te
   await page.getByLabel("Contraseña").fill(martaPassword);
   await page.getByRole("button", { name: "Ingresar" }).click();
   await expect(page.getByTestId("current-user")).toContainText(`Marta Horno ${run}`);
-  const menuButton = page.getByRole("button", { name: "Abrir menú" });
-  if (await menuButton.isVisible()) await menuButton.click();
-  const nav = page.getByRole("navigation", { name: undefined }).first();
-  await expect(nav.getByRole("link", { name: "Clientes", exact: true })).toBeVisible();
-  await expect(nav.getByRole("link", { name: "Usuarios", exact: true })).toHaveCount(0);
-  await expect(nav.getByRole("link", { name: "Proveedores", exact: true })).toHaveCount(0);
+  const labels = await menuLabels(page);
+  expect(labels).toContain("Clientes");
+  expect(labels).not.toContain("Usuarios");
+  expect(labels).not.toContain("Proveedores");
+  if (await page.getByRole("button", { name: "Cerrar menú" }).isVisible())
+    await page.keyboard.press("Escape");
   await page.goto("/usuarios");
   await expect(page.getByText("No tenés acceso a esta sección")).toBeVisible();
   await page.getByRole("button", { name: "Salir" }).click();
